@@ -36,6 +36,12 @@ export async function loadSettings(): Promise<Settings> {
   return {
     ...DEFAULTS,
     ...stored,
+    // storage 是信任邊界,存進去的東西不保證還是原來的型別。舊版的 saveSettings
+    // 會把 Vue 的 reactive Proxy 寫進去,序列化後陣列變成 {"0":...,"1":...},
+    // 讀回來呼叫 .some() 和 .join() 就炸。這一行同時修好已經壞掉的設定檔。
+    blockedHosts: Array.isArray(stored.blockedHosts)
+      ? stored.blockedHosts
+      : DEFAULTS.blockedHosts,
     // templates 是巢狀物件,展開一層蓋不到裡面。舊版存下來的設定不會有
     // 後來才加的 template,少這一行就會拿到 undefined。
     templates: { ...DEFAULT_TEMPLATES, ...(stored.templates ?? {}) },
@@ -44,7 +50,11 @@ export async function loadSettings(): Promise<Settings> {
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   const current = await loadSettings();
-  await browser.storage.local.set({ [KEY]: { ...current, ...patch } });
+  // JSON 來回一趟是為了脫掉 Vue 的 reactive Proxy。options 頁直接把整個 ref
+  // 丟進來,Proxy 包住的陣列在序列化時會被當成普通物件,存進去就不是陣列了。
+  // Settings 全都是純資料,沒有 Date 或 Map,這樣轉不會掉東西。
+  const plain = JSON.parse(JSON.stringify({ ...current, ...patch }));
+  await browser.storage.local.set({ [KEY]: plain });
 }
 
 /**

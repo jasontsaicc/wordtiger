@@ -52,3 +52,27 @@ describe('loadSettings 的 template 合併', () => {
     expect(s.templates).toEqual(DEFAULT_TEMPLATES);
   });
 });
+
+describe('blockedHosts 一定是陣列', () => {
+  beforeEach(() => fakeBrowser.reset());
+
+  it('存進 Proxy 包住的陣列,讀回來還是真陣列', async () => {
+    const proxied = new Proxy(['corp.example.com'], {});
+    await saveSettings({ blockedHosts: proxied });
+    const s = await loadSettings();
+    expect(Array.isArray(s.blockedHosts)).toBe(true);
+    expect(s.blockedHosts).toEqual(['corp.example.com']);
+  });
+
+  it('storage 裡已經壞成物件時,讀回來會被修成預設陣列', async () => {
+    // 這就是 Edge 上實際存到的形狀:陣列被序列化成帶數字 key 的物件
+    await fakeBrowser.storage.local.set({
+      settings: { blockedHosts: { 0: 'localhost', 1: '127.0.0.1' } },
+    });
+    const s = await loadSettings();
+    expect(Array.isArray(s.blockedHosts)).toBe(true);
+    // .some() 和 .join() 是實際炸掉的兩個呼叫
+    expect(s.blockedHosts.some((h) => h === 'localhost')).toBe(true);
+    expect(() => s.blockedHosts.join('\n')).not.toThrow();
+  });
+});
