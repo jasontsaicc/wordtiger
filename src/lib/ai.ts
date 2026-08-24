@@ -1,3 +1,10 @@
+import {
+  SYSTEM_RULES,
+  DEFAULT_TEMPLATES,
+  renderTemplate,
+  type Templates,
+} from './prompt';
+
 /** 一次批次最多送幾個字。超過這個數量,回應的 JSON 容易被模型截斷 */
 const MAX_BATCH = 30;
 
@@ -6,6 +13,8 @@ export interface AiSettings {
   apiKey: string;
   model: string;
   profile: string;
+  /** 沒給就用 DEFAULT_TEMPLATES。設成選填是為了讓既有呼叫端不必全部改 */
+  templates?: Templates;
 }
 
 export interface LookupItem {
@@ -15,29 +24,17 @@ export interface LookupItem {
   s: string;
 }
 
-/**
- * 系統層。這段不開放使用者編輯。
- * 批次查詞依賴結構化 JSON 回傳,格式一壞,整批解析失敗。
- */
-const SYSTEM_RULES = [
-  '你是英文單字解釋工具。',
-  '只輸出一個 JSON 物件,不要有任何其他文字,不要包 markdown code fence。',
-  'JSON 的 key 是輸入的單字,value 是繁體中文釋義字串。',
-  '每個釋義不超過 20 個字。',
-  '根據該字出現的句子判斷語意,不要給無關的義項。',
-].join('\n');
-
-export function buildLookupPrompt(items: LookupItem[], profile: string): string {
+export function buildLookupPrompt(
+  items: LookupItem[],
+  profile: string,
+  template: string = DEFAULT_TEMPLATES.lookup,
+): string {
   const list = items
     .slice(0, MAX_BATCH)
     .map((it) => `${it.w} | ${it.s}`)
     .join('\n');
 
-  const persona = profile.trim()
-    ? `讀者背景:\n${profile.trim()}\n\n`
-    : '';
-
-  return `${persona}以下每行是「單字 | 該字出現的句子」,請輸出 JSON:\n\n${list}`;
+  return renderTemplate(template, { profile: profile.trim(), list });
 }
 
 /**
@@ -67,12 +64,16 @@ export function parseLookupResponse(raw: string): Map<string, string> {
   return out;
 }
 
-export async function lookupBatch(
-  items: LookupItem[],
+/**
+ * 唯一一個對外送 request 的地方。三個功能的差別只有 system 訊息、
+ * user 訊息,以及要不要開 JSON 模式。
+ */
+async function chat(
+  system: string,
+  user: string,
   settings: AiSettings,
-): Promise<Map<string, string>> {
-  if (items.length === 0) return new Map();
-
+  jsonMode: boolean,
+): Promise<string> {
   const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const res = await fetch(url, {
@@ -83,10 +84,10 @@ export async function lookupBatch(
     },
     body: JSON.stringify({
       model: settings.model,
-      response_format: { type: 'json_object' },
+      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       messages: [
-        { role: 'system', content: SYSTEM_RULES },
-        { role: 'user', content: buildLookupPrompt(items, settings.profile) },
+        { role: 'system', content: system },
+        { role: 'user', content: user },
       ],
     }),
   });
@@ -96,5 +97,44 @@ export async function lookupBatch(
   }
 
   const data = await res.json();
-  return parseLookupResponse(data.choices?.[0]?.message?.content ?? '');
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+export async function lookupBatch(
+  items: LookupItem[],
+  settings: AiSettings,
+): Promise<Map<string, string>> {
+  if (items.length === 0) return new Map();
+
+  const prompt = buildLookupPrompt(
+    items,
+    settings.profile,
+    settings.templates?.lookup ?? DEFAULT_TEMPLATES.lookup,
+  );
+  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, true);
+  return parseLookupResponse(content);
+}
+
+/**
+ * 翻譯整句或分析文法。回純文字,不是 JSON。
+ *
+ * 這兩個功能只有一筆結果,不需要結構化回傳,也就沒有 JSON 被截斷的風險。
+ * 少開一個 response_format,相容端點的支援度也更好。
+ */
+export async function explainSentence(
+  kind: 'translate' | 'grammar',
+  sentence: string,
+  settings: AiSettings,
+): Promise<string> {
+  const trimmed = sentence.trim();
+  if (!trimmed) return '';
+
+  const template = settings.templates?.[kind] ?? DEFAULT_TEMPLATES[kind];
+  const user = renderTemplate(template, {
+    profile: settings.profile.trim(),
+    sentence: trimmed,
+  });
+
+  const content = await chat(SYSTEM_RULES[kind], user, settings, false);
+  return content.trim();
 }
