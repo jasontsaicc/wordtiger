@@ -1,4 +1,4 @@
-import { loadMarks, markWord, unmarkWord, addContext, getCached, putCached } from './db';
+import { loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached } from './db';
 import { lookupBatch, type LookupItem } from './ai';
 import { loadSettings } from './settings';
 import type { WordStatus } from './decide';
@@ -8,7 +8,9 @@ export type Msg =
   | { type: 'getThreshold' }
   | { type: 'toggleMark'; word: string }
   | { type: 'lookup'; items: LookupItem[] }
-  | { type: 'saveContext'; word: string; sentence: string; url: string; title: string };
+  | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
+  | { type: 'listWords' }
+  | { type: 'getContexts'; word: string };
 
 /**
  * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
@@ -58,5 +60,20 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'saveContext':
       await addContext(msg);
       return null;
+
+    case 'listWords': {
+      const marks = await loadMarks();
+      const rows = await Promise.all(
+        [...marks].map(async ([word, status]) => ({
+          word,
+          status,
+          contextCount: (await listContexts(word)).length,
+        })),
+      );
+      return rows.sort((a, b) => a.word.localeCompare(b.word));
+    }
+
+    case 'getContexts':
+      return listContexts(msg.word);
   }
 }

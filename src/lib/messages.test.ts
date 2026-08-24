@@ -95,3 +95,37 @@ describe('handleMessage', () => {
     expect(await db.contexts.count()).toBe(1);
   });
 });
+
+describe('詞庫列表', () => {
+  it('listWords 回傳未刪除的字,附語境數量', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({
+      type: 'saveContext',
+      word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'https://example.com', title: 'Example',
+    });
+
+    const rows = await handleMessage({ type: 'listWords' }) as any[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].word).toBe('deploy');
+    expect(rows[0].contextCount).toBe(1);
+  });
+
+  it('listWords 不含已軟刪除的字', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({ type: 'toggleMark', word: 'deploy' });
+    expect(await handleMessage({ type: 'listWords' })).toHaveLength(0);
+  });
+
+  it('getContexts 回傳指定字的語境', async () => {
+    await handleMessage({
+      type: 'saveContext',
+      word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'https://example.com', title: 'Example',
+    });
+    const rows = await handleMessage({ type: 'getContexts', word: 'deploy' }) as any[];
+    expect(rows[0].url).toBe('https://example.com');
+  });
+});
