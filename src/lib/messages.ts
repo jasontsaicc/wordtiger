@@ -1,7 +1,11 @@
-import { loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached } from './db';
-import { lookupBatch, type LookupItem } from './ai';
+import { loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached, getSentence, putSentence } from './db';
+import { lookupBatch, explainSentence, type LookupItem } from './ai';
 import { loadSettings } from './settings';
 import type { WordStatus } from './decide';
+
+export type ExplainResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string };
 
 export type Msg =
   | { type: 'getMarks' }
@@ -10,7 +14,8 @@ export type Msg =
   | { type: 'lookup'; items: LookupItem[] }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
-  | { type: 'getContexts'; word: string };
+  | { type: 'getContexts'; word: string }
+  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string };
 
 /**
  * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
@@ -60,6 +65,31 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'saveContext':
       await addContext(msg);
       return null;
+
+    case 'explain': {
+      const cached = await getSentence(msg.kind, msg.sentence);
+      if (cached !== null) return { ok: true, text: cached } satisfies ExplainResult;
+
+      const settings = await loadSettings();
+      if (!settings.baseUrl || !settings.apiKey) {
+        return {
+          ok: false,
+          error: '還沒設定 AI,請到 options 頁填 base URL 和 API key',
+        } satisfies ExplainResult;
+      }
+
+      try {
+        const text = await explainSentence(msg.kind, msg.sentence, settings);
+        // 失敗不寫快取,不然一次網路抖動會被記住,之後永遠拿到錯誤結果
+        await putSentence(msg.kind, msg.sentence, text);
+        return { ok: true, text } satisfies ExplainResult;
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        } satisfies ExplainResult;
+      }
+    }
 
     case 'listWords': {
       const marks = await loadMarks();

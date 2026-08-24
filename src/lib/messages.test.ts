@@ -10,6 +10,7 @@ beforeEach(async () => {
   await db.words.clear();
   await db.contexts.clear();
   await db.lookupCache.clear();
+  await db.sentenceCache.clear();
   vi.restoreAllMocks();
   vi.spyOn(settings, 'loadSettings').mockResolvedValue({
     baseUrl: 'https://api.example.com/v1',
@@ -129,5 +130,54 @@ describe('詞庫列表', () => {
     });
     const rows = await handleMessage({ type: 'getContexts', word: 'deploy' }) as any[];
     expect(rows[0].url).toBe('https://example.com');
+  });
+});
+
+describe('explain', () => {
+  const sentence = 'We deploy to production every Friday.';
+
+  it('快取沒命中時呼叫 AI,並把結果寫進快取', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence').mockResolvedValue('我們每週五部署。');
+
+    const first = await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    expect(first).toEqual({ ok: true, text: '我們每週五部署。' });
+    expect(spy).toHaveBeenCalledOnce();
+
+    spy.mockClear();
+    const second = await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    expect(second).toEqual({ ok: true, text: '我們每週五部署。' });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('translate 和 grammar 各自快取', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence').mockResolvedValue('結果');
+    await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    await handleMessage({ type: 'explain', kind: 'grammar', sentence });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('沒設定 AI 時回明確的錯誤,不打 API', async () => {
+    vi.spyOn(settings, 'loadSettings').mockResolvedValue({
+      baseUrl: '', apiKey: '', model: '', profile: '',
+      threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
+    });
+    const spy = vi.spyOn(ai, 'explainSentence');
+
+    const got = await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    expect(got).toEqual({ ok: false, error: '還沒設定 AI,請到 options 頁填 base URL 和 API key' });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('AI 丟例外時回 ok false 和錯誤訊息', async () => {
+    vi.spyOn(ai, 'explainSentence').mockRejectedValue(new Error('AI 請求失敗 401: bad key'));
+    const got = await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    expect(got).toEqual({ ok: false, error: 'AI 請求失敗 401: bad key' });
+  });
+
+  it('AI 失敗時不寫快取,下次還會重試', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence').mockRejectedValue(new Error('壞了'));
+    await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    await handleMessage({ type: 'explain', kind: 'translate', sentence });
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });
