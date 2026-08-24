@@ -29,4 +29,26 @@ describe('pickVoice', () => {
     const voices = [voice('遠端', 'en-US', false), voice('本機', 'en-US', true)];
     expect(pickVoice(voices)?.name).toBe('本機');
   });
+
+  it('避開 macOS 的 novelty 語音,即使它排在前面', () => {
+    // Albert、Zarvox 這些同樣是 en-US 本機語音,計分平手時會被先抽中
+    const voices = [
+      voice('Albert', 'en-US'),
+      voice('Zarvox', 'en-US'),
+      voice('Samantha', 'en-US'),
+    ];
+    expect(pickVoice(voices)?.name).toBe('Samantha');
+  });
+
+  it('系統預設的英文語音贏過我們的偏好清單', () => {
+    const preferred = voice('Samantha', 'en-US');
+    const systemDefault = { ...voice('Karen', 'en-AU'), default: true } as SpeechSynthesisVoice;
+    expect(pickVoice([preferred, systemDefault])?.name).toBe('Karen');
+  });
+
+  it('系統預設不是英文時不影響選擇', () => {
+    const zhDefault = { ...voice('美嘉', 'zh-TW'), default: true } as SpeechSynthesisVoice;
+    const voices = [zhDefault, voice('Albert', 'en-US'), voice('Alex', 'en-US')];
+    expect(pickVoice(voices)?.name).toBe('Alex');
+  });
 });
