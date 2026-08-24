@@ -7,6 +7,9 @@ export default defineConfig({
     permissions: ['activeTab', 'scripting', 'storage'],
     host_permissions: [],
     optional_host_permissions: ['<all_urls>'],
+    web_accessible_resources: [
+      { resources: ['freq.json'], matches: ['<all_urls>'] },
+    ],
     commands: {
       highlight: {
         suggested_key: { default: 'Alt+U' },
