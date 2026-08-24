@@ -4,6 +4,7 @@ import { handleMessage } from './messages';
 import { db, markWord } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
+import { DEFAULT_TEMPLATES } from './prompt';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -13,6 +14,7 @@ beforeEach(async () => {
   vi.spyOn(settings, 'loadSettings').mockResolvedValue({
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'k', model: 'm', profile: '', threshold: 5000, blockedHosts: [],
+    templates: DEFAULT_TEMPLATES,
   });
 });
 

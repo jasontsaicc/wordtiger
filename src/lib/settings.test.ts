@@ -22,3 +22,33 @@ describe('originPattern', () => {
     expect(originPattern('api.openai.com')).toBe(null);
   });
 });
+
+import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { loadSettings, saveSettings } from './settings';
+import { DEFAULT_TEMPLATES } from './prompt';
+import { beforeEach } from 'vitest';
+
+describe('loadSettings 的 template 合併', () => {
+  beforeEach(() => fakeBrowser.reset());
+
+  it('沒存過設定時,三個 template 都是預設值', async () => {
+    const s = await loadSettings();
+    expect(s.templates).toEqual(DEFAULT_TEMPLATES);
+  });
+
+  it('只改過一個 template 時,其他兩個仍回預設值', async () => {
+    await saveSettings({
+      templates: { ...DEFAULT_TEMPLATES, translate: '自訂翻譯 {{sentence}}' },
+    });
+    const s = await loadSettings();
+    expect(s.templates.translate).toBe('自訂翻譯 {{sentence}}');
+    expect(s.templates.lookup).toBe(DEFAULT_TEMPLATES.lookup);
+  });
+
+  it('舊版存檔完全沒有 templates 欄位時也要回預設值', async () => {
+    await fakeBrowser.storage.local.set({ settings: { baseUrl: 'https://x/v1' } });
+    const s = await loadSettings();
+    expect(s.baseUrl).toBe('https://x/v1');
+    expect(s.templates).toEqual(DEFAULT_TEMPLATES);
+  });
+});

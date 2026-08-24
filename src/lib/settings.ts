@@ -1,3 +1,5 @@
+import { DEFAULT_TEMPLATES, type Templates } from './prompt';
+
 export interface Settings {
   baseUrl: string;
   apiKey: string;
@@ -8,6 +10,8 @@ export interface Settings {
   threshold: number;
   /** 永不啟用的網域,公司內網放這裡 */
   blockedHosts: string[];
+  /** 三個 AI 功能的 prompt template,使用者可在 options 頁改寫 */
+  templates: Templates;
 }
 
 const DEFAULTS: Settings = {
@@ -17,6 +21,7 @@ const DEFAULTS: Settings = {
   profile: '',
   threshold: 5000,
   blockedHosts: ['localhost', '127.0.0.1'],
+  templates: DEFAULT_TEMPLATES,
 };
 
 const KEY = 'settings';
@@ -27,7 +32,14 @@ const KEY = 'settings';
  */
 export async function loadSettings(): Promise<Settings> {
   const got = await browser.storage.local.get(KEY);
-  return { ...DEFAULTS, ...(got[KEY] ?? {}) };
+  const stored = (got[KEY] ?? {}) as Partial<Settings>;
+  return {
+    ...DEFAULTS,
+    ...stored,
+    // templates 是巢狀物件,展開一層蓋不到裡面。舊版存下來的設定不會有
+    // 後來才加的 template,少這一行就會拿到 undefined。
+    templates: { ...DEFAULT_TEMPLATES, ...(stored.templates ?? {}) },
+  };
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
