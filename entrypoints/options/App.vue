@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { loadSettings, saveSettings, originPattern, type Settings } from '@/src/lib/settings';
+import WordLibrary from './WordLibrary.vue';
+import PromptEditor from './PromptEditor.vue';
 
 const settings = ref<Settings | null>(null);
-const words = ref<Array<{ word: string; status: string; contextCount: number }>>([]);
-const contexts = ref<Array<{ sentence: string; url: string; title: string }>>([]);
-const selected = ref<string | null>(null);
 const granted = ref(false);
 
 onMounted(async () => {
   settings.value = await loadSettings();
-  words.value = await browser.runtime.sendMessage({ type: 'listWords' });
   await refreshGrant();
 });
 
@@ -36,10 +34,6 @@ async function grantHost() {
   granted.value = await browser.permissions.request({ origins: [origin] });
 }
 
-async function openWord(word: string) {
-  selected.value = word;
-  contexts.value = await browser.runtime.sendMessage({ type: 'getContexts', word });
-}
 </script>
 
 <template>
@@ -92,23 +86,9 @@ async function openWord(word: string) {
       <p class="note">一行一個。公司內網放這裡,網頁內容就不會被送到 AI。</p>
     </section>
 
-    <section>
-      <h2>我的生詞 ({{ words.length }})</h2>
-      <table>
-        <tr v-for="w in words" :key="w.word" @click="openWord(w.word)">
-          <td>{{ w.word }}</td>
-          <td>{{ w.contextCount }} 條語境</td>
-        </tr>
-      </table>
+    <PromptEditor v-model="settings.templates" @update:modelValue="persist" />
+    <WordLibrary />
 
-      <div v-if="selected">
-        <h3>{{ selected }} 的語境</h3>
-        <blockquote v-for="(c, i) in contexts" :key="i">
-          {{ c.sentence }}
-          <a :href="c.url" target="_blank">{{ c.title }}</a>
-        </blockquote>
-      </div>
-    </section>
   </main>
 </template>
 
