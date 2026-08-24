@@ -54,3 +54,40 @@ describe('collectTokens', () => {
     expect(hits[1]!.start).toBe(0);
   });
 });
+
+import { sentenceAround } from './scan';
+
+describe('sentenceAround', () => {
+  function textNodeIn(html: string): Text {
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    document.body.append(el);
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    return walker.nextNode() as Text;
+  }
+
+  it('取所在段落的完整文字', () => {
+    const node = textNodeIn('<p>We deploy on Friday. It usually works.</p>');
+    expect(sentenceAround(node)).toBe('We deploy on Friday. It usually works.');
+  });
+
+  it('跨行內元素時仍取整個段落', () => {
+    const node = textNodeIn('<p>We <em>deploy</em> on Friday.</p>');
+    expect(sentenceAround(node)).toBe('We deploy on Friday.');
+  });
+
+  it('前後空白會被去掉', () => {
+    const node = textNodeIn('<p>   We deploy.   </p>');
+    expect(sentenceAround(node)).toBe('We deploy.');
+  });
+
+  it('超過 300 字元時截斷', () => {
+    const node = textNodeIn(`<p>${'a'.repeat(400)}</p>`);
+    expect(sentenceAround(node)).toHaveLength(300);
+  });
+
+  it('找不到區塊元素時退回文字節點本身', () => {
+    const node = textNodeIn('bare text with no block parent');
+    expect(sentenceAround(node)).toContain('bare text');
+  });
+});

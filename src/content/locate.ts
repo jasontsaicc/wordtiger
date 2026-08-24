@@ -52,3 +52,20 @@ export function wordAtPoint(
   const span = expandToWord(textNode.data, offset);
   return span ? { node: textNode, span } : null;
 }
+
+/**
+ * 只取座標底下的文字節點,不要求一定落在字母上。
+ * S 和 D 針對整句,滑鼠停在空白或標點上時也該有反應。
+ */
+export function textNodeAtPoint(x: number, y: number): Text | null {
+  const doc = document as any;
+  let node: Node | null = null;
+
+  if (doc.caretPositionFromPoint) {
+    node = doc.caretPositionFromPoint(x, y)?.offsetNode ?? null;
+  } else if (doc.caretRangeFromPoint) {
+    node = doc.caretRangeFromPoint(x, y)?.startContainer ?? null;
+  }
+
+  return node?.nodeType === Node.TEXT_NODE ? (node as Text) : null;
+}

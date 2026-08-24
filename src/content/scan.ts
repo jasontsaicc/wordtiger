@@ -67,3 +67,9 @@ export function collectTokens(root: Node): TokenHit[] {
 
   return hits;
 }
+
+/** 取這個文字節點所屬區塊的完整文字,當作語境句 */
+export function sentenceAround(node: Text): string {
+  const block = node.parentElement?.closest('p, li, td, h1, h2, h3, h4, div');
+  return (block?.textContent ?? node.data).trim().slice(0, 300);
+}

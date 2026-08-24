@@ -1,6 +1,7 @@
-import { collectTokens } from '@/src/content/scan';
+import { collectTokens, sentenceAround } from '@/src/content/scan';
 import { shouldHighlight, type WordStatus } from '@/src/lib/decide';
-import { wordAtPoint } from '@/src/content/locate';
+import { wordAtPoint, textNodeAtPoint } from '@/src/content/locate';
+import type { ExplainResult } from '@/src/lib/messages';
 import { showCard, hideCard } from '@/src/content/card';
 
 const HIGHLIGHT_NAME = 'pv-unknown';
@@ -75,6 +76,9 @@ export default defineContentScript({
     let pointerY = 0;
     let current: Hover | null = null;
     let expanded = false;
+    // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
+    // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
+    let explainSeq = 0;
 
     // mousemove 只記座標。命中測試留到按鍵時才做,滑鼠移動每秒觸發幾十次,
     // 在這裡做 caretPositionFromPoint 加 getBoundingClientRect 會逼出重複的版面計算。
@@ -109,6 +113,7 @@ export default defineContentScript({
       if (e.key === 'Escape') {
         hideCard();
         expanded = false;
+        explainSeq++;
         return;
       }
 
@@ -138,6 +143,39 @@ export default defineContentScript({
           marked: marks.get(hover.lemma) === 'unknown',
         });
         expanded = true;
+        return;
+      }
+
+      if (e.key === 's' || e.key === 'S' || e.key === 'd' || e.key === 'D') {
+        const node = textNodeAtPoint(pointerX, pointerY);
+        if (!node) return;
+        e.preventDefault();
+
+        const sentence = sentenceAround(node);
+        if (!sentence) return;
+
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rect = range.getBoundingClientRect();
+
+        const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
+        const title = kind === 'translate' ? '整句翻譯' : '文法分析';
+
+        // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
+        showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉' });
+
+        const seq = ++explainSeq;
+        const result = await browser.runtime.sendMessage({
+          type: 'explain', kind, sentence,
+        }) as ExplainResult;
+        if (seq !== explainSeq) return;
+
+        showCard({
+          title,
+          body: result.ok ? result.text : `查詢失敗:${result.error}`,
+          rect,
+          hint: 'Esc 關閉',
+        });
         return;
       }
 
@@ -201,8 +239,3 @@ async function fetchFreq(): Promise<Record<string, number>> {
   return res.json();
 }
 
-/** 取這個文字節點所屬區塊的完整文字,當作語境句 */
-export function sentenceAround(node: Text): string {
-  const block = node.parentElement?.closest('p, li, td, h1, h2, h3, h4, div');
-  return (block?.textContent ?? node.data).trim().slice(0, 300);
-}
