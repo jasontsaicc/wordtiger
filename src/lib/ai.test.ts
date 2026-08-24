@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { lookupWord, buildLookupPrompt } from './ai';
+import { lookupWord, buildLookupPrompt, readChatStream } from './ai';
 
 describe('buildLookupPrompt', () => {
   it('把使用者的 profile 放進 prompt', () => {
@@ -68,6 +68,13 @@ describe('lookupWord', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe('https://api.example.com/v1/chat/completions');
   });
 
+  it('GPT-5.6 小模型關閉推理以降低查詞延遲', async () => {
+    const spy = mockOk('內容');
+    await lookupWord({ w: 'deploy', s: 'We deploy.' }, { ...settings, model: 'gpt-5.6-luna' });
+    const body = JSON.parse(spy.mock.calls[0]![1]!.body as string);
+    expect(body.reasoning_effort).toBe('none');
+  });
+
   it('HTTP 錯誤時丟出帶狀態碼的例外', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false, status: 401, text: async () => 'unauthorized',
@@ -80,6 +87,23 @@ describe('lookupWord', () => {
     vi.stubGlobal('fetch', fetchMock);
     expect(await lookupWord({ w: '  ', s: 'b' }, settings)).toBe('');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('readChatStream', () => {
+  it('跨網路區塊解析 SSE 並逐段回報文字', async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"關"}}]}\n\nda'));
+        controller.enqueue(encoder.encode('ta: {"choices":[{"delta":{"content":"聯"}}]}\n\ndata: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+    const chunks: string[] = [];
+    const result = await readChatStream(new Response(body), (delta) => chunks.push(delta));
+    expect(chunks).toEqual(['關', '聯']);
+    expect(result).toBe('關聯');
   });
 });
 

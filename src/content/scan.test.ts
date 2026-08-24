@@ -66,9 +66,9 @@ describe('sentenceAround', () => {
     return walker.nextNode() as Text;
   }
 
-  it('取所在段落的完整文字', () => {
+  it('只取位移所在的句子', () => {
     const node = textNodeIn('<p>We deploy on Friday. It usually works.</p>');
-    expect(sentenceAround(node)).toBe('We deploy on Friday. It usually works.');
+    expect(sentenceAround(node, 25)).toBe('It usually works.');
   });
 
   it('跨行內元素時仍取整個段落', () => {

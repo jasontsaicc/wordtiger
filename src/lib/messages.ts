@@ -1,4 +1,4 @@
-import { db, loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
+import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, getCached, putCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
 import { lookupWord, explainSentence } from './ai';
 import { loadSettings } from './settings';
 import type { WordStatus } from './decide';
@@ -18,7 +18,7 @@ const NOT_CONFIGURED = '還沒設定 AI,請到 options 頁填 base URL 和 API k
 
 export type Msg =
   | { type: 'getMarks' }
-  | { type: 'getThreshold' }
+  | { type: 'getHighlightSettings' }
   | { type: 'toggleMark'; word: string }
   | { type: 'lookup'; word: string; sentence: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
@@ -27,7 +27,10 @@ export type Msg =
   | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string }
   | { type: 'deleteWord'; word: string }
   | { type: 'setWordStatus'; word: string; status: WordStatus }
-  | { type: 'exportData' };
+  | { type: 'exportData' }
+  | { type: 'getCachedWord'; word: string }
+  | { type: 'listCachedWords' }
+  | { type: 'deleteCachedWord'; word: string };
 
 /**
  * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
@@ -38,8 +41,10 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'getMarks':
       return [...(await loadMarks())];
 
-    case 'getThreshold':
-      return (await loadSettings()).threshold;
+    case 'getHighlightSettings': {
+      const { threshold, highlightColors } = await loadSettings();
+      return { threshold, highlightColors };
+    }
 
     case 'toggleMark': {
       const marks = await loadMarks();
@@ -69,7 +74,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
         const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings);
         if (!text) return { ok: false, error: 'AI 回了空的結果' } satisfies ExplainResult;
         // 失敗不寫快取,不然一次網路抖動會被記住,之後永遠拿到錯誤結果
-        await putCached([{ word: msg.word, payload: text }]);
+        await putCached([{ word: msg.word, payload: text, model: settings.model }]);
         return { ok: true, text } satisfies ExplainResult;
       } catch (err) {
         return {
@@ -121,7 +126,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return listContexts(msg.word);
 
     case 'deleteWord':
-      await unmarkWord(msg.word);
+      await deleteWord(msg.word);
       return null;
 
     // markWord 會把 deletedAt 寫回 null,所以這個 case 同時是「救回誤刪的字」
@@ -136,5 +141,56 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       ]);
       return { exportedAt: Date.now(), words, contexts } satisfies ExportBundle;
     }
+
+    case 'getCachedWord':
+      return db.lookupCache.get(msg.word);
+
+    case 'listCachedWords':
+      return db.lookupCache.orderBy('fetchedAt').reverse().toArray();
+
+    case 'deleteCachedWord':
+      await db.lookupCache.delete(msg.word);
+      return null;
+  }
+}
+
+/** content script 的長連線版本；快取命中也走同一條 UI 更新路徑。 */
+export async function handleStreamMessage(
+  msg: Extract<Msg, { type: 'lookup' | 'explain' }>,
+  onDelta: (delta: string) => void,
+): Promise<ExplainResult> {
+  if (msg.type === 'lookup') {
+    const hit = (await getCached([msg.word])).get(msg.word);
+    if (hit !== undefined) {
+      onDelta(hit);
+      return { ok: true, text: hit };
+    }
+
+    const settings = await loadSettings();
+    if (!settings.baseUrl || !settings.apiKey) return { ok: false, error: NOT_CONFIGURED };
+    try {
+      const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings, onDelta);
+      if (!text) return { ok: false, error: 'AI 回了空的結果' };
+      await putCached([{ word: msg.word, payload: text, model: settings.model }]);
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  const cached = await getSentence(msg.kind, msg.sentence);
+  if (cached !== null) {
+    onDelta(cached);
+    return { ok: true, text: cached };
+  }
+  const settings = await loadSettings();
+  if (!settings.baseUrl || !settings.apiKey) return { ok: false, error: NOT_CONFIGURED };
+  try {
+    const text = await explainSentence(msg.kind, msg.sentence, settings, onDelta);
+    if (!text) return { ok: false, error: 'AI 回了空的結果' };
+    await putSentence(msg.kind, msg.sentence, text);
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

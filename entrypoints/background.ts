@@ -1,5 +1,5 @@
-import { handleMessage, type Msg } from '@/src/lib/messages';
-import { loadSettings } from '@/src/lib/settings';
+import { handleMessage, handleStreamMessage, type Msg } from '@/src/lib/messages';
+import { loadSettings, pageOrigin } from '@/src/lib/settings';
 
 export default defineBackground(() => {
   // 用 sendResponse 加 return true,不用「listener 回傳 Promise」那種寫法。
@@ -18,9 +18,20 @@ export default defineBackground(() => {
     return true; // 保持訊息通道開著,直到 sendResponse 被呼叫
   });
 
-  // 兩個入口:Alt+U 和點工具列圖示。兩者都是「使用者手勢」,都會授予 activeTab,
-  // 所以注入邏輯完全一樣,只有觸發方式不同。分成兩個 listener 共用一個函式,
-  // 出問題時可以拿圖示當對照組,判斷是快捷鍵那一層壞了還是注入那一層壞了。
+  browser.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'pv-ai-stream') return;
+    let connected = true;
+    port.onDisconnect.addListener(() => { connected = false; });
+    port.onMessage.addListener((msg: Extract<Msg, { type: 'lookup' | 'explain' }>) => {
+      void handleStreamMessage(msg, (delta) => {
+        if (connected) port.postMessage({ type: 'delta', delta });
+      }).then((result) => {
+        if (connected) port.postMessage({ type: 'done', result });
+      });
+    });
+  });
+
+  // Alt+U 直接切換；工具列圖示現在開 popup，由 popup 提供切換與設定入口。
   browser.commands.onCommand.addListener(async (command) => {
     // 用原生 console,不用 WXT 的 logger。production build 會把 logger 換成空函式,
     // 出事時完全沒有輸出,這是這個擴充唯一的觀測點。
@@ -31,17 +42,30 @@ export default defineBackground(() => {
     await toggle(tab, 'command');
   });
 
-  browser.action.onClicked.addListener(async (tab) => {
-    await toggle(tab, 'icon');
+  // 使用者在 popup 為某個 origin 開啟自動標示後，每次載入完成自動注入。
+  // 不加 tabs 權限：已授權的 origin 本身就讓 tab.url 對擴充功能可見。
+  browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+    if (changeInfo.status !== 'complete' || !tab.url) return;
+    void autoHighlight(tab);
   });
 });
+
+async function autoHighlight(tab: Browser.tabs.Tab): Promise<void> {
+  if (!tab.url) return;
+  const origin = pageOrigin(tab.url);
+  if (!origin) return;
+  const settings = await loadSettings();
+  if (settings.autoOrigins.includes(`${origin}/*`)) await toggle(tab, 'auto');
+}
 
 async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<void> {
   console.log('[pv] toggle via', via, '| tab', tab?.id, tab?.url);
   if (!tab?.id || !tab.url) return;
 
   const { blockedHosts } = await loadSettings();
-  const host = new URL(tab.url).hostname;
+  const origin = pageOrigin(tab.url);
+  if (!origin) return;
+  const host = new URL(origin).hostname;
   if (blockedHosts.some((h) => host === h || host.endsWith(`.${h}`))) {
     console.warn(`${host} 在黑名單內,不注入`);
     return;

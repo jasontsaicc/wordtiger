@@ -1,6 +1,6 @@
 # ADR-0001: 用工具列圖示當第二個觸發入口
 
-Date: 2026-08-24 | Status: accepted
+Date: 2026-08-24 | Status: superseded by [ADR-0005](0005-toolbar-popup-control-center.md)
 
 ## Context
 

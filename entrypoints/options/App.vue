@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { loadSettings, saveSettings, originPattern, type Settings } from '@/src/lib/settings';
+import { loadSettings, saveSettings, originPattern, OPENAI_BASE_URL, OPENAI_MODELS, type Settings } from '@/src/lib/settings';
 import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
+import CachedAnswers from './CachedAnswers.vue';
 
 const settings = ref<Settings | null>(null);
 const granted = ref(false);
 const loadError = ref('');
+const tab = ref<'settings' | 'contexts' | 'cache'>('settings');
 
 onMounted(async () => {
   // 沒有這個 try 的話,載入失敗時 settings 停在 null,下面的 v-if 什麼都不畫,
@@ -54,18 +56,31 @@ async function grantHost() {
   <main v-else-if="settings" class="wrap">
     <h1>個人詞庫</h1>
 
+    <nav>
+      <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">設定</button>
+      <button :class="{ active: tab === 'contexts' }" @click="tab = 'contexts'">生詞語境</button>
+      <button :class="{ active: tab === 'cache' }" @click="tab = 'cache'">快取回答</button>
+    </nav>
+
+    <template v-if="tab === 'settings'">
     <section>
       <h2>AI 設定</h2>
-      <label>Base URL
-        <input v-model="settings.baseUrl" placeholder="https://api.openai.com/v1" @change="persist" />
+      <label>服務
+        <select v-model="settings.baseUrl" @change="persist">
+          <option :value="OPENAI_BASE_URL">OpenAI — {{ OPENAI_BASE_URL }}</option>
+        </select>
       </label>
       <label>API Key
         <input v-model="settings.apiKey" type="password" @change="persist" />
       </label>
       <label>Model
-        <input v-model="settings.model" placeholder="gpt-4o-mini" @change="persist" />
+        <select v-model="settings.model" @change="persist">
+          <option v-for="item in OPENAI_MODELS" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </option>
+        </select>
       </label>
-      <p class="note">任何 OpenAI 相容端點都可以,包含本機的 Ollama。</p>
+      <p class="note">目前先固定 OpenAI；GPT-4o mini 適合快速翻譯，GPT-4.1 mini 適合較完整的查詞輸出。</p>
 
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
         先填一個完整網址,例如 https://api.openai.com/v1。
@@ -91,6 +106,12 @@ async function grantHost() {
       <input type="range" min="1000" max="30000" step="500"
         v-model.number="settings.threshold" @change="persist" />
       <p>高亮詞頻排名 <b>{{ settings.threshold }}</b> 名以外的字。往右拉,亮的字變少。</p>
+      <div class="colors">
+        <label><input v-model="settings.highlightColors.saved" type="color" @change="persist" /> 我收藏的生詞</label>
+        <label><input v-model="settings.highlightColors.learning" type="color" @change="persist" /> 程度稍上：{{ settings.threshold + 1 }}–{{ Math.floor(settings.threshold * 1.5) }} 名</label>
+        <label><input v-model="settings.highlightColors.advanced" type="color" @change="persist" /> 進階：{{ Math.floor(settings.threshold * 1.5) + 1 }}–{{ Math.floor(settings.threshold * 2.5) }} 名</label>
+        <label><input v-model="settings.highlightColors.rare" type="color" @change="persist" /> 極少見：{{ Math.floor(settings.threshold * 2.5) }} 名外，可暫時不記</label>
+      </div>
     </section>
 
     <section>
@@ -101,7 +122,10 @@ async function grantHost() {
     </section>
 
     <PromptEditor v-model="settings.templates" @update:modelValue="persist" />
-    <WordLibrary />
+    </template>
+
+    <WordLibrary v-else-if="tab === 'contexts'" />
+    <CachedAnswers v-else />
 
   </main>
 </template>
@@ -109,9 +133,15 @@ async function grantHost() {
 <style scoped>
 .wrap { max-width: 720px; margin: 2rem auto; font: 15px/1.7 system-ui, sans-serif; }
 section { margin-bottom: 2.5rem; }
+nav { display: flex; gap: .5rem; margin-bottom: 2rem; border-bottom: 1px solid #ddd; }
+nav button { padding: .65rem 1rem; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer; }
+nav button.active { color: #5b4bc4; border-bottom-color: #7c6ee6; font-weight: 700; }
 label { display: block; margin-bottom: .75rem; }
-input[type="text"], input[type="password"], input:not([type]), textarea { width: 100%; padding: .4rem; }
+input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .4rem; }
 input[type="range"] { width: 100%; }
+.colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-top: 1rem; }
+.colors label { font-size: 13px; }
+.colors input { display: block; width: 100%; height: 34px; }
 .note { opacity: .6; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
 .ok { color: #2b7a3d; font-size: 13px; }

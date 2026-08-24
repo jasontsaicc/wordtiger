@@ -15,6 +15,7 @@ beforeEach(async () => {
   vi.spyOn(settings, 'loadSettings').mockResolvedValue({
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'k', model: 'm', profile: '', threshold: 5000, blockedHosts: [],
+    highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
     templates: DEFAULT_TEMPLATES,
   });
 });
@@ -77,6 +78,7 @@ describe('handleMessage', () => {
     vi.spyOn(settings, 'loadSettings').mockResolvedValue({
       baseUrl: '', apiKey: '', model: '', profile: '',
       threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
+      highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
     });
     const spy = vi.spyOn(ai, 'lookupWord');
 
@@ -135,6 +137,19 @@ describe('詞庫列表', () => {
   });
 });
 
+describe('單字快取管理', () => {
+  it('保留使用模型並可列出與清除', async () => {
+    vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
+    await handleMessage({ type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' });
+
+    const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
+    expect(rows[0]).toMatchObject({ word: 'deploy', model: 'm' });
+
+    await handleMessage({ type: 'deleteCachedWord', word: 'deploy' });
+    expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' })).toBeUndefined();
+  });
+});
+
 describe('explain', () => {
   const sentence = 'We deploy to production every Friday.';
 
@@ -162,6 +177,7 @@ describe('explain', () => {
     vi.spyOn(settings, 'loadSettings').mockResolvedValue({
       baseUrl: '', apiKey: '', model: '', profile: '',
       threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
+      highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
     });
     const spy = vi.spyOn(ai, 'explainSentence');
 
@@ -191,6 +207,18 @@ describe('詞庫管理', () => {
 
     expect((await db.words.get('deploy'))!.deletedAt).toBeGreaterThan(0);
     expect(await handleMessage({ type: 'listWords' })).toHaveLength(0);
+  });
+
+  it('deleteWord 也會讓相關語境不再匯出', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({
+      type: 'saveContext', word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'https://example.com', title: 'Example',
+    });
+    await handleMessage({ type: 'deleteWord', word: 'deploy' });
+    const bundle = await handleMessage({ type: 'exportData' }) as any;
+    expect(bundle.contexts).toHaveLength(0);
   });
 
   it('setWordStatus 可以把字改成 known', async () => {

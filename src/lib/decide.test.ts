@@ -23,7 +23,7 @@ describe('shouldHighlight', () => {
   });
 
   it('完全不在詞頻表裡的字要高亮', () => {
-    expect(shouldHighlight('kubernetes', ctx()).hit).toBe(true);
+    expect(shouldHighlight('kubernetes', ctx())).toMatchObject({ hit: true, tier: 'rare' });
   });
 
   it('標記成 known 的字一律不高亮,即使排名落後', () => {
@@ -33,7 +33,7 @@ describe('shouldHighlight', () => {
 
   it('標記成 unknown 的字一律高亮,即使排名很前面', () => {
     const marks = new Map([['deploy', 'unknown' as const]]);
-    expect(shouldHighlight('deploy', ctx({ marks })).hit).toBe(true);
+    expect(shouldHighlight('deploy', ctx({ marks }))).toMatchObject({ hit: true, tier: 'saved' });
   });
 
   it('判定用的是還原後的原形', () => {
@@ -57,5 +57,14 @@ describe('shouldHighlight', () => {
   it('marks 的 key 是原形,變化形也要命中', () => {
     const marks = new Map([['deploy', 'unknown' as const]]);
     expect(shouldHighlight('deploying', ctx({ marks })).hit).toBe(true);
+  });
+
+  it('三個自動色階跟著使用者的程度門檻移動', () => {
+    const ranked = { common: 8000, useful: 10000, advanced: 18000, obscure: 21000 };
+    const level8000 = ctx({ freq: ranked, threshold: 8000 });
+    expect(shouldHighlight('common', level8000).hit).toBe(false);
+    expect(shouldHighlight('useful', level8000).tier).toBe('learning');
+    expect(shouldHighlight('advanced', level8000).tier).toBe('advanced');
+    expect(shouldHighlight('obscure', level8000).tier).toBe('rare');
   });
 });

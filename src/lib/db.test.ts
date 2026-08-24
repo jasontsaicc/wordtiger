@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, loadMarks, addContext, listContexts, getCached, putCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, getCached, putCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -101,6 +101,18 @@ describe('addContext / listContexts', () => {
     const row = (await listContexts('deploy'))[0]!;
     await db.contexts.update(row.id, { deletedAt: Date.now() });
     expect(await listContexts('deploy')).toHaveLength(0);
+  });
+
+  it('從詞庫刪除單字時一併軟刪它的語境', async () => {
+    await markWord('deploy', 'unknown');
+    await addContext({
+      word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'u', title: 't',
+    });
+    await deleteWord('deploy');
+    expect(await listContexts('deploy')).toHaveLength(0);
+    expect((await db.contexts.toArray())[0]!.deletedAt).toBeGreaterThan(0);
   });
 });
 

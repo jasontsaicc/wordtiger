@@ -44,6 +44,8 @@ export interface SentenceRow {
 export interface CacheRow {
   word: string;
   payload: string;
+  /** 舊快取沒有這欄,顯示時退回「未知模型」 */
+  model?: string;
   fetchedAt: number;
 }
 
@@ -90,6 +92,20 @@ export async function unmarkWord(word: string): Promise<void> {
   await db.words.put({ ...existing, updatedAt: now, deletedAt: now });
 }
 
+/** options 的「刪除」比取消標記更強:單字與其語境一起留下可同步的 tombstone。 */
+export async function deleteWord(word: string): Promise<void> {
+  const now = Date.now();
+  await db.transaction('rw', db.words, db.contexts, async () => {
+    const existing = await db.words.get(word);
+    if (existing) await db.words.put({ ...existing, updatedAt: now, deletedAt: now });
+
+    const contexts = await db.contexts.where('word').equals(word).toArray();
+    await db.contexts.bulkPut(
+      contexts.map((row) => ({ ...row, updatedAt: now, deletedAt: now })),
+    );
+  });
+}
+
 export async function loadMarks(): Promise<Map<string, WordStatus>> {
   const rows = await db.words.filter((r) => r.deletedAt === null).toArray();
   return new Map(rows.map((r) => [r.word, r.status]));
@@ -131,7 +147,7 @@ export async function getCached(words: string[]): Promise<Map<string, string>> {
 }
 
 export async function putCached(
-  entries: Array<{ word: string; payload: string }>,
+  entries: Array<{ word: string; payload: string; model?: string }>,
 ): Promise<void> {
   const now = Date.now();
   await db.lookupCache.bulkPut(entries.map((e) => ({ ...e, fetchedAt: now })));

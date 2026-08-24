@@ -68,8 +68,25 @@ export function collectTokens(root: Node): TokenHit[] {
   return hits;
 }
 
-/** 取這個文字節點所屬區塊的完整文字,當作語境句 */
-export function sentenceAround(node: Text): string {
+/** 取文字位移所在的那一句,跨行內元素也能正確計算。 */
+export function sentenceAround(node: Text, offsetInNode = 0): string {
   const block = node.parentElement?.closest('p, li, td, h1, h2, h3, h4, div');
-  return (block?.textContent ?? node.data).trim().slice(0, 300);
+  if (!block) return node.data.trim().slice(0, 300);
+
+  const text = block.textContent ?? node.data;
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  let current = walker.nextNode() as Text | null;
+  while (current && current !== node) {
+    offset += current.data.length;
+    current = walker.nextNode() as Text | null;
+  }
+  offset += Math.max(0, Math.min(offsetInNode, node.data.length));
+
+  for (const part of new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text)) {
+    if (offset >= part.index && offset < part.index + part.segment.length) {
+      return part.segment.trim().slice(0, 300);
+    }
+  }
+  return text.trim().slice(0, 300);
 }

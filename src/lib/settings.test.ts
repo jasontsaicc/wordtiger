@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { originPattern } from './settings';
+import { originPattern, pageOrigin } from './settings';
 
 describe('originPattern', () => {
   it('把 base URL 縮成 origin 加萬用路徑', () => {
@@ -23,8 +23,16 @@ describe('originPattern', () => {
   });
 });
 
+describe('pageOrigin', () => {
+  it('只接受能注入的 http(s) 網頁', () => {
+    expect(pageOrigin('https://example.com/a')).toBe('https://example.com');
+    expect(pageOrigin('edge://extensions')).toBe(null);
+    expect(pageOrigin('not a url')).toBe(null);
+  });
+});
+
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { loadSettings, saveSettings } from './settings';
+import { DEFAULT_HIGHLIGHT_COLORS, OPENAI_BASE_URL, loadSettings, saveSettings } from './settings';
 import { DEFAULT_TEMPLATES } from './prompt';
 import { beforeEach } from 'vitest';
 
@@ -34,6 +42,10 @@ describe('loadSettings 的 template 合併', () => {
   it('沒存過設定時,三個 template 都是預設值', async () => {
     const s = await loadSettings();
     expect(s.templates).toEqual(DEFAULT_TEMPLATES);
+    expect(s.baseUrl).toBe(OPENAI_BASE_URL);
+    expect(s.model).toBe('gpt-4o-mini');
+    expect(s.highlightColors).toEqual(DEFAULT_HIGHLIGHT_COLORS);
+    expect(s.autoOrigins).toEqual([]);
   });
 
   it('只改過一個 template 時,其他兩個仍回預設值', async () => {
@@ -50,6 +62,13 @@ describe('loadSettings 的 template 合併', () => {
     const s = await loadSettings();
     expect(s.baseUrl).toBe('https://x/v1');
     expect(s.templates).toEqual(DEFAULT_TEMPLATES);
+  });
+
+  it('辨認舊版過長的預設查詞 prompt 並自動換成精簡版', async () => {
+    await fakeBrowser.storage.local.set({ settings: {
+      templates: { ...DEFAULT_TEMPLATES, lookup: '舊內容\n13. 不要輸出總結' },
+    } });
+    expect((await loadSettings()).templates.lookup).toBe(DEFAULT_TEMPLATES.lookup);
   });
 });
 

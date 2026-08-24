@@ -1,11 +1,16 @@
 import { collectTokens, sentenceAround } from '@/src/content/scan';
-import { shouldHighlight, type WordStatus } from '@/src/lib/decide';
-import { wordAtPoint, textNodeAtPoint } from '@/src/content/locate';
+import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
+import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
 import type { ExplainResult } from '@/src/lib/messages';
 import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
 
-const HIGHLIGHT_NAME = 'pv-unknown';
+const HIGHLIGHT_NAMES: Record<HighlightTier, string> = {
+  saved: 'pv-saved',
+  learning: 'pv-learning',
+  advanced: 'pv-advanced',
+  rare: 'pv-rare',
+};
 const STYLE_ID = 'pv-highlight-style';
 
 declare global {
@@ -26,7 +31,7 @@ export default defineContentScript({
     // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
     // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
     if (window.__pvAbort) {
-      CSS.highlights.delete(HIGHLIGHT_NAME);
+      Object.values(HIGHLIGHT_NAMES).forEach((name) => CSS.highlights.delete(name));
       document.getElementById(STYLE_ID)?.remove();
       hideCard();
       window.__pvAbort.abort();
@@ -36,34 +41,57 @@ export default defineContentScript({
     const controller = new AbortController();
     window.__pvAbort = controller;
 
-    injectStyle();
-
-    const [freq, marks, threshold] = await Promise.all([
+    const [freq, marks, highlightSettings] = await Promise.all([
       fetchFreq(),
       browser.runtime.sendMessage({ type: 'getMarks' })
         .then((e: Array<[string, WordStatus]>) => new Map(e)),
-      browser.runtime.sendMessage({ type: 'getThreshold' }) as Promise<number>,
+      browser.runtime.sendMessage({ type: 'getHighlightSettings' }) as Promise<{
+        threshold: number;
+        highlightColors: Record<HighlightTier, string>;
+      }>,
     ]);
+    const { threshold, highlightColors } = highlightSettings;
+    injectStyle(highlightColors);
 
-    const ranges: Range[] = [];
+    function paintHighlights() {
+      const ranges: Record<HighlightTier, Range[]> = {
+        saved: [], learning: [], advanced: [], rare: [],
+      };
 
-    for (const hit of collectTokens(document.body)) {
-      const decision = shouldHighlight(hit.text, {
-        freq,
-        marks,
-        threshold,
-        isSentenceStart: hit.isSentenceStart,
-      });
-      if (!decision.hit) continue;
+      for (const hit of collectTokens(document.body)) {
+        const decision = shouldHighlight(hit.text, {
+          freq,
+          marks,
+          threshold,
+          isSentenceStart: hit.isSentenceStart,
+        });
+        if (!decision.hit) continue;
 
-      const range = document.createRange();
-      range.setStart(hit.node, hit.start);
-      range.setEnd(hit.node, hit.end);
-      ranges.push(range);
+        const range = document.createRange();
+        range.setStart(hit.node, hit.start);
+        range.setEnd(hit.node, hit.end);
+        ranges[decision.tier!].push(range);
+      }
+
+      for (const tier of Object.keys(HIGHLIGHT_NAMES) as HighlightTier[]) {
+        CSS.highlights.set(HIGHLIGHT_NAMES[tier], new Highlight(...ranges[tier]));
+      }
+      console.log('[pv] threshold', threshold, 'marks', marks.size, 'ranges', ranges);
     }
 
-    console.log('[pv] threshold', threshold, 'marks', marks.size, 'ranges', ranges.length);
-    CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
+    paintHighlights();
+
+    // ponytail: 先用 300ms 防抖後全文補掃；大型即時頁面真的卡頓時再升級成分區 IntersectionObserver。
+    let scanTimer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new MutationObserver(() => {
+      clearTimeout(scanTimer);
+      scanTimer = setTimeout(paintHighlights, 300);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    controller.signal.addEventListener('abort', () => {
+      observer.disconnect();
+      clearTimeout(scanTimer);
+    }, { once: true });
 
     // 沒有批次預取了。查詞改成單字一次完整輸出,一頁 30 個字先打 30 通
     // 每通幾百 token 的請求,絕大多數還用不到。改成按 A 才查。
@@ -98,7 +126,7 @@ export default defineContentScript({
         word: found.span.text,
         lemma: decision.lemma,
         rect: range.getBoundingClientRect(),
-        sentence: sentenceAround(found.node),
+        sentence: sentenceAround(found.node, found.span.start),
       };
     }
 
@@ -140,9 +168,13 @@ export default defineContentScript({
         showCard({ title: hover.lemma, body: '查詢中…', rect: hover.rect, hint: '', marked });
 
         const seq = ++explainSeq;
-        const result = await browser.runtime.sendMessage({
+        const result = await streamAi({
           type: 'lookup', word: hover.lemma, sentence: hover.sentence,
-        }) as ExplainResult | undefined;
+        }, (body) => {
+          if (seq === explainSeq) showCard({
+            title: hover.lemma, body, rect: hover.rect, hint, marked,
+          });
+        });
         if (seq !== explainSeq) return;
 
         if (result?.ok) defs.set(hover.lemma, result.text);
@@ -158,15 +190,15 @@ export default defineContentScript({
       }
 
       if (e.key === 's' || e.key === 'S' || e.key === 'd' || e.key === 'D') {
-        const node = textNodeAtPoint(pointerX, pointerY);
-        if (!node) return;
+        const pos = textPositionAtPoint(pointerX, pointerY);
+        if (!pos) return;
         e.preventDefault();
 
-        const sentence = sentenceAround(node);
+        const sentence = sentenceAround(pos.node, pos.offset);
         if (!sentence) return;
 
         const range = document.createRange();
-        range.selectNodeContents(node);
+        range.selectNodeContents(pos.node);
         const rect = range.getBoundingClientRect();
 
         const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
@@ -178,9 +210,11 @@ export default defineContentScript({
         showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉' });
 
         const seq = ++explainSeq;
-        const result = await browser.runtime.sendMessage({
+        const result = await streamAi({
           type: 'explain', kind, sentence,
-        }) as ExplainResult;
+        }, (body) => {
+          if (seq === explainSeq) showCard({ title, body, rect, hint: 'Esc 關閉' });
+        });
         if (seq !== explainSeq) return;
 
         showCard({
@@ -212,6 +246,7 @@ export default defineContentScript({
         } else {
           marks.delete(hover.lemma);
         }
+        paintHighlights();
 
         showCard({
           title: hover.lemma,
@@ -240,10 +275,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
     || el.isContentEditable;
 }
 
-function injectStyle() {
+function injectStyle(colors: Record<HighlightTier, string>) {
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = `::highlight(${HIGHLIGHT_NAME}) { background-color: #c8c0ff; }`;
+  style.textContent = (Object.keys(HIGHLIGHT_NAMES) as HighlightTier[])
+    .map((tier) => `::highlight(${HIGHLIGHT_NAMES[tier]}) { background-color: ${colors[tier]}; }`)
+    .join('\n');
   document.head.appendChild(style);
 }
 
@@ -252,3 +289,32 @@ async function fetchFreq(): Promise<Record<string, number>> {
   return res.json();
 }
 
+type StreamMsg =
+  | { type: 'lookup'; word: string; sentence: string }
+  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string };
+
+function streamAi(msg: StreamMsg, onText: (text: string) => void): Promise<ExplainResult> {
+  const port = browser.runtime.connect({ name: 'pv-ai-stream' });
+  return new Promise((resolve) => {
+    let text = '';
+    let settled = false;
+    const finish = (result: ExplainResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+      port.disconnect();
+    };
+    port.onMessage.addListener((event) => {
+      if (event.type === 'delta') {
+        text += event.delta;
+        onText(text);
+      } else if (event.type === 'done') {
+        finish(event.result);
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      if (!settled) finish({ ok: false, error: 'AI 串流連線中斷' });
+    });
+    port.postMessage(msg);
+  });
+}

@@ -58,14 +58,27 @@ export function wordAtPoint(
  * S 和 D 針對整句,滑鼠停在空白或標點上時也該有反應。
  */
 export function textNodeAtPoint(x: number, y: number): Text | null {
+  return textPositionAtPoint(x, y)?.node ?? null;
+}
+
+/** S/D 需要文字節點內的位移,才能從多句段落中取出真正所在的句子。 */
+export function textPositionAtPoint(
+  x: number,
+  y: number,
+): { node: Text; offset: number } | null {
   const doc = document as any;
   let node: Node | null = null;
+  let offset = 0;
 
   if (doc.caretPositionFromPoint) {
-    node = doc.caretPositionFromPoint(x, y)?.offsetNode ?? null;
+    const pos = doc.caretPositionFromPoint(x, y);
+    node = pos?.offsetNode ?? null;
+    offset = pos?.offset ?? 0;
   } else if (doc.caretRangeFromPoint) {
-    node = doc.caretRangeFromPoint(x, y)?.startContainer ?? null;
+    const range = doc.caretRangeFromPoint(x, y);
+    node = range?.startContainer ?? null;
+    offset = range?.startOffset ?? 0;
   }
 
-  return node?.nodeType === Node.TEXT_NODE ? (node as Text) : null;
+  return node?.nodeType === Node.TEXT_NODE ? { node: node as Text, offset } : null;
 }

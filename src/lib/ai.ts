@@ -42,6 +42,7 @@ async function chat(
   user: string,
   settings: AiSettings,
   jsonMode: boolean,
+  onDelta?: (delta: string) => void,
 ): Promise<string> {
   const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
@@ -53,7 +54,10 @@ async function chat(
     },
     body: JSON.stringify({
       model: settings.model,
+      // 查詞與翻譯不需要推理鏈；Luna 關掉 reasoning 才符合「快速小模型」用途。
+      ...(settings.model.startsWith('gpt-5.6-') ? { reasoning_effort: 'none' } : {}),
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      ...(onDelta ? { stream: true } : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -65,8 +69,44 @@ async function chat(
     throw new Error(`AI 請求失敗 ${res.status}: ${await res.text()}`);
   }
 
+  if (onDelta) return readChatStream(res, onDelta);
   const data = await res.json();
   return data.choices?.[0]?.message?.content ?? '';
+}
+
+/** 讀取 Chat Completions 的 SSE；瀏覽器原生串流已足夠，不引入 SDK。 */
+export async function readChatStream(
+  res: Response,
+  onDelta: (delta: string) => void,
+): Promise<string> {
+  if (!res.body) throw new Error('AI 回應不支援串流');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let content = '';
+
+  const consume = (line: string) => {
+    if (!line.startsWith('data:')) return;
+    const data = line.slice(5).trim();
+    if (!data || data === '[DONE]') return;
+    const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+    if (typeof delta === 'string' && delta) {
+      content += delta;
+      onDelta(delta);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+    lines.forEach(consume);
+    if (done) break;
+  }
+  if (buffer) consume(buffer);
+  return content.trim();
 }
 
 /**
@@ -79,6 +119,7 @@ async function chat(
 export async function lookupWord(
   item: LookupItem,
   settings: AiSettings,
+  onDelta?: (delta: string) => void,
 ): Promise<string> {
   if (!item.w.trim()) return '';
 
@@ -87,7 +128,7 @@ export async function lookupWord(
     settings.profile,
     settings.templates?.lookup ?? DEFAULT_TEMPLATES.lookup,
   );
-  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false);
+  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false, onDelta);
   return content.trim();
 }
 
@@ -101,6 +142,7 @@ export async function explainSentence(
   kind: 'translate' | 'grammar',
   sentence: string,
   settings: AiSettings,
+  onDelta?: (delta: string) => void,
 ): Promise<string> {
   const trimmed = sentence.trim();
   if (!trimmed) return '';
@@ -111,6 +153,6 @@ export async function explainSentence(
     sentence: trimmed,
   });
 
-  const content = await chat(SYSTEM_RULES[kind], user, settings, false);
+  const content = await chat(SYSTEM_RULES[kind], user, settings, false, onDelta);
   return content.trim();
 }

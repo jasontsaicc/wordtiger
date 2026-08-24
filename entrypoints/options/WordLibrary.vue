@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { renderMarkdown } from '@/src/content/markdown';
 
 interface WordItem {
   word: string;
@@ -14,9 +15,18 @@ interface ContextItem {
   createdAt: number;
 }
 
+interface CachedWord {
+  word: string;
+  payload: string;
+  model?: string;
+  fetchedAt: number;
+}
+
 const words = ref<WordItem[]>([]);
 const contexts = ref<ContextItem[]>([]);
 const selected = ref<string | null>(null);
+const cached = ref<CachedWord | null>(null);
+const translations = ref<Record<number, string>>({});
 const keyword = ref('');
 const statusFilter = ref<'all' | 'unknown' | 'known'>('all');
 
@@ -37,7 +47,23 @@ const filtered = computed(() =>
 
 async function openWord(word: string) {
   selected.value = word;
-  contexts.value = (await browser.runtime.sendMessage({ type: 'getContexts', word })) ?? [];
+  const [savedContexts, answer] = await Promise.all([
+    browser.runtime.sendMessage({ type: 'getContexts', word }),
+    browser.runtime.sendMessage({ type: 'getCachedWord', word }),
+  ]);
+  contexts.value = savedContexts ?? [];
+  cached.value = answer ?? null;
+  translations.value = {};
+}
+
+async function translateContext(context: ContextItem) {
+  translations.value[context.createdAt] = '翻譯中…';
+  const result = await browser.runtime.sendMessage({
+    type: 'explain', kind: 'translate', sentence: context.sentence,
+  });
+  translations.value[context.createdAt] = result?.ok
+    ? result.text
+    : `翻譯失敗：${result?.error ?? '背景程式沒有回應'}`;
 }
 
 async function remove(word: string) {
@@ -70,7 +96,7 @@ async function exportJson() {
 
 <template>
   <section>
-    <h2>我的生詞 ({{ filtered.length }} / {{ words.length }})</h2>
+    <h2>生詞語境 ({{ filtered.length }} / {{ words.length }})</h2>
 
     <div class="toolbar">
       <input v-model="keyword" placeholder="搜尋單字" />
@@ -98,12 +124,23 @@ async function exportJson() {
       </tr>
     </table>
 
-    <div v-if="selected">
-      <h3>{{ selected }} 的語境</h3>
+    <div v-if="selected" class="detail">
+      <h3>{{ selected }}</h3>
+
+      <article v-if="cached" class="dictionary">
+        <small>AI 詞典 · OpenAI / {{ cached.model ?? '未知模型' }} · {{ new Date(cached.fetchedAt).toLocaleString() }}</small>
+        <div v-html="renderMarkdown(cached.payload)" />
+      </article>
+      <p v-else class="note">這個字尚未產生 AI 詞典快取；在網頁上按 A 查詞後會出現在這裡。</p>
+
+      <h3>語境</h3>
       <p v-if="contexts.length === 0" class="note">這個字還沒有語境。</p>
       <blockquote v-for="(c, i) in contexts" :key="i">
-        {{ c.sentence }}
-        <a :href="c.url" target="_blank">{{ c.title }}</a>
+        <p>{{ c.sentence }}</p>
+        <p v-if="translations[c.createdAt]" class="translation">{{ translations[c.createdAt] }}</p>
+        <small>{{ new Date(c.createdAt).toLocaleString() }}</small>
+        <a :href="c.url" target="_blank" rel="noreferrer">{{ c.title || c.url }}</a>
+        <button v-if="!translations[c.createdAt]" class="translate" @click="translateContext(c)">翻譯語境</button>
       </blockquote>
     </div>
   </section>
@@ -118,4 +155,12 @@ td.word { cursor: pointer; font-weight: 600; }
 .danger { color: #b4451f; }
 .note { opacity: .6; font-size: 13px; }
 blockquote { border-left: 3px solid #c8c0ff; margin: .5rem 0; padding-left: .75rem; }
+.detail { margin-top: 2rem; }
+.dictionary { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+.dictionary :deep(.h) { margin-top: 1rem; color: #6557c5; font-weight: 700; }
+.dictionary :deep(p), .dictionary :deep(ul) { margin: .4rem 0; }
+small { display: block; opacity: .6; }
+blockquote p { margin-bottom: .25rem; }
+.translation { color: #4d4690; }
+.translate { margin-left: .75rem; }
 </style>
