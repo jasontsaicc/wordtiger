@@ -131,10 +131,10 @@ export default defineContentScript({
         }
 
         showCard({
-          word: hover.lemma,
-          definition: defs.get(hover.lemma) ?? '(查不到,檢查 options 頁的 AI 設定)',
+          title: expanded ? hover.lemma : '',
+          body: defs.get(hover.lemma) ?? '(查不到,檢查 options 頁的 AI 設定)',
           rect: hover.rect,
-          expanded,
+          hint: expanded ? 'Space 標記 · F 發音 · Esc 關閉' : '',
           marked: marks.get(hover.lemma) === 'unknown',
         });
         expanded = true;
@@ -163,10 +163,10 @@ export default defineContentScript({
         }
 
         showCard({
-          word: hover.lemma,
-          definition: defs.get(hover.lemma) ?? '',
+          title: hover.lemma,
+          body: defs.get(hover.lemma) ?? '',
           rect: hover.rect,
-          expanded: true,
+          hint: 'Space 取消標記 · F 發音 · Esc 關閉',
           marked: status === 'unknown',
         });
       }

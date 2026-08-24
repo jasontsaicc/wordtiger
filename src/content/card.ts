@@ -1,9 +1,10 @@
 export interface CardOptions {
-  word: string;
-  definition: string;
+  /** 空字串代表不畫標題,漸進揭露的第一層用這個 */
+  title: string;
+  body: string;
   rect: DOMRect;
-  expanded: boolean;
-  marked: boolean;
+  hint?: string;
+  marked?: boolean;
 }
 
 let host: HTMLDivElement | null = null;
@@ -25,9 +26,11 @@ function ensureRoot(): ShadowRoot {
         background: #1f1f22; color: #f0f0f2;
         border-radius: 6px; padding: 8px 10px;
         box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-        max-width: 320px;
+        max-width: 380px;
       }
-      .word { font-weight: 600; margin-bottom: 2px; }
+      .title { font-weight: 600; margin-bottom: 2px; }
+      /* 文法分析是多行的,白空白要保留,太長要能捲 */
+      .body { white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
       .hint { opacity: 0.5; font-size: 12px; margin-top: 6px; }
       .marked { color: #c8c0ff; }
     </style>
@@ -37,15 +40,30 @@ function ensureRoot(): ShadowRoot {
   return root;
 }
 
+/**
+ * 產卡片的 HTML。純函式,不碰 DOM 狀態,所以測得到。
+ * body 來自 AI,一定要跳脫。
+ */
+export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
+  const parts: string[] = [];
+
+  if (opts.title) {
+    const cls = opts.marked ? 'title marked' : 'title';
+    parts.push(`<div class="${cls}">${escapeHtml(opts.title)}</div>`);
+  }
+  parts.push(`<div class="body">${escapeHtml(opts.body)}</div>`);
+  if (opts.hint) {
+    parts.push(`<div class="hint">${escapeHtml(opts.hint)}</div>`);
+  }
+
+  return parts.join('');
+}
+
 export function showCard(opts: CardOptions): void {
   const shadow = ensureRoot();
   const card = shadow.querySelector('.card')!;
 
-  card.innerHTML = opts.expanded
-    ? `<div class="word ${opts.marked ? 'marked' : ''}">${escapeHtml(opts.word)}</div>
-       <div>${escapeHtml(opts.definition)}</div>
-       <div class="hint">Space 標記 · Esc 關閉</div>`
-    : `<div>${escapeHtml(opts.definition)}</div>`;
+  card.innerHTML = renderCardHtml(opts);
 
   host!.style.left = `${opts.rect.left + window.scrollX}px`;
   host!.style.top = `${opts.rect.bottom + window.scrollY + 4}px`;
