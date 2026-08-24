@@ -8,7 +8,9 @@
     "build": "wxt build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "prebuild": "tsx scripts/build-freq.ts",
+    "predev": "tsx scripts/build-freq.ts"
   },
   "keywords": [],
   "author": "",
