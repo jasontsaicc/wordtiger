@@ -11,7 +11,8 @@
     "postinstall": "wxt prepare",
     "prebuild": "tsx scripts/build-freq.ts",
     "predev": "tsx scripts/build-freq.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "zip": "wxt zip"
   },
   "keywords": [],
   "author": "",

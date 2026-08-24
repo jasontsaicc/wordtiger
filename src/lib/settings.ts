@@ -34,3 +34,16 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   const current = await loadSettings();
   await browser.storage.local.set({ [KEY]: { ...current, ...patch } });
 }
+
+/**
+ * 把使用者填的 base URL 轉成 chrome.permissions 要的 origin pattern。
+ * MV3 的 service worker 對外 fetch 一樣受 CORS 管,除非持有該網域的 host permission。
+ * 網域是使用者自己填的,不可能寫進 manifest,只能執行時動態要。
+ */
+export function originPattern(baseUrl: string): string | null {
+  try {
+    return `${new URL(baseUrl).origin}/*`;
+  } catch {
+    return null;
+  }
+}

@@ -4,6 +4,7 @@ import vue from '@vitejs/plugin-vue';
 export default defineConfig({
   manifest: {
     name: '個人詞庫',
+    description: '英文閱讀生詞高亮與 AI 查詞',
     permissions: ['activeTab', 'scripting', 'storage'],
     host_permissions: [],
     optional_host_permissions: ['<all_urls>'],
