@@ -181,3 +181,57 @@ describe('explain', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('詞庫管理', () => {
+  it('deleteWord 是軟刪除,列還在但不出現在 listWords', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({ type: 'deleteWord', word: 'deploy' });
+
+    expect((await db.words.get('deploy'))!.deletedAt).toBeGreaterThan(0);
+    expect(await handleMessage({ type: 'listWords' })).toHaveLength(0);
+  });
+
+  it('setWordStatus 可以把字改成 known', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({ type: 'setWordStatus', word: 'deploy', status: 'known' });
+
+    const rows = await handleMessage({ type: 'listWords' }) as any[];
+    expect(rows[0].status).toBe('known');
+  });
+
+  it('setWordStatus 對沒標記過的字也能用,直接建一列', async () => {
+    await handleMessage({ type: 'setWordStatus', word: 'kubernetes', status: 'known' });
+    expect((await db.words.get('kubernetes'))!.status).toBe('known');
+  });
+
+  it('setWordStatus 會把軟刪除的列救回來', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({ type: 'deleteWord', word: 'deploy' });
+    await handleMessage({ type: 'setWordStatus', word: 'deploy', status: 'known' });
+
+    expect((await db.words.get('deploy'))!.deletedAt).toBe(null);
+  });
+
+  it('exportData 帶出未刪除的字與語境', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({
+      type: 'saveContext',
+      word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'https://example.com', title: 'Example',
+    });
+
+    const bundle = await handleMessage({ type: 'exportData' }) as any;
+    expect(bundle.words).toHaveLength(1);
+    expect(bundle.contexts).toHaveLength(1);
+    expect(bundle.exportedAt).toBeGreaterThan(0);
+  });
+
+  it('exportData 不帶出已軟刪除的資料', async () => {
+    await markWord('deploy', 'unknown');
+    await handleMessage({ type: 'deleteWord', word: 'deploy' });
+
+    const bundle = await handleMessage({ type: 'exportData' }) as any;
+    expect(bundle.words).toHaveLength(0);
+  });
+});

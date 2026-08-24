@@ -1,7 +1,13 @@
-import { loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached, getSentence, putSentence } from './db';
+import { db, loadMarks, markWord, unmarkWord, addContext, listContexts, getCached, putCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
 import { lookupBatch, explainSentence, type LookupItem } from './ai';
 import { loadSettings } from './settings';
 import type { WordStatus } from './decide';
+
+export interface ExportBundle {
+  exportedAt: number;
+  words: WordRow[];
+  contexts: ContextRow[];
+}
 
 export type ExplainResult =
   | { ok: true; text: string }
@@ -15,7 +21,10 @@ export type Msg =
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
   | { type: 'getContexts'; word: string }
-  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string };
+  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string }
+  | { type: 'deleteWord'; word: string }
+  | { type: 'setWordStatus'; word: string; status: WordStatus }
+  | { type: 'exportData' };
 
 /**
  * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
@@ -105,5 +114,22 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
 
     case 'getContexts':
       return listContexts(msg.word);
+
+    case 'deleteWord':
+      await unmarkWord(msg.word);
+      return null;
+
+    // markWord 會把 deletedAt 寫回 null,所以這個 case 同時是「救回誤刪的字」
+    case 'setWordStatus':
+      await markWord(msg.word, msg.status);
+      return null;
+
+    case 'exportData': {
+      const [words, contexts] = await Promise.all([
+        db.words.filter((r) => r.deletedAt === null).toArray(),
+        db.contexts.filter((r) => r.deletedAt === null).toArray(),
+      ]);
+      return { exportedAt: Date.now(), words, contexts } satisfies ExportBundle;
+    }
   }
 }
