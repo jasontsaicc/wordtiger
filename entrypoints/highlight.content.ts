@@ -3,6 +3,7 @@ import { shouldHighlight, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textNodeAtPoint } from '@/src/content/locate';
 import type { ExplainResult } from '@/src/lib/messages';
 import { showCard, hideCard } from '@/src/content/card';
+import { speak } from '@/src/content/speak';
 
 const HIGHLIGHT_NAME = 'pv-unknown';
 const STYLE_ID = 'pv-highlight-style';
@@ -114,6 +115,15 @@ export default defineContentScript({
         hideCard();
         expanded = false;
         explainSeq++;
+        return;
+      }
+
+      if (e.key === 'f' || e.key === 'F') {
+        // 卡片開著就念卡片上那個字,不然念滑鼠底下的字
+        const word = (expanded && current) ? current.lemma : hoveredWord()?.word;
+        if (!word) return;
+        e.preventDefault();
+        speak(word);
         return;
       }
 
