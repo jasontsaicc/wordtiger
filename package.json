@@ -1,0 +1,38 @@
+{
+  "name": "vocab-ext",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "wxt prepare"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.23.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@11.23.0",
+  "type": "module",
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "jsdom": "^30.0.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "vue": "^3.5.41",
+    "wxt": "^0.21.4"
+  },
+  "dependencies": {
+    "dexie": "^4.4.5",
+    "subtlex-word-frequencies": "^2.0.0"
+  }
+}

@@ -1,0 +1,4 @@
+# pnpm 預設不跑 pre/post script,Task 2 的 prebuild 需要它
+enablePrePostScripts: true
+allowBuilds:
+  esbuild: true
