@@ -6,10 +6,18 @@ import PromptEditor from './PromptEditor.vue';
 
 const settings = ref<Settings | null>(null);
 const granted = ref(false);
+const loadError = ref('');
 
 onMounted(async () => {
-  settings.value = await loadSettings();
-  await refreshGrant();
+  // 沒有這個 try 的話,載入失敗時 settings 停在 null,下面的 v-if 什麼都不畫,
+  // 頁面就是一片白,而且 console 乾乾淨淨。白畫面要能說出自己為什麼白。
+  try {
+    settings.value = await loadSettings();
+    await refreshGrant();
+  } catch (err) {
+    loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error('[pv] options 載入失敗', err);
+  }
 });
 
 async function persist() {
@@ -37,7 +45,13 @@ async function grantHost() {
 </script>
 
 <template>
-  <main v-if="settings" class="wrap">
+  <main v-if="loadError" class="wrap">
+    <h1>個人詞庫</h1>
+    <p class="warn">設定載入失敗:{{ loadError }}</p>
+    <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
+  </main>
+
+  <main v-else-if="settings" class="wrap">
     <h1>個人詞庫</h1>
 
     <section>

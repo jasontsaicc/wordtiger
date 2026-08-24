@@ -23,7 +23,9 @@ const statusFilter = ref<'all' | 'unknown' | 'known'>('all');
 onMounted(reload);
 
 async function reload() {
-  words.value = await browser.runtime.sendMessage({ type: 'listWords' });
+  // sendMessage 在 background 出錯時會拿到 undefined。直接指派進去的話,
+  // filtered 這個 computed 會在 render 中途炸掉,整個元件變空白。
+  words.value = (await browser.runtime.sendMessage({ type: 'listWords' })) ?? [];
 }
 
 const filtered = computed(() =>
@@ -35,7 +37,7 @@ const filtered = computed(() =>
 
 async function openWord(word: string) {
   selected.value = word;
-  contexts.value = await browser.runtime.sendMessage({ type: 'getContexts', word });
+  contexts.value = (await browser.runtime.sendMessage({ type: 'getContexts', word })) ?? [];
 }
 
 async function remove(word: string) {
