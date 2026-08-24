@@ -5,9 +5,6 @@ import {
   type Templates,
 } from './prompt';
 
-/** 一次批次最多送幾個字。超過這個數量,回應的 JSON 容易被模型截斷 */
-const MAX_BATCH = 30;
-
 export interface AiSettings {
   baseUrl: string;
   apiKey: string;
@@ -25,43 +22,15 @@ export interface LookupItem {
 }
 
 export function buildLookupPrompt(
-  items: LookupItem[],
+  item: LookupItem,
   profile: string,
   template: string = DEFAULT_TEMPLATES.lookup,
 ): string {
-  const list = items
-    .slice(0, MAX_BATCH)
-    .map((it) => `${it.w} | ${it.s}`)
-    .join('\n');
-
-  return renderTemplate(template, { profile: profile.trim(), list });
-}
-
-/**
- * 從模型回應裡挖出 JSON。
- *
- * 相容端點對 response_format 的支援程度不一,模型也常自作主張包一層
- * code fence 或加開場白。這裡取第一個 { 到最後一個 } 之間的內容,
- * 解析失敗就回空 Map,讓呼叫端退化成「這批沒查到」而不是整個功能爆炸。
- */
-export function parseLookupResponse(raw: string): Map<string, string> {
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end <= start) return new Map();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return new Map();
-  }
-  if (typeof parsed !== 'object' || parsed === null) return new Map();
-
-  const out = new Map<string, string>();
-  for (const [k, v] of Object.entries(parsed)) {
-    if (typeof v === 'string') out.set(k, v);
-  }
-  return out;
+  return renderTemplate(template, {
+    profile: profile.trim(),
+    word: item.w,
+    sentence: item.s.trim(),
+  });
 }
 
 /**
@@ -100,19 +69,26 @@ async function chat(
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-export async function lookupBatch(
-  items: LookupItem[],
+/**
+ * 查一個字,回 Markdown。
+ *
+ * 以前是一次送 30 個字、靠 JSON 把結果拆回各個單字。改成單字之後 JSON 就沒必要了:
+ * 只有一筆結果,不需要結構化,也就沒有回應被截斷導致整批解析失敗的風險。
+ * 少開一個 response_format,相容端點的支援度也更好。
+ */
+export async function lookupWord(
+  item: LookupItem,
   settings: AiSettings,
-): Promise<Map<string, string>> {
-  if (items.length === 0) return new Map();
+): Promise<string> {
+  if (!item.w.trim()) return '';
 
   const prompt = buildLookupPrompt(
-    items,
+    item,
     settings.profile,
     settings.templates?.lookup ?? DEFAULT_TEMPLATES.lookup,
   );
-  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, true);
-  return parseLookupResponse(content);
+  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false);
+  return content.trim();
 }
 
 /**

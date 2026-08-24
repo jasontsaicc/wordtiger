@@ -1,6 +1,9 @@
+import { renderMarkdown, escapeHtml } from './markdown';
+
 export interface CardOptions {
-  /** 空字串代表不畫標題,漸進揭露的第一層用這個 */
+  /** 空字串代表不畫標題 */
   title: string;
+  /** 當成 Markdown 渲染。內容來自 AI,渲染器負責跳脫 */
   body: string;
   rect: DOMRect;
   hint?: string;
@@ -29,8 +32,22 @@ function ensureRoot(): ShadowRoot {
         max-width: 380px;
       }
       .title { font-weight: 600; margin-bottom: 2px; }
-      /* 文法分析是多行的,白空白要保留,太長要能捲 */
-      .body { white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
+      /* 查詞是整份 Markdown,會很長,一定要能捲 */
+      .body { max-height: 60vh; overflow-y: auto; }
+      /* 以下對應 renderMarkdown 產出的那幾個標籤 */
+      .body p { margin: 0 0 6px; }
+      .body ul { margin: 0 0 6px; padding-left: 18px; }
+      .body li { margin: 1px 0; }
+      .body strong { color: #fff; }
+      .body code {
+        background: #333338; border-radius: 3px;
+        padding: 0 3px; font-family: ui-monospace, monospace; font-size: 13px;
+      }
+      .body .h {
+        font-weight: 600; color: #c8c0ff;
+        margin: 10px 0 3px; font-size: 13px;
+      }
+      .body .h:first-child { margin-top: 0; }
       .hint { opacity: 0.5; font-size: 12px; margin-top: 6px; }
       .marked { color: #c8c0ff; }
     </style>
@@ -51,7 +68,7 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
     const cls = opts.marked ? 'title marked' : 'title';
     parts.push(`<div class="${cls}">${escapeHtml(opts.title)}</div>`);
   }
-  parts.push(`<div class="body">${escapeHtml(opts.body)}</div>`);
+  parts.push(`<div class="body">${renderMarkdown(opts.body)}</div>`);
   if (opts.hint) {
     parts.push(`<div class="hint">${escapeHtml(opts.hint)}</div>`);
   }
@@ -72,10 +89,4 @@ export function showCard(opts: CardOptions): void {
 
 export function hideCard(): void {
   if (host) host.style.display = 'none';
-}
-
-function escapeHtml(s: string): string {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
 }

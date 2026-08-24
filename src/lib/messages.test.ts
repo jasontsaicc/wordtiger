@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { handleMessage } from './messages';
+import { handleMessage, type ExplainResult } from './messages';
 import { db, markWord } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
@@ -40,51 +40,53 @@ describe('handleMessage', () => {
   });
 
   it('lookup 命中快取時不呼叫 AI', async () => {
-    const items = [{ w: 'deploy', s: 'We deploy every Friday to production.' }];
-    const spy = vi
-      .spyOn(ai, 'lookupBatch')
-      .mockResolvedValue(new Map([['deploy', '部署']]));
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
 
-    await handleMessage({ type: 'lookup', items });
+    await handleMessage({ type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' });
     expect(spy).toHaveBeenCalledOnce();
     spy.mockClear();
 
     // 第一次已寫入快取,第二次應該完全不打 AI
-    const got = (await handleMessage({ type: 'lookup', items })) as Array<[string, string]>;
+    const got = await handleMessage({
+      type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.',
+    }) as ExplainResult;
     expect(spy).not.toHaveBeenCalled();
-    expect(new Map(got).get('deploy')).toBe('部署');
+    expect(got.ok && got.text).toContain('部署');
   });
 
-  it('lookup 只把未快取的字送給 AI', async () => {
-    const spy = vi.spyOn(ai, 'lookupBatch').mockResolvedValue(
-      new Map([['staging', '預備環境']]),
-    );
-    await db.lookupCache.put({ word: 'deploy', payload: '部署', fetchedAt: Date.now() });
-
-    const got = await handleMessage({
-      type: 'lookup',
-      items: [
-        { w: 'deploy', s: 'x' },
-        { w: 'staging', s: 'y' },
-      ],
-    }) as Array<[string, string]>;
-
-    expect(spy.mock.calls[0]![0]).toEqual([{ w: 'staging', s: 'y' }]);
-    expect(new Map(got).get('deploy')).toBe('部署');
-    expect(new Map(got).get('staging')).toBe('預備環境');
+  it('lookup 把出處句子一起送給 AI 做消歧義', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('內容');
+    await handleMessage({ type: 'lookup', word: 'scale', sentence: 'We scale the deployment.' });
+    expect(spy.mock.calls[0]![0]).toEqual({ w: 'scale', s: 'We scale the deployment.' });
   });
 
-  it('AI 失敗時仍回傳快取命中的部分,不整批失敗', async () => {
-    vi.spyOn(ai, 'lookupBatch').mockRejectedValue(new Error('AI 請求失敗 401'));
-    await db.lookupCache.put({ word: 'deploy', payload: '部署', fetchedAt: Date.now() });
+  it('AI 失敗時回錯誤信封,而且不寫進快取', async () => {
+    vi.spyOn(ai, 'lookupWord').mockRejectedValue(new Error('AI 請求失敗 401'));
 
     const got = await handleMessage({
-      type: 'lookup',
-      items: [{ w: 'deploy', s: 'x' }, { w: 'staging', s: 'y' }],
-    }) as Array<[string, string]>;
+      type: 'lookup', word: 'staging', sentence: 'x',
+    }) as ExplainResult;
 
-    expect(new Map(got).get('deploy')).toBe('部署');
-    expect(new Map(got).has('staging')).toBe(false);
+    expect(got.ok).toBe(false);
+    expect(!got.ok && got.error).toContain('401');
+    // 一次網路抖動不該被記住,不然之後永遠拿到錯誤結果
+    expect(await db.lookupCache.get('staging')).toBeUndefined();
+  });
+
+  it('沒設定 AI 時回可讀的錯誤,不是空白卡片', async () => {
+    vi.spyOn(settings, 'loadSettings').mockResolvedValue({
+      baseUrl: '', apiKey: '', model: '', profile: '',
+      threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
+    });
+    const spy = vi.spyOn(ai, 'lookupWord');
+
+    const got = await handleMessage({
+      type: 'lookup', word: 'deploy', sentence: 'x',
+    }) as ExplainResult;
+
+    expect(got.ok).toBe(false);
+    expect(!got.ok && got.error).toContain('options');
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('saveContext 寫入語境', async () => {

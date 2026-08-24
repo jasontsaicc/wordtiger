@@ -34,8 +34,14 @@ describe('renderCardHtml', () => {
     expect(html).not.toContain('<b>');
   });
 
-  it('保留換行字元,文法分析是多行的', () => {
+  it('多行內容換行成 br,文法分析是多行的', () => {
     const html = renderCardHtml({ title: '', body: '・第一點\n・第二點' });
-    expect(html).toContain('\n');
+    expect(html).toContain('・第一點<br>・第二點');
+  });
+
+  it('body 走 Markdown 渲染,查詞的整份輸出靠這個', () => {
+    const html = renderCardHtml({ title: 'deploy', body: '## 詞性與釋義\n- **部署**' });
+    expect(html).toContain('<div class="h">詞性與釋義</div>');
+    expect(html).toContain('<strong>部署</strong>');
   });
 });

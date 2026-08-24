@@ -35,9 +35,11 @@ describe('DEFAULT_TEMPLATES', () => {
     expect(DEFAULT_TEMPLATES.grammar.length).toBeGreaterThan(0);
   });
 
-  it('查詞 template 必須有 profile 和 list 兩個 placeholder', () => {
+  it('查詞 template 必須有 profile、word、sentence 三個 placeholder', () => {
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{profile}}');
-    expect(DEFAULT_TEMPLATES.lookup).toContain('{{list}}');
+    expect(DEFAULT_TEMPLATES.lookup).toContain('{{word}}');
+    // 出處句子是一詞多義的消歧義依據,少了它 scale 在 K8s 和音樂文章裡會查到同一個意思
+    expect(DEFAULT_TEMPLATES.lookup).toContain('{{sentence}}');
   });
 
   it('翻譯和文法 template 必須有 profile 和 sentence 兩個 placeholder', () => {
@@ -53,7 +55,11 @@ describe('SYSTEM_RULES', () => {
     expect(Object.keys(SYSTEM_RULES).sort()).toEqual(['grammar', 'lookup', 'translate']);
   });
 
-  it('查詞的系統層規則要求只輸出 JSON', () => {
-    expect(SYSTEM_RULES.lookup).toContain('JSON');
+  it('查詞的系統層只鎖輸出契約,不鎖內容', () => {
+    // 這一層存在的理由是保證卡片渲染得出來。內容要求屬於使用者層,可以整段改寫。
+    expect(SYSTEM_RULES.lookup).toContain('```');
+    expect(SYSTEM_RULES.lookup).toContain('繁體中文');
+    // 不該再有 JSON 的字眼,批次查詞已經拿掉了
+    expect(SYSTEM_RULES.lookup).not.toContain('JSON');
   });
 });

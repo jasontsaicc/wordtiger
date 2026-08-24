@@ -21,6 +21,8 @@ export default defineContentScript({
   cssInjectionMode: 'manual',
 
   async main() {
+    console.log('[pv] content script in', location.href, 'CSS.highlights:', !!CSS.highlights);
+
     // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
     // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
     if (window.__pvAbort) {
@@ -44,8 +46,6 @@ export default defineContentScript({
     ]);
 
     const ranges: Range[] = [];
-    const lookupItems: Array<{ w: string; s: string }> = [];
-    const seen = new Set<string>();
 
     for (const hit of collectTokens(document.body)) {
       const decision = shouldHighlight(hit.text, {
@@ -60,23 +60,17 @@ export default defineContentScript({
       range.setStart(hit.node, hit.start);
       range.setEnd(hit.node, hit.end);
       ranges.push(range);
-
-      if (!seen.has(decision.lemma)) {
-        seen.add(decision.lemma);
-        lookupItems.push({ w: decision.lemma, s: sentenceAround(hit.node) });
-      }
     }
 
+    console.log('[pv] threshold', threshold, 'marks', marks.size, 'ranges', ranges.length);
     CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
 
-    // 批次預取:掃描一完成就把整頁生詞打包送出,之後按 A 是讀本地快取
-    void browser.runtime.sendMessage({ type: 'lookup', items: lookupItems.slice(0, 30) });
-
+    // 沒有批次預取了。查詞改成單字一次完整輸出,一頁 30 個字先打 30 通
+    // 每通幾百 token 的請求,絕大多數還用不到。改成按 A 才查。
     const defs = new Map<string, string>();
     let pointerX = 0;
     let pointerY = 0;
     let current: Hover | null = null;
-    let expanded = false;
     // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
     // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
     let explainSeq = 0;
@@ -113,14 +107,14 @@ export default defineContentScript({
 
       if (e.key === 'Escape') {
         hideCard();
-        expanded = false;
+        current = null;
         explainSeq++;
         return;
       }
 
       if (e.key === 'f' || e.key === 'F') {
         // 卡片開著就念卡片上那個字,不然念滑鼠底下的字
-        const word = (expanded && current) ? current.lemma : hoveredWord()?.word;
+        const word = current ? current.lemma : hoveredWord()?.word;
         if (!word) return;
         e.preventDefault();
         speak(word);
@@ -131,28 +125,35 @@ export default defineContentScript({
         const hover = hoveredWord();
         if (!hover) return;
         e.preventDefault();
-
-        // 換到別的字時要收掉展開狀態,不然在 A 字展開後移到 B 字按一次 A
-        // 會直接跳到完整卡片,漸進揭露就失效了
-        if (current?.lemma !== hover.lemma) expanded = false;
         current = hover;
 
-        if (!defs.has(hover.lemma)) {
-          const entries = await browser.runtime.sendMessage({
-            type: 'lookup',
-            items: [{ w: hover.lemma, s: hover.sentence }],
-          }) as Array<[string, string]>;
-          for (const [word, def] of entries) defs.set(word, def);
+        const hint = 'Space 標記 · F 發音 · Esc 關閉';
+        const marked = marks.get(hover.lemma) === 'unknown';
+        const cached = defs.get(hover.lemma);
+
+        if (cached !== undefined) {
+          showCard({ title: hover.lemma, body: cached, rect: hover.rect, hint, marked });
+          return;
         }
 
+        // 完整查詞要好幾秒,沒有回饋會讓人以為按鍵沒進去
+        showCard({ title: hover.lemma, body: '查詢中…', rect: hover.rect, hint: '', marked });
+
+        const seq = ++explainSeq;
+        const result = await browser.runtime.sendMessage({
+          type: 'lookup', word: hover.lemma, sentence: hover.sentence,
+        }) as ExplainResult | undefined;
+        if (seq !== explainSeq) return;
+
+        if (result?.ok) defs.set(hover.lemma, result.text);
+
         showCard({
-          title: expanded ? hover.lemma : '',
-          body: defs.get(hover.lemma) ?? '(查不到,檢查 options 頁的 AI 設定)',
+          title: hover.lemma,
+          body: result?.ok ? result.text : `查詢失敗:${result?.error ?? '背景程式沒有回應'}`,
           rect: hover.rect,
-          hint: expanded ? 'Space 標記 · F 發音 · Esc 關閉' : '',
-          marked: marks.get(hover.lemma) === 'unknown',
+          hint,
+          marked,
         });
-        expanded = true;
         return;
       }
 
@@ -170,6 +171,8 @@ export default defineContentScript({
 
         const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
         const title = kind === 'translate' ? '整句翻譯' : '文法分析';
+        // 卡片換成整句的內容了,Space 不該再標記剛才那個單字
+        current = null;
 
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
         showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉' });
@@ -190,7 +193,7 @@ export default defineContentScript({
       }
 
       // Space 標記的是卡片上那個字,不是滑鼠現在指到的字
-      if (e.key === ' ' && current && expanded) {
+      if (e.key === ' ' && current) {
         e.preventDefault();
         const hover = current;
         const status = await browser.runtime.sendMessage({
