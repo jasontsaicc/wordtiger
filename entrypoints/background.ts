@@ -25,7 +25,7 @@ export default defineBackground(() => {
     // Alt+U 這個手勢本身就授予 activeTab,所以這裡不需要 host_permissions
     await browser.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      files: ['content-scripts/highlight.js'],
+      files: ['/content-scripts/highlight.js'],
     });
   });
 });

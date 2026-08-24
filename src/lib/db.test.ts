@@ -51,7 +51,7 @@ describe('addContext / listContexts', () => {
     });
     const rows = await listContexts('deploy');
     expect(rows).toHaveLength(1);
-    expect(rows[0].sentence).toContain('production');
+    expect(rows[0]!.sentence).toContain('production');
   });
 
   it('句子短於 26 字元不存', async () => {
@@ -97,7 +97,7 @@ describe('addContext / listContexts', () => {
       sentence: 'We deploy to production every single Friday.',
       url: 'u', title: 't',
     });
-    const row = (await listContexts('deploy'))[0];
+    const row = (await listContexts('deploy'))[0]!;
     await db.contexts.update(row.id, { deletedAt: Date.now() });
     expect(await listContexts('deploy')).toHaveLength(0);
   });

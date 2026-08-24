@@ -66,7 +66,7 @@ describe('handleMessage', () => {
       ],
     }) as Array<[string, string]>;
 
-    expect(spy.mock.calls[0][0]).toEqual([{ w: 'staging', s: 'y' }]);
+    expect(spy.mock.calls[0]![0]).toEqual([{ w: 'staging', s: 'y' }]);
     expect(new Map(got).get('deploy')).toBe('部署');
     expect(new Map(got).get('staging')).toBe('預備環境');
   });

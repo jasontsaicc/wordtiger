@@ -74,7 +74,7 @@ describe('lookupBatch', () => {
     const got = await lookupBatch([{ w: 'deploy', s: 'We deploy on Friday.' }], settings);
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://api.example.com/v1/chat/completions');
     expect(init.headers.Authorization).toBe('Bearer sk-test');
     expect(got.get('deploy')).toBe('部署');
@@ -88,7 +88,7 @@ describe('lookupBatch', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await lookupBatch([{ w: 'a', s: 'bbbb' }], { ...settings, baseUrl: 'https://api.example.com/v1/' });
-    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/v1/chat/completions');
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://api.example.com/v1/chat/completions');
   });
 
   it('HTTP 錯誤時丟出帶狀態碼的例外', async () => {
@@ -116,7 +116,7 @@ describe('lookupBatch', () => {
     const items = Array.from({ length: 40 }, (_, i) => ({ w: `w${i}`, s: 'x' }));
     await lookupBatch(items, settings);
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     const prompt = body.messages.at(-1).content;
     expect(prompt).toContain('w29');
     expect(prompt).not.toContain('w30');

@@ -11,8 +11,8 @@ describe('collectTokens', () => {
   it('抓出文字節點裡的英文單字與位移', () => {
     const hits = collectTokens(dom('<p>We deploy today</p>'));
     expect(hits.map((h) => h.text)).toEqual(['We', 'deploy', 'today']);
-    expect(hits[1].start).toBe(3);
-    expect(hits[1].end).toBe(9);
+    expect(hits[1]!.start).toBe(3);
+    expect(hits[1]!.end).toBe(9);
   });
 
   it('跳過 script 與 style', () => {
@@ -50,7 +50,7 @@ describe('collectTokens', () => {
   it('跨越多個文字節點時各自回報自己的 node', () => {
     const hits = collectTokens(dom('<p>alpha <em>beta</em> gamma</p>'));
     expect(hits).toHaveLength(3);
-    expect(hits[1].node.textContent).toBe('beta');
-    expect(hits[1].start).toBe(0);
+    expect(hits[1]!.node.textContent).toBe('beta');
+    expect(hits[1]!.start).toBe(0);
   });
 });

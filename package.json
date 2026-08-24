@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "postinstall": "wxt prepare",
     "prebuild": "tsx scripts/build-freq.ts",
-    "predev": "tsx scripts/build-freq.ts"
+    "predev": "tsx scripts/build-freq.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +26,7 @@
   "packageManager": "pnpm@11.23.0",
   "type": "module",
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@vitejs/plugin-vue": "^6.0.8",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
