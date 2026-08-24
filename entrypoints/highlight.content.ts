@@ -6,20 +6,31 @@ import { showCard, hideCard } from '@/src/content/card';
 const HIGHLIGHT_NAME = 'pv-unknown';
 const STYLE_ID = 'pv-highlight-style';
 
+declare global {
+  interface Window {
+    /** 這次啟用註冊的事件監聽器,關閉時用它一次拔掉 */
+    __pvAbort?: AbortController;
+  }
+}
+
 export default defineContentScript({
   matches: [],
   registration: 'runtime',
   cssInjectionMode: 'manual',
 
   async main() {
-    // 重複按 Alt+U 時關閉,不重複注入
-    if ((window as any).__pvActive) {
+    // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
+    // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
+    if (window.__pvAbort) {
       CSS.highlights.delete(HIGHLIGHT_NAME);
       document.getElementById(STYLE_ID)?.remove();
-      (window as any).__pvActive = false;
+      hideCard();
+      window.__pvAbort.abort();
+      window.__pvAbort = undefined;
       return;
     }
-    (window as any).__pvActive = true;
+    const controller = new AbortController();
+    window.__pvAbort = controller;
 
     injectStyle();
 
@@ -70,7 +81,7 @@ export default defineContentScript({
     document.addEventListener('mousemove', (e) => {
       pointerX = e.clientX;
       pointerY = e.clientY;
-    }, { passive: true });
+    }, { passive: true, signal: controller.signal });
 
     function hoveredWord(): Hover | null {
       const found = wordAtPoint(pointerX, pointerY);
@@ -159,7 +170,7 @@ export default defineContentScript({
           marked: status === 'unknown',
         });
       }
-    });
+    }, { signal: controller.signal });
   },
 });
 
