@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, loadMarks, addContext, listContexts, getCached, putCached } from './db';
+import { db, markWord, unmarkWord, loadMarks, addContext, listContexts, getCached, putCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
   await db.contexts.clear();
   await db.lookupCache.clear();
+  await db.sentenceCache.clear();
 });
 
 describe('markWord / loadMarks', () => {
@@ -109,5 +110,41 @@ describe('lookupCache', () => {
     const got = await getCached(['deploy', 'staging']);
     expect(got.get('deploy')).toBe('部署');
     expect(got.has('staging')).toBe(false);
+  });
+});
+
+describe('sentenceCache', () => {
+  const sentence = 'We deploy to production every Friday.';
+
+  it('存下的結果讀得回來', async () => {
+    await putSentence('translate', sentence, '我們每週五部署到正式環境。');
+    expect(await getSentence('translate', sentence)).toBe('我們每週五部署到正式環境。');
+  });
+
+  it('沒存過的句子回 null', async () => {
+    expect(await getSentence('translate', sentence)).toBe(null);
+  });
+
+  it('同一句在 translate 和 grammar 之下是兩筆,互不覆蓋', async () => {
+    await putSentence('translate', sentence, '譯文');
+    await putSentence('grammar', sentence, '文法');
+    expect(await getSentence('translate', sentence)).toBe('譯文');
+    expect(await getSentence('grammar', sentence)).toBe('文法');
+  });
+
+  it('重複存同一句會覆蓋,並更新 fetchedAt', async () => {
+    await putSentence('translate', sentence, '舊譯文');
+    const first = (await db.sentenceCache.get(sentenceKey('translate', sentence)))!.fetchedAt;
+    await new Promise((r) => setTimeout(r, 2));
+    await putSentence('translate', sentence, '新譯文');
+    const row = (await db.sentenceCache.get(sentenceKey('translate', sentence)))!;
+    expect(row.result).toBe('新譯文');
+    expect(row.fetchedAt).toBeGreaterThanOrEqual(first);
+  });
+
+  it('空白差異視為不同句,不做正規化', async () => {
+    // 這是刻意的。正規化會讓 key 跟原句對不起來,除錯時很難追
+    await putSentence('translate', sentence, '譯文');
+    expect(await getSentence('translate', ` ${sentence}`)).toBe(null);
   });
 });

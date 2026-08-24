@@ -32,6 +32,15 @@ export interface ContextInput {
   title: string;
 }
 
+export interface SentenceRow {
+  /** `${kind}:${sentence}` */
+  id: string;
+  kind: string;
+  sentence: string;
+  result: string;
+  fetchedAt: number;
+}
+
 export interface CacheRow {
   word: string;
   payload: string;
@@ -42,6 +51,7 @@ class VocabDb extends Dexie {
   words!: Table<WordRow, string>;
   contexts!: Table<ContextRow, string>;
   lookupCache!: Table<CacheRow, string>;
+  sentenceCache!: Table<SentenceRow, string>;
 
   constructor() {
     super('vocab');
@@ -49,6 +59,11 @@ class VocabDb extends Dexie {
       words: 'word, updatedAt, deletedAt',
       contexts: 'id, word, updatedAt, deletedAt, [word+createdAt]',
       lookupCache: 'word, fetchedAt',
+    });
+    // Dexie 的每個 version 只宣告跟前一版的差異,沒提到的表原封不動保留。
+    // 已經裝在瀏覽器裡的舊資料庫靠這個 version 升上來,不會被清掉。
+    this.version(2).stores({
+      sentenceCache: 'id, fetchedAt',
     });
   }
 }
@@ -120,4 +135,35 @@ export async function putCached(
 ): Promise<void> {
   const now = Date.now();
   await db.lookupCache.bulkPut(entries.map((e) => ({ ...e, fetchedAt: now })));
+}
+
+/**
+ * 快取鍵直接用原句,不做小寫化或空白正規化。
+ * 正規化能提高命中率,但會讓 key 跟原句對不起來,除錯時要多猜一層。
+ * 同一句在同一篇文章裡本來就是逐字相同,命中率的損失很小。
+ */
+export function sentenceKey(kind: string, sentence: string): string {
+  return `${kind}:${sentence}`;
+}
+
+export async function getSentence(
+  kind: string,
+  sentence: string,
+): Promise<string | null> {
+  const row = await db.sentenceCache.get(sentenceKey(kind, sentence));
+  return row?.result ?? null;
+}
+
+export async function putSentence(
+  kind: string,
+  sentence: string,
+  result: string,
+): Promise<void> {
+  await db.sentenceCache.put({
+    id: sentenceKey(kind, sentence),
+    kind,
+    sentence,
+    result,
+    fetchedAt: Date.now(),
+  });
 }
