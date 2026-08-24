@@ -19,11 +19,10 @@ const NOT_CONFIGURED = '還沒設定 AI,請到 options 頁填 base URL 和 API k
 export type Msg =
   | { type: 'getMarks' }
   | { type: 'getHighlightSettings' }
-  | { type: 'toggleMark'; word: string }
+  | { type: 'toggleMark'; word: string; status?: WordStatus }
   | { type: 'lookup'; word: string; sentence: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
-  | { type: 'getContexts'; word: string }
   | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string }
   | { type: 'deleteWord'; word: string }
   | { type: 'setWordStatus'; word: string; status: WordStatus }
@@ -42,18 +41,24 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return [...(await loadMarks())];
 
     case 'getHighlightSettings': {
-      const { threshold, highlightColors } = await loadSettings();
-      return { threshold, highlightColors };
+      const {
+        threshold, highlightColors, highlightTextColors,
+        highlightUnderlineColors, markConjunctions,
+      } = await loadSettings();
+      return {
+        threshold, highlightColors, highlightTextColors,
+        highlightUnderlineColors, markConjunctions,
+      };
     }
 
     case 'toggleMark': {
       const marks = await loadMarks();
       const current = marks.get(msg.word);
-      if (current === 'unknown') {
+      const next = msg.status ?? 'unknown';
+      if (current === next) {
         await unmarkWord(msg.word);
         return null;
       }
-      const next: WordStatus = 'unknown';
       await markWord(msg.word, next);
       return next;
     }
@@ -113,17 +118,13 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'listWords': {
       const marks = await loadMarks();
       const rows = await Promise.all(
-        [...marks].map(async ([word, status]) => ({
-          word,
-          status,
-          contextCount: (await listContexts(word)).length,
-        })),
+        [...marks].map(async ([word, status]) => {
+          const contexts = await listContexts(word);
+          return { word, status, contexts: contexts.reverse() };
+        }),
       );
-      return rows.sort((a, b) => a.word.localeCompare(b.word));
+      return rows;
     }
-
-    case 'getContexts':
-      return listContexts(msg.word);
 
     case 'deleteWord':
       await deleteWord(msg.word);

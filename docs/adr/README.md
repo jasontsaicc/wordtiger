@@ -10,3 +10,5 @@
 | [0004](0004-lookup-single-word-markdown.md) | 查詞從批次 JSON 改成單字 Markdown | accepted | 2026-08-24 |
 | [0005](0005-toolbar-popup-control-center.md) | 工具列 popup 作為目前網站的控制中心 | accepted | 2026-08-25 |
 | [0006](0006-stream-ai-over-runtime-port.md) | 用 runtime Port 傳送 AI 串流結果 | accepted | 2026-08-25 |
+| [0007](0007-explicit-known-overrides-frequency.md) | 用 known 狀態覆蓋詞頻判定 | accepted | 2026-08-25 |
+| [0008](0008-unbounded-deduplicated-contexts.md) | 語境不設筆數上限並做精確去重 | accepted | 2026-08-25 |

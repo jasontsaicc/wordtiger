@@ -60,7 +60,7 @@ describe('addContext / listContexts', () => {
     expect(await listContexts('deploy')).toHaveLength(0);
   });
 
-  it('同一個字最多留 5 條,超過汰換最舊的', async () => {
+  it('同一個字保留所有不同語境', async () => {
     for (let i = 0; i < 7; i++) {
       await addContext({
         word: 'deploy',
@@ -70,12 +70,13 @@ describe('addContext / listContexts', () => {
       });
     }
     const rows = await listContexts('deploy');
-    expect(rows).toHaveLength(5);
-    expect(rows.some((r) => r.url === 'https://example.com/0')).toBe(false);
-    expect(rows.some((r) => r.url === 'https://example.com/6')).toBe(true);
+    expect(rows).toHaveLength(7);
+    expect(rows.map((r) => r.url)).toEqual(
+      Array.from({ length: 7 }, (_, i) => `https://example.com/${i}`),
+    );
   });
 
-  it('同一毫秒內連續寫入仍照順序汰換', async () => {
+  it('同一毫秒內連續寫入仍維持順序', async () => {
     const stamps: number[] = [];
     for (let i = 0; i < 7; i++) {
       await addContext({
@@ -88,8 +89,18 @@ describe('addContext / listContexts', () => {
     const rows = await listContexts('staging');
     rows.forEach((r) => stamps.push(r.createdAt));
     expect(stamps).toEqual([...stamps].sort((a, b) => a - b));
-    expect(new Set(stamps).size).toBe(5);
-    expect(rows.map((r) => r.url)).toEqual([2, 3, 4, 5, 6].map((i) => `https://example.com/${i}`));
+    expect(new Set(stamps).size).toBe(7);
+  });
+
+  it('同一頁的相同句子不重複保存', async () => {
+    const input = {
+      word: 'deploy',
+      sentence: 'We deploy to production every single Friday.',
+      url: 'https://example.com/a', title: 'Example',
+    };
+    await addContext(input);
+    await addContext(input);
+    expect(await listContexts('deploy')).toHaveLength(1);
   });
 
   it('listContexts 不回傳已軟刪除的列', async () => {

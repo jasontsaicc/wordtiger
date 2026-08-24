@@ -32,8 +32,11 @@ describe('pageOrigin', () => {
 });
 
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { DEFAULT_HIGHLIGHT_COLORS, OPENAI_BASE_URL, loadSettings, saveSettings } from './settings';
-import { DEFAULT_TEMPLATES } from './prompt';
+import {
+  DEFAULT_HIGHLIGHT_COLORS, DEFAULT_HIGHLIGHT_TEXT_COLORS,
+  DEFAULT_HIGHLIGHT_UNDERLINE_COLORS, OPENAI_BASE_URL, loadSettings, saveSettings,
+} from './settings';
+import { DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_TEMPLATES } from './prompt';
 import { beforeEach } from 'vitest';
 
 describe('loadSettings 的 template 合併', () => {
@@ -45,6 +48,9 @@ describe('loadSettings 的 template 合併', () => {
     expect(s.baseUrl).toBe(OPENAI_BASE_URL);
     expect(s.model).toBe('gpt-4o-mini');
     expect(s.highlightColors).toEqual(DEFAULT_HIGHLIGHT_COLORS);
+    expect(s.highlightTextColors).toEqual(DEFAULT_HIGHLIGHT_TEXT_COLORS);
+    expect(s.highlightUnderlineColors).toEqual(DEFAULT_HIGHLIGHT_UNDERLINE_COLORS);
+    expect(s.markConjunctions).toBe(true);
     expect(s.autoOrigins).toEqual([]);
   });
 
@@ -69,6 +75,38 @@ describe('loadSettings 的 template 合併', () => {
       templates: { ...DEFAULT_TEMPLATES, lookup: '舊內容\n13. 不要輸出總結' },
     } });
     expect((await loadSettings()).templates.lookup).toBe(DEFAULT_TEMPLATES.lookup);
+  });
+
+  it('三個未自訂的舊預設都自動升級', async () => {
+    await fakeBrowser.storage.local.set({ settings: {
+      templates: PREVIOUS_DEFAULT_TEMPLATES,
+    } });
+    expect((await loadSettings()).templates).toEqual(DEFAULT_TEMPLATES);
+  });
+});
+
+describe('高亮顏色設定', () => {
+  beforeEach(() => fakeBrowser.reset());
+
+  it('舊版預設背景自動換成新配色，但保留自訂背景', async () => {
+    await fakeBrowser.storage.local.set({ settings: { highlightColors: {
+      saved: '#8fb8ff', learning: '#c8c0ff', advanced: '#ffd38a', rare: '#ff9b9b',
+    } } });
+    expect((await loadSettings()).highlightColors).toEqual(DEFAULT_HIGHLIGHT_COLORS);
+
+    await fakeBrowser.storage.local.set({ settings: { highlightColors: {
+      saved: '#12345678', learning: '#c8c0ff', advanced: '#ffd38a', rare: '#ff9b9b',
+    } } });
+    expect((await loadSettings()).highlightColors.saved).toBe('#12345678');
+  });
+
+  it('拒絕會被插入網頁 style 的非法顏色', async () => {
+    await fakeBrowser.storage.local.set({ settings: {
+      highlightColors: { saved: 'red; } body { display:none', learning: '#112233' },
+    } });
+    const colors = (await loadSettings()).highlightColors;
+    expect(colors.saved).toBe(DEFAULT_HIGHLIGHT_COLORS.saved);
+    expect(colors.learning).toBe('#112233');
   });
 });
 

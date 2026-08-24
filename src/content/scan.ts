@@ -11,6 +11,25 @@ const SKIP_TAGS = new Set([
   'CODE', 'PRE', 'KBD', 'SAMP',
 ]);
 
+// 沿用 personal-vocabulary 的連詞詞表，讓兩個專案的閱讀標記一致。
+const COORDINATING_CONJUNCTIONS = new Set(['and', 'or', 'nor', 'but', 'with']);
+const CLAUSE_CONJUNCTIONS = new Set([
+  'as', 'since', 'because', 'although', 'though', 'that', 'which', 'where', 'what',
+  'who', 'whom', 'whose', 'why', 'when', 'how', 'while',
+]);
+
+export type ConjunctionKind = 'coordinating' | 'clause';
+
+/**
+ * ponytail: 這是字面詞表，不做句法解析；誤標真的影響閱讀時再接 NLP parser。
+ */
+export function conjunctionKind(word: string): ConjunctionKind | null {
+  const normalized = word.toLowerCase();
+  if (COORDINATING_CONJUNCTIONS.has(normalized)) return 'coordinating';
+  if (CLAUSE_CONJUNCTIONS.has(normalized)) return 'clause';
+  return null;
+}
+
 function shouldSkip(node: Text): boolean {
   let el = node.parentElement;
   while (el) {

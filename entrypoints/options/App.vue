@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { loadSettings, saveSettings, originPattern, OPENAI_BASE_URL, OPENAI_MODELS, type Settings } from '@/src/lib/settings';
+import {
+  loadSettings, saveSettings, originPattern, OPENAI_BASE_URL, OPENAI_MODELS,
+  type HighlightColors, type Settings,
+} from '@/src/lib/settings';
 import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
 import CachedAnswers from './CachedAnswers.vue';
@@ -9,6 +12,13 @@ const settings = ref<Settings | null>(null);
 const granted = ref(false);
 const loadError = ref('');
 const tab = ref<'settings' | 'contexts' | 'cache'>('settings');
+const highlightTiers = [
+  { key: 'saved', label: '我收藏的生詞' },
+  { key: 'learning', label: '我的程度之外' },
+  { key: 'advanced', label: '更高等級詞彙' },
+  { key: 'rare', label: '詞頻表之外' },
+] as const;
+type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
 onMounted(async () => {
   // 沒有這個 try 的話,載入失敗時 settings 停在 null,下面的 v-if 什麼都不畫,
@@ -25,6 +35,18 @@ onMounted(async () => {
 async function persist() {
   if (settings.value) await saveSettings(settings.value);
   await refreshGrant();
+}
+
+function pickerColor(value: string) {
+  return value.slice(0, 7);
+}
+
+function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, event: Event) {
+  if (!settings.value) return;
+  const rgb = (event.target as HTMLInputElement).value;
+  const alpha = settings.value[group][tier].slice(7);
+  settings.value[group][tier] = rgb + alpha;
+  void persist();
 }
 
 async function refreshGrant() {
@@ -53,7 +75,7 @@ async function grantHost() {
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
   </main>
 
-  <main v-else-if="settings" class="wrap">
+  <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' }">
     <h1>個人詞庫</h1>
 
     <nav>
@@ -103,15 +125,26 @@ async function grantHost() {
 
     <section>
       <h2>高亮門檻</h2>
-      <input type="range" min="1000" max="30000" step="500"
+      <input type="range" min="1000" max="30000" step="2000"
         v-model.number="settings.threshold" @change="persist" />
-      <p>高亮詞頻排名 <b>{{ settings.threshold }}</b> 名以外的字。往右拉,亮的字變少。</p>
+      <p>高亮詞頻排名 <b>{{ settings.threshold.toLocaleString() }}</b> 名以外的字。每次調整 2,000 名；往右拉，亮的字變少。</p>
       <div class="colors">
-        <label><input v-model="settings.highlightColors.saved" type="color" @change="persist" /> 我收藏的生詞</label>
-        <label><input v-model="settings.highlightColors.learning" type="color" @change="persist" /> 程度稍上：{{ settings.threshold + 1 }}–{{ Math.floor(settings.threshold * 1.5) }} 名</label>
-        <label><input v-model="settings.highlightColors.advanced" type="color" @change="persist" /> 進階：{{ Math.floor(settings.threshold * 1.5) + 1 }}–{{ Math.floor(settings.threshold * 2.5) }} 名</label>
-        <label><input v-model="settings.highlightColors.rare" type="color" @change="persist" /> 極少見：{{ Math.floor(settings.threshold * 2.5) }} 名外，可暫時不記</label>
+        <div class="color-head"><b>等級</b><b>背景</b><b>字體</b><b>下劃線</b></div>
+        <div v-for="tier in highlightTiers" :key="tier.key" class="color-row">
+          <span>{{ tier.label }}</span>
+          <input :value="pickerColor(settings.highlightColors[tier.key])" type="color"
+            :aria-label="`${tier.label}背景色`" @change="setHighlightColor('highlightColors', tier.key, $event)" />
+          <input :value="pickerColor(settings.highlightTextColors[tier.key])" type="color"
+            :aria-label="`${tier.label}字體色`" @change="setHighlightColor('highlightTextColors', tier.key, $event)" />
+          <input :value="pickerColor(settings.highlightUnderlineColors[tier.key])" type="color"
+            :aria-label="`${tier.label}下劃線色`" @change="setHighlightColor('highlightUnderlineColors', tier.key, $event)" />
+        </div>
       </div>
+      <label class="switch">
+        <input v-model="settings.markConjunctions" type="checkbox" @change="persist" />
+        連詞標記：並列連詞用點線，從句連詞用雙線
+      </label>
+      <p class="note">背景色支援透明度；新配色使用淡色背景、黑字和較深下劃線，讓技術文件更容易掃讀。</p>
     </section>
 
     <section>
@@ -132,6 +165,7 @@ async function grantHost() {
 
 <style scoped>
 .wrap { max-width: 720px; margin: 2rem auto; font: 15px/1.7 system-ui, sans-serif; }
+.wrap.wide { max-width: 1100px; }
 section { margin-bottom: 2.5rem; }
 nav { display: flex; gap: .5rem; margin-bottom: 2rem; border-bottom: 1px solid #ddd; }
 nav button { padding: .65rem 1rem; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer; }
@@ -139,9 +173,13 @@ nav button.active { color: #5b4bc4; border-bottom-color: #7c6ee6; font-weight: 7
 label { display: block; margin-bottom: .75rem; }
 input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .4rem; }
 input[type="range"] { width: 100%; }
-.colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-top: 1rem; }
-.colors label { font-size: 13px; }
-.colors input { display: block; width: 100%; height: 34px; }
+.colors { margin: 1rem 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.color-head, .color-row { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, 72px); align-items: center; gap: .75rem; padding: .55rem .75rem; }
+.color-head { color: #64748b; background: #f8fafc; font-size: 12px; text-align: center; }
+.color-head b:first-child { text-align: left; }
+.color-row + .color-row { border-top: 1px solid #e2e8f0; }
+.color-row input[type="color"] { width: 100%; height: 32px; padding: 0; border: 0; background: none; cursor: pointer; }
+.switch { display: flex; gap: .5rem; align-items: center; }
 .note { opacity: .6; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
 .ok { color: #2b7a3d; font-size: 13px; }

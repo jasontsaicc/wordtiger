@@ -1,4 +1,4 @@
-import { DEFAULT_TEMPLATES, type Templates } from './prompt';
+import { DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_TEMPLATES, type Templates } from './prompt';
 
 export interface Settings {
   baseUrl: string;
@@ -10,6 +10,10 @@ export interface Settings {
   threshold: number;
   /** 手動收藏色，加上相對於使用者程度的三層詞頻色 */
   highlightColors: HighlightColors;
+  highlightTextColors: HighlightColors;
+  highlightUnderlineColors: HighlightColors;
+  /** 用不同底線標出對等連接詞與從屬連接詞 */
+  markConjunctions: boolean;
   /** 重新載入時自動啟用標示的網站 origin pattern */
   autoOrigins: string[];
   /** 永不啟用的網域,公司內網放這裡 */
@@ -34,10 +38,28 @@ export const OPENAI_MODELS = [
 ] as const;
 
 export const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
-  saved: '#8fb8ff',
-  learning: '#c8c0ff',
-  advanced: '#ffd38a',
-  rare: '#ff9b9b',
+  saved: '#FFCDD2B0',
+  learning: '#FFE0B2B0',
+  advanced: '#DAFBFFB0',
+  rare: '#CFD8DCB0',
+};
+
+export const DEFAULT_HIGHLIGHT_TEXT_COLORS: HighlightColors = {
+  saved: '#000000FF',
+  learning: '#000000FF',
+  advanced: '#000000FF',
+  rare: '#000000FF',
+};
+
+export const DEFAULT_HIGHLIGHT_UNDERLINE_COLORS: HighlightColors = {
+  saved: '#FF6474FF',
+  learning: '#FDB852FF',
+  advanced: '#3EA2AEFF',
+  rare: '#065C84FF',
+};
+
+const LEGACY_DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
+  saved: '#8fb8ff', learning: '#c8c0ff', advanced: '#ffd38a', rare: '#ff9b9b',
 };
 
 const DEFAULTS: Settings = {
@@ -47,6 +69,9 @@ const DEFAULTS: Settings = {
   profile: '',
   threshold: 5000,
   highlightColors: DEFAULT_HIGHLIGHT_COLORS,
+  highlightTextColors: DEFAULT_HIGHLIGHT_TEXT_COLORS,
+  highlightUnderlineColors: DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
+  markConjunctions: true,
   autoOrigins: [],
   blockedHosts: ['localhost', '127.0.0.1'],
   templates: DEFAULT_TEMPLATES,
@@ -61,6 +86,9 @@ const KEY = 'settings';
 export async function loadSettings(): Promise<Settings> {
   const got = await browser.storage.local.get(KEY);
   const stored = (got[KEY] ?? {}) as Partial<Settings>;
+  const storedBackgrounds = sameColors(stored.highlightColors, LEGACY_DEFAULT_HIGHLIGHT_COLORS)
+    ? undefined
+    : stored.highlightColors;
   return {
     ...DEFAULTS,
     ...stored,
@@ -73,10 +101,15 @@ export async function loadSettings(): Promise<Settings> {
       ? stored.blockedHosts
       : DEFAULTS.blockedHosts,
     autoOrigins: Array.isArray(stored.autoOrigins) ? stored.autoOrigins : [],
-    highlightColors: {
-      ...DEFAULT_HIGHLIGHT_COLORS,
-      ...(stored.highlightColors ?? {}),
-    },
+    highlightColors: safeColors(storedBackgrounds, DEFAULT_HIGHLIGHT_COLORS),
+    highlightTextColors: safeColors(stored.highlightTextColors, DEFAULT_HIGHLIGHT_TEXT_COLORS),
+    highlightUnderlineColors: safeColors(
+      stored.highlightUnderlineColors,
+      DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
+    ),
+    markConjunctions: typeof stored.markConjunctions === 'boolean'
+      ? stored.markConjunctions
+      : DEFAULTS.markConjunctions,
     // templates 是巢狀物件,展開一層蓋不到裡面。舊版存下來的設定不會有
     // 後來才加的 template,少這一行就會拿到 undefined。
     templates: {
@@ -86,8 +119,33 @@ export async function loadSettings(): Promise<Settings> {
       ...(stored.templates?.lookup?.includes('13. 不要輸出總結')
         ? { lookup: DEFAULT_TEMPLATES.lookup }
         : {}),
+      ...(stored.templates?.lookup === PREVIOUS_DEFAULT_TEMPLATES.lookup
+        ? { lookup: DEFAULT_TEMPLATES.lookup } : {}),
+      ...(stored.templates?.translate === PREVIOUS_DEFAULT_TEMPLATES.translate
+        ? { translate: DEFAULT_TEMPLATES.translate } : {}),
+      ...(stored.templates?.grammar === PREVIOUS_DEFAULT_TEMPLATES.grammar
+        ? { grammar: DEFAULT_TEMPLATES.grammar } : {}),
     },
   };
+}
+
+function safeColors(stored: Partial<HighlightColors> | undefined, fallback: HighlightColors): HighlightColors {
+  const color = (value: unknown, defaultValue: string) =>
+    typeof value === 'string' && /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value)
+      ? value
+      : defaultValue;
+  return {
+    saved: color(stored?.saved, fallback.saved),
+    learning: color(stored?.learning, fallback.learning),
+    advanced: color(stored?.advanced, fallback.advanced),
+    rare: color(stored?.rare, fallback.rare),
+  };
+}
+
+function sameColors(left: Partial<HighlightColors> | undefined, right: HighlightColors): boolean {
+  return !!left && (Object.keys(right) as Array<keyof HighlightColors>)
+    .every((tier) => typeof left[tier] === 'string'
+      && left[tier].toLowerCase() === right[tier].toLowerCase());
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {

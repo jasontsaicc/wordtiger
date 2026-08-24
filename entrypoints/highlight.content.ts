@@ -1,4 +1,4 @@
-import { collectTokens, sentenceAround } from '@/src/content/scan';
+import { collectTokens, conjunctionKind, sentenceAround, type ConjunctionKind } from '@/src/content/scan';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
 import type { ExplainResult } from '@/src/lib/messages';
@@ -10,6 +10,10 @@ const HIGHLIGHT_NAMES: Record<HighlightTier, string> = {
   learning: 'pv-learning',
   advanced: 'pv-advanced',
   rare: 'pv-rare',
+};
+const CONJUNCTION_NAMES: Record<ConjunctionKind, string> = {
+  coordinating: 'pv-conjunction-coordinating',
+  clause: 'pv-conjunction-clause',
 };
 const STYLE_ID = 'pv-highlight-style';
 
@@ -31,7 +35,8 @@ export default defineContentScript({
     // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
     // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
     if (window.__pvAbort) {
-      Object.values(HIGHLIGHT_NAMES).forEach((name) => CSS.highlights.delete(name));
+      [...Object.values(HIGHLIGHT_NAMES), ...Object.values(CONJUNCTION_NAMES)]
+        .forEach((name) => CSS.highlights.delete(name));
       document.getElementById(STYLE_ID)?.remove();
       hideCard();
       window.__pvAbort.abort();
@@ -48,14 +53,23 @@ export default defineContentScript({
       browser.runtime.sendMessage({ type: 'getHighlightSettings' }) as Promise<{
         threshold: number;
         highlightColors: Record<HighlightTier, string>;
+        highlightTextColors: Record<HighlightTier, string>;
+        highlightUnderlineColors: Record<HighlightTier, string>;
+        markConjunctions: boolean;
       }>,
     ]);
-    const { threshold, highlightColors } = highlightSettings;
-    injectStyle(highlightColors);
+    const {
+      threshold, highlightColors, highlightTextColors,
+      highlightUnderlineColors, markConjunctions,
+    } = highlightSettings;
+    injectStyle(highlightColors, highlightTextColors, highlightUnderlineColors);
 
     function paintHighlights() {
       const ranges: Record<HighlightTier, Range[]> = {
         saved: [], learning: [], advanced: [], rare: [],
+      };
+      const conjunctionRanges: Record<ConjunctionKind, Range[]> = {
+        coordinating: [], clause: [],
       };
 
       for (const hit of collectTokens(document.body)) {
@@ -65,16 +79,21 @@ export default defineContentScript({
           threshold,
           isSentenceStart: hit.isSentenceStart,
         });
-        if (!decision.hit) continue;
+        const conjunction = markConjunctions ? conjunctionKind(hit.text) : null;
+        if (!decision.hit && !conjunction) continue;
 
         const range = document.createRange();
         range.setStart(hit.node, hit.start);
         range.setEnd(hit.node, hit.end);
-        ranges[decision.tier!].push(range);
+        if (decision.hit) ranges[decision.tier!].push(range);
+        if (conjunction) conjunctionRanges[conjunction].push(range);
       }
 
       for (const tier of Object.keys(HIGHLIGHT_NAMES) as HighlightTier[]) {
         CSS.highlights.set(HIGHLIGHT_NAMES[tier], new Highlight(...ranges[tier]));
+      }
+      for (const kind of Object.keys(CONJUNCTION_NAMES) as ConjunctionKind[]) {
+        CSS.highlights.set(CONJUNCTION_NAMES[kind], new Highlight(...conjunctionRanges[kind]));
       }
       console.log('[pv] threshold', threshold, 'marks', marks.size, 'ranges', ranges);
     }
@@ -102,6 +121,12 @@ export default defineContentScript({
     // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
     // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
     let explainSeq = 0;
+
+    const wordHint = (lemma: string) => {
+      const space = marks.get(lemma) === 'unknown' ? 'Space 取消收藏' : 'Space 收藏';
+      const known = marks.get(lemma) === 'known' ? 'X 恢復標示' : 'X 已認得';
+      return `${space} · ${known} · F 發音 · Esc 關閉`;
+    };
 
     // mousemove 只記座標。命中測試留到按鍵時才做,滑鼠移動每秒觸發幾十次,
     // 在這裡做 caretPositionFromPoint 加 getBoundingClientRect 會逼出重複的版面計算。
@@ -149,13 +174,37 @@ export default defineContentScript({
         return;
       }
 
+      // 已經認得的字不值得先花一次 AI 查詢；直接指著按 X 就能排除。
+      // 卡片開著時則固定作用在卡片單字，避免滑鼠稍微移動就標錯字。
+      if (e.key === 'x' || e.key === 'X') {
+        const hover = current ?? hoveredWord();
+        if (!hover) return;
+        e.preventDefault();
+        current = hover;
+
+        const status = await browser.runtime.sendMessage({
+          type: 'toggleMark', word: hover.lemma, status: 'known',
+        }) as WordStatus | null;
+        if (status) marks.set(hover.lemma, status);
+        else marks.delete(hover.lemma);
+        paintHighlights();
+
+        showCard({
+          title: hover.lemma,
+          body: status === 'known' ? '已設為認得，不再標示。' : '已恢復由詞頻判定。',
+          rect: hover.rect,
+          hint: wordHint(hover.lemma),
+        });
+        return;
+      }
+
       if (e.key === 'a' || e.key === 'A') {
         const hover = hoveredWord();
         if (!hover) return;
         e.preventDefault();
         current = hover;
 
-        const hint = 'Space 標記 · F 發音 · Esc 關閉';
+        const hint = wordHint(hover.lemma);
         const marked = marks.get(hover.lemma) === 'unknown';
         const cached = defs.get(hover.lemma);
 
@@ -252,7 +301,7 @@ export default defineContentScript({
           title: hover.lemma,
           body: defs.get(hover.lemma) ?? '',
           rect: hover.rect,
-          hint: 'Space 取消標記 · F 發音 · Esc 關閉',
+          hint: wordHint(hover.lemma),
           marked: status === 'unknown',
         });
       }
@@ -275,12 +324,25 @@ function isTypingTarget(target: EventTarget | null): boolean {
     || el.isContentEditable;
 }
 
-function injectStyle(colors: Record<HighlightTier, string>) {
+function injectStyle(
+  backgrounds: Record<HighlightTier, string>,
+  texts: Record<HighlightTier, string>,
+  underlines: Record<HighlightTier, string>,
+) {
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = (Object.keys(HIGHLIGHT_NAMES) as HighlightTier[])
-    .map((tier) => `::highlight(${HIGHLIGHT_NAMES[tier]}) { background-color: ${colors[tier]}; }`)
-    .join('\n');
+  style.textContent = `${(Object.keys(HIGHLIGHT_NAMES) as HighlightTier[])
+    .map((tier) => `::highlight(${HIGHLIGHT_NAMES[tier]}) {
+      background-color: ${backgrounds[tier]}; color: ${texts[tier]};
+      text-decoration: underline solid ${underlines[tier]} 2px; text-underline-offset: 2px;
+    }`)
+    .join('\n')}
+    ::highlight(${CONJUNCTION_NAMES.coordinating}) {
+      text-decoration: underline dotted #334155 2px; text-underline-offset: 3px;
+    }
+    ::highlight(${CONJUNCTION_NAMES.clause}) {
+      text-decoration: underline double #334155 2px; text-underline-offset: 3px;
+    }`;
   document.head.appendChild(style);
 }
 

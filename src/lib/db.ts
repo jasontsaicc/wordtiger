@@ -3,8 +3,6 @@ import type { WordStatus } from './decide';
 
 /** 語境句子的最短長度。太短的句子沒有語境價值 */
 const MIN_SENTENCE_LENGTH = 26;
-/** 同一個字保留幾條語境 */
-const MAX_CONTEXTS_PER_WORD = 5;
 
 export interface WordRow {
   word: string;
@@ -115,6 +113,8 @@ export async function addContext(input: ContextInput): Promise<void> {
   if (input.sentence.length < MIN_SENTENCE_LENGTH) return;
 
   const alive = await listContexts(input.word);
+  // ponytail: 每字線性掃描去重；單人資料真的大到新增變慢時再加 [word+url] 索引。
+  if (alive.some((r) => r.sentence === input.sentence && r.url === input.url)) return;
   // 同一毫秒內連續寫入會讓 createdAt 相同,汰換誰就變成不確定的。往後推一毫秒保證嚴格遞增。
   const now = Math.max(Date.now(), (alive.at(-1)?.createdAt ?? 0) + 1);
   await db.contexts.put({
@@ -124,13 +124,6 @@ export async function addContext(input: ContextInput): Promise<void> {
     updatedAt: now,
     deletedAt: null,
   });
-
-  if (alive.length + 1 > MAX_CONTEXTS_PER_WORD) {
-    const surplus = alive.slice(0, alive.length + 1 - MAX_CONTEXTS_PER_WORD);
-    await Promise.all(
-      surplus.map((r) => db.contexts.update(r.id, { updatedAt: now, deletedAt: now })),
-    );
-  }
 }
 
 /** 由舊到新排序 */

@@ -18,5 +18,6 @@ export default defineConfig({
       },
     },
   },
-  vite: () => ({ plugins: [vue()] }),
+  // Edge 擴充功能頁會把 modulepreload 判成 cross-world mismatch；正式 import 不受影響。
+  vite: () => ({ plugins: [vue()], build: { modulePreload: false } }),
 });

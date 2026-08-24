@@ -48,6 +48,15 @@ describe('DEFAULT_TEMPLATES', () => {
       expect(tpl).toContain('{{sentence}}');
     }
   });
+
+  it('三個預設都以非母語 DevOps 工程師與大型雲端公開文件為目標', () => {
+    for (const tpl of Object.values(DEFAULT_TEMPLATES)) {
+      expect(tpl).toContain('非母語');
+      expect(tpl).toContain('DevOps');
+      expect(tpl).toContain('AWS');
+      expect(tpl).toContain('Google Cloud');
+    }
+  });
 });
 
 describe('SYSTEM_RULES', () => {

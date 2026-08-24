@@ -82,7 +82,7 @@ CSS.highlights.set("pv-unknown", new Highlight(...ranges));
 3. 斷詞用 `Intl.Segmenter`(`granularity: 'word'`)
 4. 詞形還原:內建不規則變化表加後綴規則。不用 Porter stemmer,它會把 `university` 砍成 `univers`
 5. 判定:詞頻排名低於閾值,且不在熟詞集內,就高亮。手動標記的生詞永遠高亮,不受閾值影響
-6. 只處理視野內區塊,用 `IntersectionObserver`。頁面動態變動用 `MutationObserver` 補掃
+6. 首次掃描整個正文；頁面動態變動後用 `MutationObserver` 加 300ms 防抖補掃
 
 ### 詞頻基準線
 
@@ -97,10 +97,12 @@ CSS.highlights.set("pv-unknown", new Highlight(...ranges));
 | 鍵 | 動作 | 前提 |
 | :-- | :--- | :--- |
 | `Alt+U` | 開關高亮模式 | 全域,`chrome.commands` 註冊 |
-| `A` | 第一次:一行中文釋義。第二次:展開完整卡片 | 高亮模式開啟,滑鼠停在字上 |
+| `A` | 查詢單字並顯示完整精簡詞典 | 高亮模式開啟,滑鼠停在字上 |
 | `S` | 翻譯滑鼠所在整句 | 同上 |
 | `D` | 該句文法分析 | 同上 |
+| `F` | 朗讀卡片或滑鼠下的單字 | 同上 |
 | `Space` | 標記或取消標記生詞 | 卡片開啟中 |
+| `X` | 標成已認得或恢復詞頻判定 | 滑鼠停在字上或卡片開啟中 |
 | `Esc` | 關閉卡片 | 卡片開啟中 |
 
 `Alt+U` 之外的鍵只在高亮模式開啟時攔截。焦點位於 `input`、`textarea` 或 `contenteditable` 時一律放行,避免干擾網頁自己的快捷鍵。
@@ -113,9 +115,10 @@ CSS.highlights.set("pv-unknown", new Highlight(...ranges));
 
 卡片本身是一個掛在 `document.body` 底下的節點,用 Shadow DOM 隔離樣式。原版的 content CSS 有 69KB,大部分是在跟各網站的樣式互相覆蓋。Shadow DOM 的 style encapsulation 讓這個檔案可以縮到幾 KB。
 
-### 漸進揭露
+### 單次完整查詞
 
-按 A 先給一行中文釋義,再按一次 A 才展開詞性、例句和發音。閱讀節奏被打斷的程度最小。
+按 A 取得一份精簡 Markdown 詞典，不維護簡短／完整兩套 prompt、快取與卡片狀態。
+出處句子一併送出做語意消歧，結果透過 `runtime.Port` 串流顯示。
 
 ## AI 層
 
@@ -129,31 +132,24 @@ CSS.highlights.set("pv-unknown", new Highlight(...ranges));
 
 所有 AI 呼叫都在 background service worker 發出。content script 的 fetch 受 CORS 管,service worker 在持有對應 host permission 時不受管。
 
-### 批次預取
+### 按需查詞
 
-高亮掃描完成後,把畫面內所有已高亮但尚未進快取的字打包成一次請求,上限 30 個,結果全部寫進 `lookupCache`。之後按 A 是讀本地快取,零延遲。
+高亮本身不呼叫 AI。只有使用者把滑鼠放在單字上按 A 時才查詢，成功結果寫入
+`lookupCache`，再次查同一原形直接讀本地快取。
 
 payload 帶上每個字所在的句子:
 
-```json
-[
-  { "w": "deploy",  "s": "We deploy to production every Friday." },
-  { "w": "staging", "s": "Push it to staging first." }
-]
-```
-
-送句子是為了解決一詞多義。AI 看到句子就知道 deploy 是部署程式不是部署部隊。原版做不到,因為字典只認單字不認句子。
-
-一次問 30 個字大約幾百個 token,比 30 次往返便宜也快得多,而且每次往返都要重付 system prompt。這是 N+1 query problem 在 LLM 呼叫上的版本。
+送句子是為了解決一詞多義。AI 看到句子就知道 deploy 是部署程式不是部署部隊。
+按需查詢避免為一頁大量未讀或已認得的標示詞支付 API 費用。
 
 ### Prompt 分層
 
 | 層 | 內容 | 可否編輯 |
 | :-- | :--- | :--- |
-| 系統層 | 輸出 JSON schema、每筆字數上限、用繁體中文、不得夾帶額外說明文字 | 鎖定 |
-| 使用者層 | 使用者的職業、領域、想要的解釋風格 | 開放 |
+| 系統層 | 繁體中文、輸出邊界與各功能的最小格式要求 | 鎖定 |
+| 使用者層 | 查詞、翻譯、文法各自的完整 template 與讀者背景 | 開放 |
 
-系統層鎖定的理由:批次預取依賴結構化 JSON 回傳,格式一壞,30 筆全部解析失敗,而且失敗訊息很難懂。
+系統層只保留輸出契約，避免自訂 template 讓卡片收到完全不可用的格式。
 
 使用者層在 P1 只有一個 textarea,內容套用到查詞、翻譯、文法分析三個功能。預設值範例:
 
@@ -163,9 +159,8 @@ payload 帶上每個字所在的句子:
 優先給那個意思,並舉一個技術場景的例句。
 ```
 
-三個功能各自的完整 template 開放編輯,排在 P3。先讓預設值跑一段時間,確認哪裡不夠用再開放。
-
-結構化輸出用 `response_format: {"type": "json_object"}`,相容端點幾乎都支援。更嚴格的 `json_schema` 不保證,所以額外加一層寬鬆解析,處理 AI 在 JSON 外面包 markdown code fence 的情況。
+三個功能的預設 template 以非母語 DevOps 工程師為讀者，優先處理 AWS、Google Cloud、
+Kubernetes、CI/CD、Linux、Networking、Monitoring 與 Incident 等公開技術語境；使用者可在 options 頁完整改寫。
 
 ## 資料模型
 
@@ -203,7 +198,7 @@ lookupCache  word(PK) | payload | fetchedAt          ← 本地限定,不同步
 語境保存規則:
 
 - 標記成生詞的當下,連同整句、網址、標題、時間寫入 `contexts`
-- 同一個字最多留 5 條,超過汰換最舊
+- 同一頁的相同句子不重複保存；單人本地使用不限制每字語境數量
 - 句子短於 26 字元不存,沒有語境價值
 
 ## 同步
@@ -360,6 +355,5 @@ P4 排在 P3 之前。首次審核耗時不可控,先用 P1 加 P2 的功能送�
 ## 待實作規劃階段解決
 
 - 詞形還原的不規則變化表從哪裡取得,以及它的實際覆蓋率
-- 批次預取的 30 個上限是否合理,需要用真實網頁測量
 - 網域黑名單的預設值(至少要含常見內網網段和 localhost)
 - 專案正式名稱。目前目錄名 `vocab-ext` 是暫定,不影響商店上架的顯示名稱

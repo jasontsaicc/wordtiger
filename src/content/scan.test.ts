@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { collectTokens } from './scan';
+import { collectTokens, conjunctionKind } from './scan';
 
 function dom(html: string): HTMLElement {
   const el = document.createElement('div');
@@ -52,6 +52,14 @@ describe('collectTokens', () => {
     expect(hits).toHaveLength(3);
     expect(hits[1]!.node.textContent).toBe('beta');
     expect(hits[1]!.start).toBe(0);
+  });
+});
+
+describe('conjunctionKind', () => {
+  it('區分並列連接詞、從句連接詞與一般單字', () => {
+    expect(conjunctionKind('and')).toBe('coordinating');
+    expect(conjunctionKind('Which')).toBe('clause');
+    expect(conjunctionKind('deploy')).toBe(null);
   });
 });
 

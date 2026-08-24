@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { loadSettings, pageOrigin, saveSettings, type Settings } from '@/src/lib/settings';
+import {
+  loadSettings, pageOrigin, saveSettings, type HighlightColors, type Settings,
+} from '@/src/lib/settings';
 
 const settings = ref<Settings | null>(null);
 const tab = ref<Browser.tabs.Tab | null>(null);
@@ -28,6 +30,13 @@ const blocked = computed(() => {
 
 const level1 = computed(() => Math.floor((settings.value?.threshold ?? 0) * 1.5));
 const level2 = computed(() => Math.floor((settings.value?.threshold ?? 0) * 2.5));
+const highlightTiers = [
+  { key: 'saved', label: '收藏' },
+  { key: 'learning', label: '程度外' },
+  { key: 'advanced', label: '更高階' },
+  { key: 'rare', label: '詞頻外' },
+] as const;
+type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
 onMounted(async () => {
   settings.value = await loadSettings();
@@ -83,8 +92,29 @@ async function toggleAuto(event: Event) {
 }
 
 async function saveColors() {
-  if (settings.value) await saveSettings({ highlightColors: settings.value.highlightColors });
+  if (settings.value) await saveSettings({
+    highlightColors: settings.value.highlightColors,
+    highlightTextColors: settings.value.highlightTextColors,
+    highlightUnderlineColors: settings.value.highlightUnderlineColors,
+  });
   status.value = '顏色已儲存，下次開啟標示時套用。';
+}
+
+function pickerColor(value: string) {
+  return value.slice(0, 7);
+}
+
+function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, event: Event) {
+  if (!settings.value) return;
+  const rgb = (event.target as HTMLInputElement).value;
+  const alpha = settings.value[group][tier].slice(7);
+  settings.value[group][tier] = rgb + alpha;
+  void saveColors();
+}
+
+async function saveConjunctions() {
+  if (settings.value) await saveSettings({ markConjunctions: settings.value.markConjunctions });
+  status.value = '連詞設定已儲存，下次開啟標示時套用。';
 }
 
 async function openOptions() {
@@ -109,18 +139,29 @@ async function openOptions() {
     </label>
 
     <section>
-      <h2>詞頻顏色</h2>
+      <h2>高亮樣式</h2>
       <p class="note">1–{{ settings.threshold.toLocaleString() }} 名不標示</p>
-      <label><input v-model="settings.highlightColors.saved" type="color" @change="saveColors" /> 我收藏的生詞</label>
-      <label><input v-model="settings.highlightColors.learning" type="color" @change="saveColors" /> 程度稍上：{{ (settings.threshold + 1).toLocaleString() }}–{{ level1.toLocaleString() }}</label>
-      <label><input v-model="settings.highlightColors.advanced" type="color" @change="saveColors" /> 進階：{{ (level1 + 1).toLocaleString() }}–{{ level2.toLocaleString() }}</label>
-      <label><input v-model="settings.highlightColors.rare" type="color" @change="saveColors" /> 極少見：{{ level2.toLocaleString() }} 名外</label>
+      <div class="color-head"><span>等級</span><span>背景</span><span>字體</span><span>底線</span></div>
+      <div v-for="tier in highlightTiers" :key="tier.key" class="color-row">
+        <span>{{ tier.label }}</span>
+        <input :value="pickerColor(settings.highlightColors[tier.key])" type="color"
+          :aria-label="`${tier.label}背景色`" @change="setHighlightColor('highlightColors', tier.key, $event)" />
+        <input :value="pickerColor(settings.highlightTextColors[tier.key])" type="color"
+          :aria-label="`${tier.label}字體色`" @change="setHighlightColor('highlightTextColors', tier.key, $event)" />
+        <input :value="pickerColor(settings.highlightUnderlineColors[tier.key])" type="color"
+          :aria-label="`${tier.label}底線色`" @change="setHighlightColor('highlightUnderlineColors', tier.key, $event)" />
+      </div>
+      <label class="switch conjunction">
+        <input v-model="settings.markConjunctions" type="checkbox" @change="saveConjunctions" />
+        連詞標記（點線／雙線）
+      </label>
+      <p class="note">程度外 {{ (settings.threshold + 1).toLocaleString() }}–{{ level1.toLocaleString() }}；更高階至 {{ level2.toLocaleString() }}。</p>
     </section>
 
     <section>
       <h2>快捷鍵</h2>
       <div class="keys"><kbd>Alt+U</kbd> 開關　<kbd>A</kbd> 查詞　<kbd>S</kbd> 翻譯</div>
-      <div class="keys"><kbd>D</kbd> 文法　<kbd>F</kbd> 發音　<kbd>Space</kbd> 收藏　<kbd>Esc</kbd> 關閉</div>
+      <div class="keys"><kbd>D</kbd> 文法　<kbd>F</kbd> 發音　<kbd>Space</kbd> 收藏　<kbd>X</kbd> 已認得　<kbd>Esc</kbd> 關閉</div>
     </section>
 
     <p v-if="status" class="status">{{ status }}</p>
@@ -140,6 +181,12 @@ section { border-top: 1px solid #e5e7eb; padding-top: 9px; margin-top: 9px; }
 h2 { margin: 0 0 7px; font-size: 13px; }
 section label { display: flex; align-items: center; gap: 7px; margin: 6px 0; }
 input[type="color"] { width: 30px; height: 24px; padding: 0; border: 0; background: none; }
+.color-head, .color-row { display: grid; grid-template-columns: 1fr repeat(3, 42px); align-items: center; gap: 6px; }
+.color-head { margin-bottom: 4px; color: #64748b; font-size: 11px; text-align: center; }
+.color-head span:first-child { text-align: left; }
+.color-row { min-height: 30px; }
+.color-row input[type="color"] { width: 36px; }
+.conjunction { margin-top: 10px; font-weight: 500; }
 .keys { color: #4b5563; margin: 5px 0; font-size: 12px; }
 .note { color: #64748b; margin: 4px 0; font-size: 12px; }
 kbd { padding: 1px 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; }

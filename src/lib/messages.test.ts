@@ -16,6 +16,9 @@ beforeEach(async () => {
     baseUrl: 'https://api.example.com/v1',
     apiKey: 'k', model: 'm', profile: '', threshold: 5000, blockedHosts: [],
     highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
+    highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
+    highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
+    markConjunctions: true,
     templates: DEFAULT_TEMPLATES,
   });
 });
@@ -38,6 +41,18 @@ describe('handleMessage', () => {
     const got = await handleMessage({ type: 'toggleMark', word: 'deploy' });
     expect(got).toBe(null);
     expect((await db.words.get('deploy'))!.deletedAt).toBeGreaterThan(0);
+  });
+
+  it('toggleMark 可以切換 known，供網頁取消高亮', async () => {
+    expect(await handleMessage({
+      type: 'toggleMark', word: 'timestamp', status: 'known',
+    })).toBe('known');
+    expect((await db.words.get('timestamp'))!.status).toBe('known');
+
+    expect(await handleMessage({
+      type: 'toggleMark', word: 'timestamp', status: 'known',
+    })).toBe(null);
+    expect((await db.words.get('timestamp'))!.deletedAt).toBeGreaterThan(0);
   });
 
   it('lookup 命中快取時不呼叫 AI', async () => {
@@ -79,6 +94,9 @@ describe('handleMessage', () => {
       baseUrl: '', apiKey: '', model: '', profile: '',
       threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
       highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
+      highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
+      highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
+      markConjunctions: true,
     });
     const spy = vi.spyOn(ai, 'lookupWord');
 
@@ -116,7 +134,7 @@ describe('詞庫列表', () => {
     const rows = await handleMessage({ type: 'listWords' }) as any[];
     expect(rows).toHaveLength(1);
     expect(rows[0].word).toBe('deploy');
-    expect(rows[0].contextCount).toBe(1);
+    expect(rows[0].contexts).toHaveLength(1);
   });
 
   it('listWords 不含已軟刪除的字', async () => {
@@ -125,16 +143,6 @@ describe('詞庫列表', () => {
     expect(await handleMessage({ type: 'listWords' })).toHaveLength(0);
   });
 
-  it('getContexts 回傳指定字的語境', async () => {
-    await handleMessage({
-      type: 'saveContext',
-      word: 'deploy',
-      sentence: 'We deploy to production every single Friday.',
-      url: 'https://example.com', title: 'Example',
-    });
-    const rows = await handleMessage({ type: 'getContexts', word: 'deploy' }) as any[];
-    expect(rows[0].url).toBe('https://example.com');
-  });
 });
 
 describe('單字快取管理', () => {
@@ -178,6 +186,9 @@ describe('explain', () => {
       baseUrl: '', apiKey: '', model: '', profile: '',
       threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
       highlightColors: settings.DEFAULT_HIGHLIGHT_COLORS, autoOrigins: [],
+      highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
+      highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
+      markConjunctions: true,
     });
     const spy = vi.spyOn(ai, 'explainSentence');
 
