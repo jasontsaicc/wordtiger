@@ -122,8 +122,10 @@ export async function loadSettings(): Promise<Settings> {
       ...(stored.templates?.lookup === PREVIOUS_DEFAULT_TEMPLATES.lookup
         ? { lookup: DEFAULT_TEMPLATES.lookup } : {}),
       ...(stored.templates?.translate === PREVIOUS_DEFAULT_TEMPLATES.translate
+        || stored.templates?.translate?.includes('目標:翻成自然、專業且一眼能懂')
         ? { translate: DEFAULT_TEMPLATES.translate } : {}),
       ...(stored.templates?.grammar === PREVIOUS_DEFAULT_TEMPLATES.grammar
+        || stored.templates?.grammar?.includes('目標:讓讀者看懂句子如何組成')
         ? { grammar: DEFAULT_TEMPLATES.grammar } : {}),
     },
   };

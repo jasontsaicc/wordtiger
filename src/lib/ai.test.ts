@@ -82,6 +82,13 @@ describe('lookupWord', () => {
     await expect(lookupWord({ w: 'a', s: 'b' }, settings)).rejects.toThrow('401');
   });
 
+  it('把取消訊號交給 fetch', async () => {
+    const fetchMock = mockOk('內容');
+    const controller = new AbortController();
+    await lookupWord({ w: 'a', s: 'b' }, settings, undefined, controller.signal);
+    expect(fetchMock.mock.calls[0]![1].signal).toBe(controller.signal);
+  });
+
   it('單字是空字串時不發請求', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -133,7 +140,12 @@ describe('explainSentence', () => {
     const fetchMock = mockOk('我們每週五部署到正式環境。');
     const got = await explainSentence(
       'translate',
-      'We deploy to production every Friday.',
+      {
+        sentence: 'We deploy to production every Friday.',
+        focus: 'production',
+        previous: 'The release is ready.',
+        title: 'Deployment guide',
+      },
       settings,
     );
 
@@ -141,32 +153,35 @@ describe('explainSentence', () => {
     expect(body.messages[0].content).toBe(SYSTEM_RULES.translate);
     expect(body.messages[1].content).toContain('We deploy to production every Friday.');
     expect(body.messages[1].content).toContain('我是 DevOps');
+    expect(body.messages[1].content).toContain('production');
+    expect(body.messages[1].content).toContain('The release is ready.');
+    expect(body.messages[1].content).toContain('Deployment guide');
     expect(got).toBe('我們每週五部署到正式環境。');
   });
 
   it('grammar 用文法的系統層規則', async () => {
     const fetchMock = mockOk('・主詞是 We');
-    await explainSentence('grammar', 'We deploy.', settings);
+    await explainSentence('grammar', { sentence: 'We deploy.' }, settings);
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.messages[0].content).toBe(SYSTEM_RULES.grammar);
   });
 
   it('不送 response_format,整句功能回的是純文字不是 JSON', async () => {
     const fetchMock = mockOk('譯文');
-    await explainSentence('translate', 'We deploy.', settings);
+    await explainSentence('translate', { sentence: 'We deploy.' }, settings);
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.response_format).toBeUndefined();
   });
 
   it('回傳值去掉頭尾空白', async () => {
     mockOk('\n  譯文  \n');
-    expect(await explainSentence('translate', 'We deploy.', settings)).toBe('譯文');
+    expect(await explainSentence('translate', { sentence: 'We deploy.' }, settings)).toBe('譯文');
   });
 
   it('空白句子不發請求,直接回空字串', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    expect(await explainSentence('translate', '   ', settings)).toBe('');
+    expect(await explainSentence('translate', { sentence: '   ' }, settings)).toBe('');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -174,13 +189,13 @@ describe('explainSentence', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false, status: 429, text: async () => 'rate limited',
     }));
-    await expect(explainSentence('translate', 'We deploy.', settings))
+    await expect(explainSentence('translate', { sentence: 'We deploy.' }, settings))
       .rejects.toThrow('429');
   });
 
   it('使用者自訂的 template 會蓋掉預設', async () => {
     const fetchMock = mockOk('譯文');
-    await explainSentence('translate', 'We deploy.', {
+    await explainSentence('translate', { sentence: 'We deploy.' }, {
       ...settings,
       templates: { ...DEFAULT_TEMPLATES, translate: '只翻這句:{{sentence}}' },
     });

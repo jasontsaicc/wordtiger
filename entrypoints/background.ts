@@ -4,7 +4,9 @@ import { getSyncState, syncNow } from '@/src/lib/sync';
 
 const SYNC_ALARM = 'pv-sync';
 const SYNC_SOON_ALARM = 'pv-sync-soon';
-const LOCAL_CHANGES = new Set(['toggleMark', 'saveContext', 'deleteWord', 'setWordStatus']);
+const LOCAL_CHANGES = new Set([
+  'toggleMark', 'saveContext', 'deleteWord', 'setWordStatus', 'deleteCachedWord',
+]);
 
 export default defineBackground(() => {
   // 用 sendResponse 加 return true,不用「listener 回傳 Promise」那種寫法。
@@ -31,13 +33,18 @@ export default defineBackground(() => {
 
   browser.runtime.onConnect.addListener((port) => {
     if (port.name !== 'pv-ai-stream') return;
+    const controller = new AbortController();
     let connected = true;
-    port.onDisconnect.addListener(() => { connected = false; });
+    port.onDisconnect.addListener(() => {
+      connected = false;
+      controller.abort();
+    });
     port.onMessage.addListener((msg: Extract<Msg, { type: 'lookup' | 'explain' }>) => {
       void handleStreamMessage(msg, (delta) => {
         if (connected) port.postMessage({ type: 'delta', delta });
-      }).then((result) => {
+      }, controller.signal).then((result) => {
         if (connected) port.postMessage({ type: 'done', result });
+        if (msg.type === 'lookup' && result.ok) void scheduleSync();
       });
     });
   });

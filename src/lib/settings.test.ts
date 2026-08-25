@@ -83,6 +83,17 @@ describe('loadSettings 的 template 合併', () => {
     } });
     expect((await loadSettings()).templates).toEqual(DEFAULT_TEMPLATES);
   });
+
+  it('上一版技術文件 prompt 也會升級為閱讀教練', async () => {
+    await fakeBrowser.storage.local.set({ settings: { templates: {
+      ...DEFAULT_TEMPLATES,
+      translate: '舊預設\n目標:翻成自然、專業且一眼能懂的繁體中文。',
+      grammar: '舊預設\n目標:讓讀者看懂句子如何組成。',
+    } } });
+    const templates = (await loadSettings()).templates;
+    expect(templates.translate).toBe(DEFAULT_TEMPLATES.translate);
+    expect(templates.grammar).toBe(DEFAULT_TEMPLATES.grammar);
+  });
 });
 
 describe('高亮顏色設定', () => {

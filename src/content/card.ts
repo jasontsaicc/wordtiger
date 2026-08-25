@@ -9,6 +9,7 @@ export interface CardOptions {
   hint?: string;
   marked?: boolean;
   loading?: boolean;
+  onClose?: () => void;
 }
 
 let host: HTMLDivElement | null = null;
@@ -105,7 +106,10 @@ export function showCard(opts: CardOptions): void {
   card.innerHTML = renderCardHtml(opts);
   card.classList.toggle('loading', Boolean(opts.loading));
   card.classList.toggle('error', opts.body.startsWith('查詢失敗'));
-  card.querySelector('.close')?.addEventListener('click', hideCard, { once: true });
+  card.querySelector('.close')?.addEventListener('click', () => {
+    hideCard();
+    opts.onClose?.();
+  }, { once: true });
 
   host!.style.display = 'block';
   host!.style.visibility = 'hidden';

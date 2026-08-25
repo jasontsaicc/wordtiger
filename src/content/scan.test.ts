@@ -63,7 +63,7 @@ describe('conjunctionKind', () => {
   });
 });
 
-import { sentenceAround } from './scan';
+import { sentenceAround, sentenceContextAround } from './scan';
 
 describe('sentenceAround', () => {
   function textNodeIn(html: string): Text {
@@ -77,6 +77,14 @@ describe('sentenceAround', () => {
   it('只取位移所在的句子', () => {
     const node = textNodeIn('<p>We deploy on Friday. It usually works.</p>');
     expect(sentenceAround(node, 25)).toBe('It usually works.');
+  });
+
+  it('一起取前一句給 AI 消除指涉歧義', () => {
+    const node = textNodeIn('<p>The rollout uses canaries. It reduces deployment risk.</p>');
+    expect(sentenceContextAround(node, 30)).toEqual({
+      sentence: 'It reduces deployment risk.',
+      previous: 'The rollout uses canaries.',
+    });
   });
 
   it('跨行內元素時仍取整個段落', () => {

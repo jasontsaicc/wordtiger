@@ -43,11 +43,13 @@ async function chat(
   settings: AiSettings,
   jsonMode: boolean,
   onDelta?: (delta: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
 
   const res = await fetch(url, {
     method: 'POST',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${settings.apiKey}`,
@@ -120,6 +122,7 @@ export async function lookupWord(
   item: LookupItem,
   settings: AiSettings,
   onDelta?: (delta: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!item.w.trim()) return '';
 
@@ -128,7 +131,7 @@ export async function lookupWord(
     settings.profile,
     settings.templates?.lookup ?? DEFAULT_TEMPLATES.lookup,
   );
-  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false, onDelta);
+  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false, onDelta, signal);
   return content.trim();
 }
 
@@ -138,21 +141,32 @@ export async function lookupWord(
  * 這兩個功能只有一筆結果,不需要結構化回傳,也就沒有 JSON 被截斷的風險。
  * 少開一個 response_format,相容端點的支援度也更好。
  */
+export interface SentenceInput {
+  sentence: string;
+  focus?: string;
+  previous?: string;
+  title?: string;
+}
+
 export async function explainSentence(
   kind: 'translate' | 'grammar',
-  sentence: string,
+  input: SentenceInput,
   settings: AiSettings,
   onDelta?: (delta: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const trimmed = sentence.trim();
+  const trimmed = input.sentence.trim();
   if (!trimmed) return '';
 
   const template = settings.templates?.[kind] ?? DEFAULT_TEMPLATES[kind];
   const user = renderTemplate(template, {
     profile: settings.profile.trim(),
     sentence: trimmed,
+    focus: input.focus?.trim().slice(0, 80) ?? '',
+    previous: input.previous?.trim().slice(0, 300) ?? '',
+    title: input.title?.trim().slice(0, 200) ?? '',
   });
 
-  const content = await chat(SYSTEM_RULES[kind], user, settings, false, onDelta);
+  const content = await chat(SYSTEM_RULES[kind], user, settings, false, onDelta, signal);
   return content.trim();
 }

@@ -181,6 +181,27 @@ describe('explain', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('把焦點詞、前一句和頁面標題一起送給 AI', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence').mockResolvedValue('結果');
+    const msg = {
+      type: 'explain' as const,
+      kind: 'grammar' as const,
+      sentence,
+      focus: 'production',
+      previous: 'The release is ready.',
+      title: 'Deployment guide',
+    };
+    await handleMessage(msg);
+    expect(spy).toHaveBeenCalledWith('grammar', msg, expect.anything());
+  });
+
+  it('同一句改變焦點詞時重新分析', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence').mockResolvedValue('結果');
+    await handleMessage({ type: 'explain', kind: 'grammar', sentence, focus: 'deploy' });
+    await handleMessage({ type: 'explain', kind: 'grammar', sentence, focus: 'production' });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('沒設定 AI 時回明確的錯誤,不打 API', async () => {
     vi.spyOn(settings, 'loadSettings').mockResolvedValue({
       baseUrl: '', apiKey: '', model: '', profile: '',

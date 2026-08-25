@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, getCached, putCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -58,6 +58,11 @@ describe('addContext / listContexts', () => {
   it('句子短於 26 字元不存', async () => {
     await addContext({ word: 'deploy', sentence: 'Deploy it.', url: 'u', title: 't' });
     expect(await listContexts('deploy')).toHaveLength(0);
+  });
+
+  it('片語即使來源句很短也保留', async () => {
+    await addContext({ word: 'fail to', sentence: 'It failed to start.', url: 'u', title: 't' });
+    expect(await listContexts('fail to')).toHaveLength(1);
   });
 
   it('同一個字保留所有不同語境', async () => {
@@ -134,6 +139,14 @@ describe('lookupCache', () => {
     expect(got.get('deploy')).toBe('部署');
     expect(got.has('staging')).toBe(false);
   });
+
+  it('刪除留下可同步的 tombstone,但不再命中快取', async () => {
+    await putCached([{ word: 'deploy', payload: '部署' }]);
+    await deleteCached('deploy');
+    expect(await getCached(['deploy'])).toEqual(new Map());
+    expect((await db.lookupCache.get('deploy'))).toMatchObject({ pending: 1 });
+    expect((await db.lookupCache.get('deploy'))!.deletedAt).not.toBe(null);
+  });
 });
 
 describe('sentenceCache', () => {
@@ -153,6 +166,13 @@ describe('sentenceCache', () => {
     await putSentence('grammar', sentence, '文法');
     expect(await getSentence('translate', sentence)).toBe('譯文');
     expect(await getSentence('grammar', sentence)).toBe('文法');
+  });
+
+  it('同一句不同焦點或 prompt 版本互不覆蓋', async () => {
+    await putSentence('grammar', sentence, 'focus deploy', 'deploy');
+    await putSentence('grammar', sentence, 'focus production', 'production');
+    expect(await getSentence('grammar', sentence, 'deploy')).toBe('focus deploy');
+    expect(await getSentence('grammar', sentence, 'production')).toBe('focus production');
   });
 
   it('重複存同一句會覆蓋,並更新 fetchedAt', async () => {

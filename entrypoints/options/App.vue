@@ -17,7 +17,7 @@ const highlightTiers = [
   { key: 'saved', label: '我收藏的生詞' },
   { key: 'learning', label: '我的程度之外' },
   { key: 'advanced', label: '更高等級詞彙' },
-  { key: 'rare', label: '詞頻表之外' },
+  { key: 'rare', label: '極低頻詞彙' },
 ] as const;
 type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
@@ -84,7 +84,7 @@ async function grantHost() {
 
     <nav>
       <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">設定</button>
-      <button :class="{ active: tab === 'contexts' }" @click="tab = 'contexts'">生詞語境</button>
+      <button :class="{ active: tab === 'contexts' }" @click="tab = 'contexts'">生詞與片語</button>
       <button :class="{ active: tab === 'cache' }" @click="tab = 'cache'">快取回答</button>
     </nav>
 
@@ -125,7 +125,7 @@ async function grantHost() {
       <h2>你的背景</h2>
       <textarea v-model="settings.profile" rows="4" @change="persist"
         placeholder="我是 DevOps 工程師,熟 Python / Shell / AWS。解釋單字時,如果這個字在軟體工程或維運領域有特定用法,優先給那個意思。" />
-      <p class="note">這段會被放進查詞、翻譯、文法分析的 prompt。</p>
+      <p class="note">這段會被放進查詞、快速看懂、拆句的 prompt。</p>
     </section>
 
     <section>

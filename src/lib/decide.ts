@@ -41,10 +41,10 @@ export function shouldHighlight(token: string, ctx: DecideContext): Decision {
   if (isCapitalized && !ctx.isSentenceStart) return { hit: false, lemma, tier: null };
 
   const rank = ctx.freq[lemma];
-  const hit = rank === undefined || rank > ctx.threshold;
-  if (!hit) return { hit: false, lemma, tier: null };
+  // 詞表外多半是網址、品牌或領域術語；沒有排名不等於值得背。
+  if (rank === undefined || rank <= ctx.threshold) return { hit: false, lemma, tier: null };
   // 三層跟著程度移動：門檻後 50%、再後 100%，更後面的字通常不值得優先背。
-  const tier: HighlightTier = rank === undefined || rank > ctx.threshold * 2.5
+  const tier: HighlightTier = rank > ctx.threshold * 2.5
     ? 'rare'
     : rank > ctx.threshold * 1.5
       ? 'advanced'

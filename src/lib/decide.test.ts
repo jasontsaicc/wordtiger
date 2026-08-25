@@ -22,8 +22,8 @@ describe('shouldHighlight', () => {
     expect(shouldHighlight('perplexing', ctx()).hit).toBe(true);
   });
 
-  it('完全不在詞頻表裡的字要高亮', () => {
-    expect(shouldHighlight('kubernetes', ctx())).toMatchObject({ hit: true, tier: 'rare' });
+  it('詞頻表外的網址、品牌或領域術語不自動高亮', () => {
+    expect(shouldHighlight('github', ctx())).toMatchObject({ hit: false, tier: null });
   });
 
   it('標記成 known 的字一律不高亮,即使排名落後', () => {
@@ -32,8 +32,12 @@ describe('shouldHighlight', () => {
   });
 
   it('標記成 unknown 的字一律高亮,即使排名很前面', () => {
-    const marks = new Map([['deploy', 'unknown' as const]]);
+    const marks = new Map([
+      ['deploy', 'unknown' as const],
+      ['github', 'unknown' as const],
+    ]);
     expect(shouldHighlight('deploy', ctx({ marks }))).toMatchObject({ hit: true, tier: 'saved' });
+    expect(shouldHighlight('github', ctx({ marks }))).toMatchObject({ hit: true, tier: 'saved' });
   });
 
   it('判定用的是還原後的原形', () => {
@@ -47,7 +51,7 @@ describe('shouldHighlight', () => {
   });
 
   it('句首的大寫字仍照常判定', () => {
-    expect(shouldHighlight('Kubernetes', ctx({ isSentenceStart: true })).hit).toBe(true);
+    expect(shouldHighlight('Perplexing', ctx({ isSentenceStart: true })).hit).toBe(true);
   });
 
   it('少於三個字母的 token 不高亮', () => {

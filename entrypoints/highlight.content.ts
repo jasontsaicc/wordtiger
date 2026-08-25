@@ -1,7 +1,8 @@
-import { collectTokens, conjunctionKind, sentenceAround, type ConjunctionKind } from '@/src/content/scan';
+import { collectTokens, conjunctionKind, sentenceAround, sentenceContextAround, type ConjunctionKind } from '@/src/content/scan';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
-import type { ExplainResult } from '@/src/lib/messages';
+import type { ExplainResult, Msg } from '@/src/lib/messages';
+import { extractTakeaway } from '@/src/lib/prompt';
 import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
 
@@ -118,15 +119,42 @@ export default defineContentScript({
     let pointerX = 0;
     let pointerY = 0;
     let current: Hover | null = null;
+    let currentTakeaway: Takeaway | null = null;
     // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
     // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
     let explainSeq = 0;
+    let activeAi: AbortController | undefined;
+
+    const cancelAi = () => {
+      activeAi?.abort();
+      activeAi = undefined;
+    };
+    const dismissAi = () => {
+      cancelAi();
+      explainSeq++;
+    };
+    const closeAiCard = () => {
+      current = null;
+      currentTakeaway = null;
+      dismissAi();
+    };
+    const requestAi = async (msg: StreamMsg, onText: (text: string) => void) => {
+      cancelAi();
+      const request = new AbortController();
+      activeAi = request;
+      const result = await streamAi(msg, onText, request.signal);
+      if (activeAi === request) activeAi = undefined;
+      return result;
+    };
+    controller.signal.addEventListener('abort', cancelAi, { once: true });
 
     const wordHint = (lemma: string) => {
       const space = marks.get(lemma) === 'unknown' ? 'Space 取消收藏' : 'Space 收藏';
       const known = marks.get(lemma) === 'known' ? 'X 恢復標示' : 'X 已認得';
       return `${space} · ${known} · F 發音 · Esc 關閉`;
     };
+    const takeawayHint = (phrase: string) =>
+      `${marks.get(phrase) === 'unknown' ? 'Space 取消片語收藏' : 'Space 收藏片語'} · Esc 關閉`;
 
     // mousemove 只記座標。命中測試留到按鍵時才做,滑鼠移動每秒觸發幾十次,
     // 在這裡做 caretPositionFromPoint 加 getBoundingClientRect 會逼出重複的版面計算。
@@ -161,7 +189,8 @@ export default defineContentScript({
       if (e.key === 'Escape') {
         hideCard();
         current = null;
-        explainSeq++;
+        currentTakeaway = null;
+        dismissAi();
         return;
       }
 
@@ -180,6 +209,8 @@ export default defineContentScript({
         const hover = current ?? hoveredWord();
         if (!hover) return;
         e.preventDefault();
+        dismissAi();
+        currentTakeaway = null;
         current = hover;
 
         const status = await browser.runtime.sendMessage({
@@ -194,6 +225,7 @@ export default defineContentScript({
           body: status === 'known' ? '已設為認得，不再標示。' : '已恢復由詞頻判定。',
           rect: hover.rect,
           hint: wordHint(hover.lemma),
+          onClose: closeAiCard,
         });
         return;
       }
@@ -202,6 +234,8 @@ export default defineContentScript({
         const hover = hoveredWord();
         if (!hover) return;
         e.preventDefault();
+        dismissAi();
+        currentTakeaway = null;
         current = hover;
 
         const hint = wordHint(hover.lemma);
@@ -209,19 +243,25 @@ export default defineContentScript({
         const cached = defs.get(hover.lemma);
 
         if (cached !== undefined) {
-          showCard({ title: hover.lemma, body: cached, rect: hover.rect, hint, marked });
+          showCard({
+            title: hover.lemma, body: cached, rect: hover.rect,
+            hint, marked, onClose: closeAiCard,
+          });
           return;
         }
 
         // 完整查詞要好幾秒,沒有回饋會讓人以為按鍵沒進去
-        showCard({ title: hover.lemma, body: '查詢中…', rect: hover.rect, hint: '', marked, loading: true });
+        showCard({
+          title: hover.lemma, body: '查詢中…', rect: hover.rect,
+          hint: '', marked, loading: true, onClose: closeAiCard,
+        });
 
         const seq = ++explainSeq;
-        const result = await streamAi({
+        const result = await requestAi({
           type: 'lookup', word: hover.lemma, sentence: hover.sentence,
         }, (body) => {
           if (seq === explainSeq) showCard({
-            title: hover.lemma, body, rect: hover.rect, hint, marked,
+            title: hover.lemma, body, rect: hover.rect, hint, marked, onClose: closeAiCard,
           });
         });
         if (seq !== explainSeq) return;
@@ -234,6 +274,7 @@ export default defineContentScript({
           rect: hover.rect,
           hint,
           marked,
+          onClose: closeAiCard,
         });
         return;
       }
@@ -243,34 +284,72 @@ export default defineContentScript({
         if (!pos) return;
         e.preventDefault();
 
-        const sentence = sentenceAround(pos.node, pos.offset);
+        const { sentence, previous } = sentenceContextAround(pos.node, pos.offset);
         if (!sentence) return;
+        const focus = wordAtPoint(pointerX, pointerY)?.span.text ?? '';
 
         const range = document.createRange();
         range.selectNodeContents(pos.node);
         const rect = range.getBoundingClientRect();
 
         const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
-        const title = kind === 'translate' ? '整句翻譯' : '文法分析';
+        const title = kind === 'translate' ? '快速看懂' : '拆懂這句';
         // 卡片換成整句的內容了,Space 不該再標記剛才那個單字
         current = null;
+        currentTakeaway = null;
 
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
-        showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉', loading: true });
+        showCard({
+          title, body: '查詢中…', rect, hint: 'Esc 關閉',
+          loading: true, onClose: closeAiCard,
+        });
 
         const seq = ++explainSeq;
-        const result = await streamAi({
-          type: 'explain', kind, sentence,
+        const result = await requestAi({
+          type: 'explain', kind, sentence, previous, focus, title: document.title,
         }, (body) => {
-          if (seq === explainSeq) showCard({ title, body, rect, hint: 'Esc 關閉' });
+          if (seq === explainSeq) showCard({
+            title, body, rect, hint: 'Esc 關閉', onClose: closeAiCard,
+          });
         });
         if (seq !== explainSeq) return;
+
+        let phrase: string | null = null;
+        if (result.ok && kind === 'grammar') {
+          phrase = extractTakeaway(result.text);
+          if (phrase) currentTakeaway = { phrase, sentence, rect, body: result.text };
+        }
 
         showCard({
           title,
           body: result.ok ? result.text : `查詢失敗:${result.error}`,
           rect,
-          hint: 'Esc 關閉',
+          hint: phrase ? takeawayHint(phrase) : 'Esc 關閉',
+          onClose: closeAiCard,
+        });
+        return;
+      }
+
+      if (e.key === ' ' && currentTakeaway) {
+        e.preventDefault();
+        const takeaway = currentTakeaway;
+        dismissAi();
+        const status = await browser.runtime.sendMessage({
+          type: 'toggleMark', word: takeaway.phrase,
+        }) as WordStatus | null;
+        if (status === 'unknown') {
+          marks.set(takeaway.phrase, status);
+          await browser.runtime.sendMessage({
+            type: 'saveContext', word: takeaway.phrase,
+            sentence: takeaway.sentence, url: location.href, title: document.title,
+          });
+        } else {
+          marks.delete(takeaway.phrase);
+        }
+        currentTakeaway = takeaway;
+        showCard({
+          title: '拆懂這句', body: takeaway.body, rect: takeaway.rect,
+          hint: takeawayHint(takeaway.phrase), onClose: closeAiCard,
         });
         return;
       }
@@ -279,6 +358,7 @@ export default defineContentScript({
       if (e.key === ' ' && current) {
         e.preventDefault();
         const hover = current;
+        dismissAi();
         const status = await browser.runtime.sendMessage({
           type: 'toggleMark', word: hover.lemma,
         }) as WordStatus | null;
@@ -303,6 +383,7 @@ export default defineContentScript({
           rect: hover.rect,
           hint: wordHint(hover.lemma),
           marked: status === 'unknown',
+          onClose: closeAiCard,
         });
       }
     }, { signal: controller.signal });
@@ -314,6 +395,13 @@ interface Hover {
   lemma: string;
   rect: DOMRect;
   sentence: string;
+}
+
+interface Takeaway {
+  phrase: string;
+  sentence: string;
+  rect: DOMRect;
+  body: string;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -351,20 +439,24 @@ async function fetchFreq(): Promise<Record<string, number>> {
   return res.json();
 }
 
-type StreamMsg =
-  | { type: 'lookup'; word: string; sentence: string }
-  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string };
+type StreamMsg = Extract<Msg, { type: 'lookup' | 'explain' }>;
 
-function streamAi(msg: StreamMsg, onText: (text: string) => void): Promise<ExplainResult> {
+function streamAi(
+  msg: StreamMsg,
+  onText: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<ExplainResult> {
   const port = browser.runtime.connect({ name: 'pv-ai-stream' });
   return new Promise((resolve) => {
     let text = '';
     let settled = false;
-    const finish = (result: ExplainResult) => {
+    const cancel = () => finish({ ok: false, error: 'AI 請求已取消' });
+    const finish = (result: ExplainResult, disconnect = true) => {
       if (settled) return;
       settled = true;
+      signal?.removeEventListener('abort', cancel);
       resolve(result);
-      port.disconnect();
+      if (disconnect) port.disconnect();
     };
     port.onMessage.addListener((event) => {
       if (event.type === 'delta') {
@@ -375,8 +467,10 @@ function streamAi(msg: StreamMsg, onText: (text: string) => void): Promise<Expla
       }
     });
     port.onDisconnect.addListener(() => {
-      if (!settled) finish({ ok: false, error: 'AI 串流連線中斷' });
+      if (!settled) finish({ ok: false, error: 'AI 串流連線中斷' }, false);
     });
-    port.postMessage(msg);
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    else port.postMessage(msg);
   });
 }

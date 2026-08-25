@@ -31,6 +31,7 @@ const translations = ref<Record<string, string>>({});
 const keyword = ref('');
 const statusFilter = ref<'all' | 'unknown' | 'known'>('unknown');
 const sortBy = ref<'recent' | 'word'>('recent');
+const isPhrase = (value: string) => /\s/.test(value);
 
 onMounted(reload);
 
@@ -109,8 +110,8 @@ async function exportJson() {
   <section>
     <div class="page-title">
       <div>
-        <h2>生詞語境</h2>
-        <p class="note">{{ words.length }} 個單字 · {{ contextTotal }} 條語境</p>
+        <h2>生詞與片語</h2>
+        <p class="note">{{ words.length }} 個收藏 · {{ contextTotal }} 條語境</p>
       </div>
       <button @click="exportJson">匯出 JSON</button>
     </div>
@@ -120,7 +121,7 @@ async function exportJson() {
         <button :class="{ active: sortBy === 'recent' }" @click="sortBy = 'recent'">最近加入</button>
         <button :class="{ active: sortBy === 'word' }" @click="sortBy = 'word'">字母排序</button>
       </div>
-      <input v-model="keyword" placeholder="搜尋單字" />
+      <input v-model="keyword" placeholder="搜尋單字或片語" />
       <select v-model="statusFilter">
         <option value="unknown">生詞</option>
         <option value="known">已認得</option>
@@ -128,7 +129,7 @@ async function exportJson() {
       </select>
     </div>
 
-    <p v-if="filtered.length === 0" class="empty">沒有符合的字。</p>
+    <p v-if="filtered.length === 0" class="empty">沒有符合的收藏。</p>
 
     <div v-else class="word-list">
       <article v-for="w in filtered" :key="w.word" class="word-card">
@@ -136,15 +137,15 @@ async function exportJson() {
           <div>
             <h3>{{ w.word }}</h3>
             <span class="status" :class="w.status">
-              {{ w.status === 'unknown' ? '生詞' : '已認得' }}
+              {{ isPhrase(w.word) ? '片語' : (w.status === 'unknown' ? '生詞' : '已認得') }}
             </span>
             <span class="count">{{ w.contexts.length }} 條語境</span>
           </div>
           <div class="actions">
-            <button @click="toggleDictionary(w.word)">
+            <button v-if="!isPhrase(w.word)" @click="toggleDictionary(w.word)">
               {{ selected === w.word ? '收起詞典' : 'AI 詞典' }}
             </button>
-            <button @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
+            <button v-if="!isPhrase(w.word)" @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
               {{ w.status === 'unknown' ? '標成已認得' : '改回生詞' }}
             </button>
             <button class="danger" @click="remove(w.word)">刪除</button>
@@ -159,7 +160,7 @@ async function exportJson() {
             </small>
             <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
           </template>
-          <p v-else class="note">尚無 AI 詞典快取；在網頁上按 A 查詞後會出現在這裡。</p>
+          <p v-else class="note">尚無 AI 詞典；可先「立即同步」，若其他裝置也沒查過，再回網頁按 A。</p>
         </div>
 
         <p v-if="w.contexts.length === 0" class="no-context">尚未保存語境。</p>

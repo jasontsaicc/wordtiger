@@ -1,4 +1,4 @@
-import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, getCached, putCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
+import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, getCached, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
 import { lookupWord, explainSentence } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
@@ -10,7 +10,7 @@ export interface ExportBundle {
   contexts: ContextRow[];
 }
 
-/** 查詞、翻譯、文法分析共用這個信封。三者都是「一段文字或一個錯誤」 */
+/** 查詞、快速看懂、拆句共用這個信封。三者都是「一段文字或一個錯誤」 */
 export type ExplainResult =
   | { ok: true; text: string }
   | { ok: false; error: string };
@@ -24,7 +24,10 @@ export type Msg =
   | { type: 'lookup'; word: string; sentence: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
-  | { type: 'explain'; kind: 'translate' | 'grammar'; sentence: string }
+  | {
+    type: 'explain'; kind: 'translate' | 'grammar'; sentence: string;
+    focus?: string; previous?: string; title?: string;
+  }
   | { type: 'deleteWord'; word: string }
   | { type: 'setWordStatus'; word: string; status: WordStatus }
   | { type: 'exportData' }
@@ -99,18 +102,19 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return null;
 
     case 'explain': {
-      const cached = await getSentence(msg.kind, msg.sentence);
+      const settings = await loadSettings();
+      const variant = explainVariant(msg, settings);
+      const cached = await getSentence(msg.kind, msg.sentence, variant);
       if (cached !== null) return { ok: true, text: cached } satisfies ExplainResult;
 
-      const settings = await loadSettings();
       if (!settings.baseUrl || !settings.apiKey) {
         return { ok: false, error: NOT_CONFIGURED } satisfies ExplainResult;
       }
 
       try {
-        const text = await explainSentence(msg.kind, msg.sentence, settings);
+        const text = await explainSentence(msg.kind, msg, settings);
         // 失敗不寫快取,不然一次網路抖動會被記住,之後永遠拿到錯誤結果
-        await putSentence(msg.kind, msg.sentence, text);
+        await putSentence(msg.kind, msg.sentence, text, variant);
         return { ok: true, text } satisfies ExplainResult;
       } catch (err) {
         return {
@@ -149,13 +153,14 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     }
 
     case 'getCachedWord':
-      return db.lookupCache.get(msg.word);
+      return db.lookupCache.get(msg.word).then((row) => row?.deletedAt == null ? row : undefined);
 
     case 'listCachedWords':
-      return db.lookupCache.orderBy('fetchedAt').reverse().toArray();
+      return db.lookupCache.orderBy('fetchedAt').reverse()
+        .filter((row) => row.deletedAt == null).toArray();
 
     case 'deleteCachedWord':
-      await db.lookupCache.delete(msg.word);
+      await deleteCached(msg.word);
       return null;
 
     case 'getSyncState':
@@ -184,6 +189,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
 export async function handleStreamMessage(
   msg: Extract<Msg, { type: 'lookup' | 'explain' }>,
   onDelta: (delta: string) => void,
+  signal?: AbortSignal,
 ): Promise<ExplainResult> {
   if (msg.type === 'lookup') {
     const hit = (await getCached([msg.word])).get(msg.word);
@@ -195,7 +201,7 @@ export async function handleStreamMessage(
     const settings = await loadSettings();
     if (!settings.baseUrl || !settings.apiKey) return { ok: false, error: NOT_CONFIGURED };
     try {
-      const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings, onDelta);
+      const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings, onDelta, signal);
       if (!text) return { ok: false, error: 'AI 回了空的結果' };
       await putCached([{ word: msg.word, payload: text, model: settings.model }]);
       return { ok: true, text };
@@ -204,19 +210,30 @@ export async function handleStreamMessage(
     }
   }
 
-  const cached = await getSentence(msg.kind, msg.sentence);
+  const settings = await loadSettings();
+  const variant = explainVariant(msg, settings);
+  const cached = await getSentence(msg.kind, msg.sentence, variant);
   if (cached !== null) {
     onDelta(cached);
     return { ok: true, text: cached };
   }
-  const settings = await loadSettings();
   if (!settings.baseUrl || !settings.apiKey) return { ok: false, error: NOT_CONFIGURED };
   try {
-    const text = await explainSentence(msg.kind, msg.sentence, settings, onDelta);
+    const text = await explainSentence(msg.kind, msg, settings, onDelta, signal);
     if (!text) return { ok: false, error: 'AI 回了空的結果' };
-    await putSentence(msg.kind, msg.sentence, text);
+    await putSentence(msg.kind, msg.sentence, text, variant);
     return { ok: true, text };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+function explainVariant(
+  msg: Extract<Msg, { type: 'explain' }>,
+  settings: Awaited<ReturnType<typeof loadSettings>>,
+): string {
+  return JSON.stringify([
+    settings.model, settings.profile, settings.templates[msg.kind],
+    msg.focus ?? '', msg.previous ?? '', msg.title ?? '',
+  ]);
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTemplate, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
+import { renderTemplate, extractTakeaway, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
 
 describe('renderTemplate', () => {
   it('取代單一變數', () => {
@@ -28,6 +28,15 @@ describe('renderTemplate', () => {
   });
 });
 
+describe('extractTakeaway', () => {
+  it('只取帶走行的英文片語,沒有就不硬收藏', () => {
+    expect(extractTakeaway('意思｜若失敗就回滾\n帶走｜be rolled back｜被回滾'))
+      .toBe('be rolled back');
+    expect(extractTakeaway('意思｜這是簡單句')).toBe(null);
+    expect(extractTakeaway('帶走｜只有中文｜提示')).toBe(null);
+  });
+});
+
 describe('DEFAULT_TEMPLATES', () => {
   it('三個功能都有預設值', () => {
     expect(DEFAULT_TEMPLATES.lookup.length).toBeGreaterThan(0);
@@ -42,10 +51,11 @@ describe('DEFAULT_TEMPLATES', () => {
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{sentence}}');
   });
 
-  it('翻譯和文法 template 必須有 profile 和 sentence 兩個 placeholder', () => {
+  it('看懂和拆句 template 必須帶焦點詞與閱讀上下文', () => {
     for (const tpl of [DEFAULT_TEMPLATES.translate, DEFAULT_TEMPLATES.grammar]) {
-      expect(tpl).toContain('{{profile}}');
-      expect(tpl).toContain('{{sentence}}');
+      for (const variable of ['profile', 'title', 'previous', 'focus', 'sentence']) {
+        expect(tpl).toContain(`{{${variable}}}`);
+      }
     }
   });
 
@@ -70,5 +80,13 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES.lookup).toContain('繁體中文');
     // 不該再有 JSON 的字眼,批次查詞已經拿掉了
     expect(SYSTEM_RULES.lookup).not.toContain('JSON');
+  });
+
+  it('快速看懂和拆句都有可掃讀的固定行標籤', () => {
+    expect(SYSTEM_RULES.translate).toContain('意思｜');
+    expect(SYSTEM_RULES.translate).toContain('關鍵｜');
+    expect(SYSTEM_RULES.grammar).toContain('拆法｜');
+    expect(SYSTEM_RULES.grammar).toContain('白話英文｜');
+    expect(SYSTEM_RULES.grammar).toContain('帶走｜');
   });
 });

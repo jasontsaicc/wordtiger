@@ -35,7 +35,7 @@ async function remove(row: CachedWord) {
 <template>
   <section>
     <h2>快取回答（單詞）</h2>
-    <p class="note">查過的單字會留在本機；清除後，下次按 A 才重新詢問 AI。</p>
+    <p class="note">查過的單字先留在本機；登入後會與同一帳號的裝置同步。清除也會同步，下次按 A 才重新詢問 AI。</p>
     <input v-model="keyword" class="search" placeholder="搜尋快取單字" />
 
     <div class="layout">

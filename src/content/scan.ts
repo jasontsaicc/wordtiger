@@ -87,10 +87,15 @@ export function collectTokens(root: Node): TokenHit[] {
   return hits;
 }
 
-/** 取文字位移所在的那一句,跨行內元素也能正確計算。 */
-export function sentenceAround(node: Text, offsetInNode = 0): string {
+export interface SentenceContext {
+  sentence: string;
+  previous: string;
+}
+
+/** 取文字位移所在的那一句和前一句,跨行內元素也能正確計算。 */
+export function sentenceContextAround(node: Text, offsetInNode = 0): SentenceContext {
   const block = node.parentElement?.closest('p, li, td, h1, h2, h3, h4, div');
-  if (!block) return node.data.trim().slice(0, 300);
+  if (!block) return { sentence: node.data.trim().slice(0, 300), previous: '' };
 
   const text = block.textContent ?? node.data;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
@@ -102,10 +107,20 @@ export function sentenceAround(node: Text, offsetInNode = 0): string {
   }
   offset += Math.max(0, Math.min(offsetInNode, node.data.length));
 
-  for (const part of new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text)) {
+  const parts = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text)];
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!;
     if (offset >= part.index && offset < part.index + part.segment.length) {
-      return part.segment.trim().slice(0, 300);
+      return {
+        sentence: part.segment.trim().slice(0, 300),
+        previous: index > 0 ? parts[index - 1]!.segment.trim().slice(0, 300) : '',
+      };
     }
   }
-  return text.trim().slice(0, 300);
+  return { sentence: text.trim().slice(0, 300), previous: '' };
+}
+
+/** 只要目前句的舊呼叫端不用知道上下文。 */
+export function sentenceAround(node: Text, offsetInNode = 0): string {
+  return sentenceContextAround(node, offsetInNode).sentence;
 }

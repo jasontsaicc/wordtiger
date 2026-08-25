@@ -34,7 +34,7 @@ export interface ContextInput {
 }
 
 export interface SentenceRow {
-  /** `${kind}:${sentence}` */
+  /** `v2:${kind}:${sentence}\0${variant}` */
   id: string;
   kind: string;
   sentence: string;
@@ -48,6 +48,9 @@ export interface CacheRow {
   /** 舊快取沒有這欄,顯示時退回「未知模型」 */
   model?: string;
   fetchedAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+  pending?: 0 | 1;
 }
 
 class VocabDb extends Dexie {
@@ -114,7 +117,9 @@ export async function loadMarks(): Promise<Map<string, WordStatus>> {
 }
 
 export async function addContext(input: ContextInput): Promise<void> {
-  if (input.sentence.length < MIN_SENTENCE_LENGTH) return;
+  // 片語的來源句可能很短,仍值得保留；單字語境繼續過濾碎片。
+  if (!input.sentence.trim()
+    || (input.sentence.length < MIN_SENTENCE_LENGTH && !/\s/.test(input.word))) return;
 
   const alive = await listContexts(input.word);
   // ponytail: 每字線性掃描去重；單人資料真的大到新增變慢時再加 [word+url] 索引。
@@ -141,14 +146,23 @@ export async function listContexts(word: string): Promise<ContextRow[]> {
 
 export async function getCached(words: string[]): Promise<Map<string, string>> {
   const rows = await db.lookupCache.where('word').anyOf(words).toArray();
-  return new Map(rows.map((r) => [r.word, r.payload]));
+  return new Map(rows.filter((r) => r.deletedAt == null).map((r) => [r.word, r.payload]));
 }
 
 export async function putCached(
   entries: Array<{ word: string; payload: string; model?: string }>,
 ): Promise<void> {
   const now = Date.now();
-  await db.lookupCache.bulkPut(entries.map((e) => ({ ...e, fetchedAt: now })));
+  await db.lookupCache.bulkPut(entries.map((e) => ({
+    ...e, fetchedAt: now, updatedAt: now, deletedAt: null, pending: 1 as const,
+  })));
+}
+
+export async function deleteCached(word: string): Promise<void> {
+  const row = await db.lookupCache.get(word);
+  if (!row) return;
+  const now = Date.now();
+  await db.lookupCache.put({ ...row, updatedAt: now, deletedAt: now, pending: 1 });
 }
 
 /**
@@ -156,15 +170,17 @@ export async function putCached(
  * 正規化能提高命中率,但會讓 key 跟原句對不起來,除錯時要多猜一層。
  * 同一句在同一篇文章裡本來就是逐字相同,命中率的損失很小。
  */
-export function sentenceKey(kind: string, sentence: string): string {
-  return `${kind}:${sentence}`;
+export function sentenceKey(kind: string, sentence: string, variant = ''): string {
+  // v2 讓舊版「純譯文 / 教科書文法」回覆自然失效。
+  return `v2:${kind}:${sentence}\0${variant}`;
 }
 
 export async function getSentence(
   kind: string,
   sentence: string,
+  variant = '',
 ): Promise<string | null> {
-  const row = await db.sentenceCache.get(sentenceKey(kind, sentence));
+  const row = await db.sentenceCache.get(sentenceKey(kind, sentence, variant));
   return row?.result ?? null;
 }
 
@@ -172,9 +188,10 @@ export async function putSentence(
   kind: string,
   sentence: string,
   result: string,
+  variant = '',
 ): Promise<void> {
   await db.sentenceCache.put({
-    id: sentenceKey(kind, sentence),
+    id: sentenceKey(kind, sentence, variant),
     kind,
     sentence,
     result,

@@ -41,7 +41,7 @@ export function renderMarkdown(src: string): string {
   };
   const flushPara = () => {
     if (para.length === 0) return;
-    // 段落內的單一換行保留成 <br>。文法分析那種「一點一行」的輸出靠這個。
+    // 段落內的單一換行保留成 <br>。拆句卡片那種「一點一行」的輸出靠這個。
     out.push(`<p>${para.join('<br>')}</p>`);
     para = [];
   };

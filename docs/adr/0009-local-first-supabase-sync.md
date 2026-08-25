@@ -12,8 +12,10 @@ MV3 service worker 沒有 `localStorage`，而目前只需要 Supabase Auth 與 
 
 ## Decision
 
-IndexedDB 永遠是 source of truth，Supabase 只傳遞 `words` 與 `contexts`。AI Key、prompt、
-顏色及可重新產生的回答快取保持本機限定。
+IndexedDB 永遠是 source of truth，Supabase 傳遞 `words`、`contexts` 與 `lookup_cache`。
+AI 詞典回答在同一帳號的裝置間同步，避免重複消耗 token，也讓詞庫頁能直接顯示其他裝置查過的詞典。
+AI Key、prompt、顏色與含頁面上下文的句子翻譯／拆句 cache 仍保持本機限定。
+切換帳號時不把既有詞典 cache 標成待上傳，避免舊帳號內容被複製到新帳號。
 
 同步直接使用原生 `fetch` 呼叫 Supabase Auth 與 PostgREST。擴充功能只接受 publishable／legacy anon key，
 使用者登入後靠 JWT 與資料表 RLS 限制為自己的列；不得使用會繞過 RLS 的 secret／service-role key。
@@ -40,5 +42,5 @@ Session 與同步游標存進 `browser.storage.local`，access token 到期前�
 
 一般閱讀、收藏與查詞不依賴網路；同步失敗後 pending 資料仍在，下次可安全重試。
 資料表必須先執行 `supabase/schema.sql`，RLS 是安全邊界而非可選設定。
-兩個可同步表都必須維持 `updatedAt`、`deletedAt` 與本機 `pending` 語意；新增同步表時也要沿用 cutoff、
+三個可同步表都必須維持 `updatedAt`、`deletedAt` 與本機 `pending` 語意；新增同步表時也要沿用 cutoff、
 tombstone 與推送途中再修改的保護。偏好設定目前不跨裝置，真的出現需求時再為它定義可同步且不含憑證的白名單。
