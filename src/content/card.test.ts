@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { renderCardHtml } from './card';
+import { chooseCardPlacement, renderCardHtml } from './card';
+
+describe('chooseCardPlacement', () => {
+  it('依序避讓到右、左、下、上方，長卡片仍不壓住觸發位置', () => {
+    const card = { width: 420, height: 300 };
+    const viewport = { width: 1200, height: 800 };
+
+    expect(chooseCardPlacement({ left: 300, right: 340, top: 300, bottom: 320 }, card, viewport)).toBe('right');
+    expect(chooseCardPlacement({ left: 900, right: 940, top: 300, bottom: 320 }, card, viewport)).toBe('left');
+    expect(chooseCardPlacement({ left: 390, right: 430, top: 100, bottom: 120 }, card, { width: 800, height: 800 })).toBe('below');
+    expect(chooseCardPlacement({ left: 390, right: 430, top: 680, bottom: 700 }, card, { width: 800, height: 800 })).toBe('above');
+  });
+});
 
 describe('renderCardHtml', () => {
   it('有標題時畫標題那一行', () => {

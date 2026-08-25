@@ -222,9 +222,10 @@ export default defineContentScript({
 
         showCard({
           title: hover.lemma,
-          body: status === 'known' ? '已設為認得，不再標示。' : '已恢復由詞頻判定。',
+          body: status === 'known' ? '這隻已經馴服了，不再標示。' : '已恢復由詞頻判定。',
           rect: hover.rect,
           hint: wordHint(hover.lemma),
+          celebrate: status === 'known',
           onClose: closeAiCard,
         });
         return;
@@ -252,7 +253,7 @@ export default defineContentScript({
 
         // 完整查詞要好幾秒,沒有回饋會讓人以為按鍵沒進去
         showCard({
-          title: hover.lemma, body: '查詢中…', rect: hover.rect,
+          title: hover.lemma, body: '老虎正在抓這個字…', rect: hover.rect,
           hint: '', marked, loading: true, onClose: closeAiCard,
         });
 
@@ -261,7 +262,8 @@ export default defineContentScript({
           type: 'lookup', word: hover.lemma, sentence: hover.sentence,
         }, (body) => {
           if (seq === explainSeq) showCard({
-            title: hover.lemma, body, rect: hover.rect, hint, marked, onClose: closeAiCard,
+            title: hover.lemma, body, rect: hover.rect,
+            hint, marked, loading: true, onClose: closeAiCard,
           });
         });
         if (seq !== explainSeq) return;
@@ -300,7 +302,9 @@ export default defineContentScript({
 
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
         showCard({
-          title, body: '查詢中…', rect, hint: 'Esc 關閉',
+          title,
+          body: kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…',
+          rect, hint: 'Esc 關閉',
           loading: true, onClose: closeAiCard,
         });
 
@@ -309,7 +313,7 @@ export default defineContentScript({
           type: 'explain', kind, sentence, previous, focus, title: document.title,
         }, (body) => {
           if (seq === explainSeq) showCard({
-            title, body, rect, hint: 'Esc 關閉', onClose: closeAiCard,
+            title, body, rect, hint: 'Esc 關閉', loading: true, onClose: closeAiCard,
           });
         });
         if (seq !== explainSeq) return;
@@ -349,7 +353,8 @@ export default defineContentScript({
         currentTakeaway = takeaway;
         showCard({
           title: '拆懂這句', body: takeaway.body, rect: takeaway.rect,
-          hint: takeawayHint(takeaway.phrase), onClose: closeAiCard,
+          hint: takeawayHint(takeaway.phrase), celebrate: status === 'unknown',
+          onClose: closeAiCard,
         });
         return;
       }
@@ -383,6 +388,7 @@ export default defineContentScript({
           rect: hover.rect,
           hint: wordHint(hover.lemma),
           marked: status === 'unknown',
+          celebrate: status === 'unknown',
           onClose: closeAiCard,
         });
       }
