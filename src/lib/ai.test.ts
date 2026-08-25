@@ -55,6 +55,22 @@ describe('lookupWord', () => {
     expect(got).toContain('部署');
   });
 
+  it('依模型family送出可接受的 reasoning_effort', async () => {
+    // gpt-5-mini 傳 'none' 會回 400 Unsupported value,最低只到 'minimal'。2026-08-26 實測。
+    const cases: Array<[string, string | undefined]> = [
+      ['gpt-5.6-luna', 'none'],
+      ['gpt-5-mini', 'minimal'],
+      ['gpt-4o-mini', undefined],
+    ];
+
+    for (const [model, expected] of cases) {
+      const fetchMock = mockOk('內容');
+      await lookupWord({ w: 'a', s: 'b' }, { ...settings, model });
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+      expect(body.reasoning_effort, model).toBe(expected);
+    }
+  });
+
   it('自訂的相容端點也打到同一條 /chat/completions 路徑', async () => {
     const fetchMock = mockOk('內容');
 

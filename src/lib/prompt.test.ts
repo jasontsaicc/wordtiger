@@ -35,6 +35,25 @@ describe('extractTakeaway', () => {
     expect(extractTakeaway('意思｜這是簡單句')).toBe(null);
     expect(extractTakeaway('帶走｜只有中文｜提示')).toBe(null);
   });
+
+  // 以下兩筆是 2026-08-26 對真實 API 打出來的輸出,不是想像出來的邊界。
+  it('模型多印一次前綴時仍抓得到片語', () => {
+    // gpt-4.1-nano 實際回覆
+    expect(extractTakeaway('帶走｜帶走｜idempotent operation｜冪等操作'))
+      .toBe('idempotent operation');
+  });
+
+  it('模型自己截斷的片語不收藏', () => {
+    // gpt-5.6-luna 實際回覆。存下去會是永遠比對不到網頁文字的死 key。
+    expect(extractTakeaway('帶走｜can be retried without changing…｜可重試而不改變……'))
+      .toBe(null);
+    expect(extractTakeaway('帶走｜can be retried without changing...｜提示')).toBe(null);
+  });
+
+  it('英文夾中文佔位的句型不當作詞庫 key', () => {
+    // gpt-5.6-luna 實際回覆。教學上有用,但這種字串永遠比對不到網頁上的文字。
+    expect(extractTakeaway('帶走｜provided [條件]｜前提是……才……')).toBe(null);
+  });
 });
 
 describe('DEFAULT_TEMPLATES', () => {

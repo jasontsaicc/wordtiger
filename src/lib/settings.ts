@@ -31,10 +31,10 @@ export interface HighlightColors {
 
 export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export const OPENAI_MODELS = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o mini（最快、翻譯省成本）' },
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna（預設，拆句品質最好）' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini（同級速度，拆句較粗）' },
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini（查詞品質較好）' },
-  { value: 'gpt-4.1-mini-2025-04-14', label: 'GPT-4.1 mini 2025-04-14（固定版本）' },
-  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna（新一代小型模型）' },
+  { value: 'gpt-4.1-nano', label: 'GPT-4.1 nano（最省，帶走片語常失敗）' },
 ] as const;
 
 export const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
@@ -65,7 +65,7 @@ const LEGACY_DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
 const DEFAULTS: Settings = {
   baseUrl: OPENAI_BASE_URL,
   apiKey: '',
-  model: 'gpt-4o-mini',
+  model: OPENAI_MODELS[0].value,
   profile: '',
   threshold: 5000,
   highlightColors: DEFAULT_HIGHLIGHT_COLORS,

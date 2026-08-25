@@ -46,7 +46,7 @@ describe('loadSettings 的 template 合併', () => {
     const s = await loadSettings();
     expect(s.templates).toEqual(DEFAULT_TEMPLATES);
     expect(s.baseUrl).toBe(OPENAI_BASE_URL);
-    expect(s.model).toBe('gpt-4o-mini');
+    expect(s.model).toBe('gpt-5.6-luna');
     expect(s.highlightColors).toEqual(DEFAULT_HIGHLIGHT_COLORS);
     expect(s.highlightTextColors).toEqual(DEFAULT_HIGHLIGHT_TEXT_COLORS);
     expect(s.highlightUnderlineColors).toEqual(DEFAULT_HIGHLIGHT_UNDERLINE_COLORS);

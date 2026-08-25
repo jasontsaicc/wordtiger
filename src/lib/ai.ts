@@ -34,6 +34,17 @@ export function buildLookupPrompt(
 }
 
 /**
+ * 查詞與拆句不需要推理鏈,推理會讓一次查詢從 4 秒變 28 秒。
+ * 但可接受的值分兩段:gpt-5.6 系列吃 'none',其餘 gpt-5 系列最低只到 'minimal',
+ * 傳 'none' 會直接回 400 Unsupported value。2026-08-26 實測。
+ */
+function reasoningEffort(model: string): { reasoning_effort: string } | undefined {
+  if (model.startsWith('gpt-5.6')) return { reasoning_effort: 'none' };
+  if (model.startsWith('gpt-5')) return { reasoning_effort: 'minimal' };
+  return undefined;
+}
+
+/**
  * 唯一一個對外送 request 的地方。三個功能的差別只有 system 訊息、
  * user 訊息,以及要不要開 JSON 模式。
  */
@@ -56,8 +67,7 @@ async function chat(
     },
     body: JSON.stringify({
       model: settings.model,
-      // 查詞與翻譯不需要推理鏈；Luna 關掉 reasoning 才符合「快速小模型」用途。
-      ...(settings.model.startsWith('gpt-5.6-') ? { reasoning_effort: 'none' } : {}),
+      ...reasoningEffort(settings.model),
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       ...(onDelta ? { stream: true } : {}),
       messages: [

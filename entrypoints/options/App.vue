@@ -144,7 +144,7 @@ async function grantHost() {
       </label>
       <label>Model
         <input v-model.trim="settings.model" list="ai-models"
-          placeholder="gpt-4o-mini" @change="persist" />
+          :placeholder="OPENAI_MODELS[0].value" @change="persist" />
         <datalist id="ai-models">
           <option v-for="item in OPENAI_MODELS" :key="item.value" :value="item.value">
             {{ item.label }}
@@ -153,8 +153,12 @@ async function grantHost() {
       </label>
       <p class="note">
         任何 OpenAI 相容端點都可以，網址填到 <code>/v1</code> 為止。
-        Model 欄位可直接輸入該服務的模型名稱，下拉的是 OpenAI 的常用選項。
-        換服務之後要重新授權新的網域。
+        Model 欄位可直接輸入該服務的模型名稱。換服務之後要重新授權新的網域。
+      </p>
+      <p class="note">
+        OpenAI 常用選項：
+        <button v-for="item in OPENAI_MODELS" :key="item.value" type="button" class="chip"
+          @click="settings.model = item.value; persist()">{{ item.label }}</button>
       </p>
 
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
@@ -252,6 +256,8 @@ input[type="range"] { width: 100%; }
 .switch { display: flex; gap: .5rem; align-items: center; }
 .note { color: #64748b; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
+.chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: white; color: #475569; cursor: pointer; }
+.chip:hover { border-color: #6366f1; color: #1e293b; }
 .ok { color: #2b7a3d; font-size: 13px; }
 table { width: 100%; border-collapse: collapse; }
 td { padding: .4rem; border-bottom: 1px solid #ddd; cursor: pointer; }
