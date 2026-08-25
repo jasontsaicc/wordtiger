@@ -1,13 +1,13 @@
-# 英文閱讀生詞擴充功能 設計文件
+# 攔詞虎 WordTiger 設計文件
 
 日期:2026-08-23
-狀態:已定案,待進實作規劃
+狀態:已實作
 
 ## 目的
 
-一個 Chrome MV3 擴充功能。在任何英文網頁上按快捷鍵開啟高亮,標記生詞,自動保存生詞所在的整句語境,並在多台電腦之間同步。
+一個 Chromium MV3 擴充功能。在任何英文網頁上按快捷鍵開啟高亮,標記生詞,自動保存生詞所在的整句語境,並在多台電腦之間同步。
 
-對標產品是「个人词库」(`chrome.google.com/webstore/detail/ecneibafmplgkfjomcbbgbajkleanoml`),該產品已轉為付費模式。本專案不是複製它,而是在三個地方做結構性改良:不改寫網頁 DOM、AI 取代字典爬蟲、資料 local-first。
+核心設計是不改寫網頁 DOM、以 AI 處理語境查詞,並讓資料保持 local-first。
 
 ## 範圍
 
@@ -18,13 +18,13 @@
 - 生詞語境:整句 + 網址 + 標題 + 時間
 - 單字發音,用瀏覽器內建 TTS
 - Supabase 跨裝置同步
-- Chrome Web Store 以 unlisted 方式上架
+- Edge Add-ons 先以 Hidden 方式上架，穩定後再封裝 macOS Safari Web Extension
 
 ### 不做
 
 | 項目 | 理由 |
 | :--- | :--- |
-| 考試等級詞庫(小學到托福) | 改用詞頻排名加滑桿,更貼近真實語言分布,也消除了原版「切換等級要刪資料」的反直覺邏輯 |
+| 考試等級詞庫(小學到托福) | 改用詞頻排名加滑桿,更貼近真實語言分布,也無須在切換等級時重寫資料 |
 | 字典網站爬蟲 | 13 個 parser 會一直壞。AI 一套程式碼取代全部 |
 | 自架 NLP 詞法依存服務 | 併進 AI prompt |
 | Anki 匯出 | 實際不會用 |
@@ -64,16 +64,16 @@ service worker 閒置約 30 秒就被回收,所以任何狀態都不能留在模
 用 CSS Custom Highlight API,不改寫 DOM 結構。
 
 ```javascript
-CSS.highlights.set("pv-unknown", new Highlight(...ranges));
+CSS.highlights.set("wordtiger-unknown", new Highlight(...ranges));
 ```
 
 ```css
-::highlight(pv-unknown) { background-color: #c8c0ff; }
+::highlight(wordtiger-unknown) { background-color: #c8c0ff; }
 ```
 
-這消除了原版最大的相容性問題。原版把每個生詞包成 `<span>`,結果是 React 重繪時高亮被洗掉,ChatGPT 偵測到 DOM 被改動而彈出崩潰畫面,最後只能讓使用者自己填 CSS selector 劃出禁區。
+不包裝 `<span>` 可避免 React 等前端框架重繪時洗掉高亮,也不會因改動 DOM 而干擾原網頁。
 
-代價:`::highlight()` 只支援繪製類屬性,不能設 padding、圓角或 cursor。高亮樣式的可調範圍比原版小。
+代價:`::highlight()` 只支援繪製類屬性,不能設 padding、圓角或 cursor。
 
 ### 掃描流程
 
@@ -113,7 +113,7 @@ CSS.highlights.set("pv-unknown", new Highlight(...ranges));
 
 卡片定位靠 `range.getBoundingClientRect()`。高亮用的 Range 本來就在手上,不需要額外的 DOM 查詢。
 
-卡片本身是一個掛在 `document.body` 底下的節點,用 Shadow DOM 隔離樣式。原版的 content CSS 有 69KB,大部分是在跟各網站的樣式互相覆蓋。Shadow DOM 的 style encapsulation 讓這個檔案可以縮到幾 KB。
+卡片本身是一個掛在 `document.body` 底下的節點,用 Shadow DOM 隔離樣式,避免跟各網站的 CSS 互相覆蓋。
 
 ### 單次完整查詞
 
@@ -189,7 +189,7 @@ lookupCache  word(PK) | payload | fetchedAt          ← 本地限定,不同步
 | `status = 'unknown'` | 一律高亮,即使它是常見字 |
 | `status = 'known'` | 一律不高亮,即使它排名很後面 |
 
-這個設計讓詞庫大小只跟「你標記過幾個字」成正比,跟詞頻表大小無關。滑桿拉動時不需要重寫任何資料,只是換一個比較用的數字。原版之所以要在切換等級時刪除記錄,正是因為它把基準線和例外混在同一份資料裡。
+這個設計讓詞庫大小只跟「你標記過幾個字」成正比,跟詞頻表大小無關。滑桿拉動時不需要重寫任何資料,只是換一個比較用的數字。
 
 ### 主鍵產生
 
@@ -292,7 +292,7 @@ Supabase 免費專案閒置一週後暫停,暫停後 90 天內可從 dashboard �
 2. 本地永遠是 source of truth。同步只負責傳遞。Supabase 暫停、掛掉或斷網,資料完整躺在 IndexedDB,功能照常
 3. 同步失敗要明顯。擴充功能圖示加紅點,options 頁顯示「上次成功同步:N 天前」。無聲失敗會讓兩台電腦的資料在毫不知情的狀況下分家
 
-第 2 點是整個同步設計的立場,叫 local-first。雲端是傳遞管道,不是真相來源。這直接回應了原版的問題:原版是雲端優先,伺服器一旦收費或關閉,資料跟著走。
+第 2 點是整個同步設計的立場,叫 local-first。雲端是傳遞管道,不是真相來源;伺服器收費、關閉或離線都不會帶走本機資料。
 
 ## 權限與上架
 
@@ -309,11 +309,8 @@ Supabase 免費專案閒置一週後暫停,暫停後 90 天內可從 dashboard �
 
 Chrome 官方文件明列四種授予 `activeTab` 的使用者手勢,其中包含「Executing a keyboard shortcut from the commands API」。所以 `Alt+U` 本身就足以取得當前分頁的注入權限,不需要 `<all_urls>` 的常駐 content script。
 
-| | 原版 | 本專案 |
-| :-- | :--- | :--- |
-| 安裝時權限警告 | 讀取及變更你在所有網站上的資料 | 幾乎沒有 |
-| 商店審核 | 廣泛權限,最慢的一級 | 阻力最低的一級 |
-| 自動高亮白名單 | 內建 | 移到 `optional_host_permissions`,使用者自行授權 |
+安裝時只要求核心功能必需的權限。自動高亮白名單放在
+`optional_host_permissions`,由使用者針對單一網站授權。
 
 `activeTab` 在跨網域導航時撤銷,所以換網站要重按 `Alt+U`。產品定位本來就是按快捷鍵才啟動,這不算退步。
 
@@ -321,9 +318,11 @@ AI provider 的 base URL 由使用者填寫,網域不固定,同樣走 `optional_
 
 ### 上架
 
-以 unlisted 方式上架,只有拿到連結的人能安裝。開發者帳號一次性 5 美元,現在就該辦,不要等到最後。
+先以 Edge Add-ons Hidden 方式上架，只有拿到連結的人能安裝。Microsoft Partner Center
+開發者帳號與身分驗證提早處理，不要等到最後。
 
-首次審核最慢可能兩到三週,新開發者會被歸類為需要較深入的審查。審核文件明訂 obfuscation 不允許,minify 可以。
+首次審核時程不可控，先備妥權限理由、隱私政策與審核備註。程式只做一般 minify，
+不另外混淆，方便商店審查。
 
 ### 公司電腦的資安考量
 
@@ -337,8 +336,8 @@ AI provider 的 base URL 由使用者填寫,網域不固定,同樣走 `optional_
 | :-- | :--- | :--- |
 | P1 核心閉環 | Alt+U 高亮、詞頻基準線加滑桿、A 鍵查詞、Space 標記、自動存語境、IndexedDB、陽春詞庫列表頁 | 單機完整可用 |
 | P2 同步 | Supabase schema、登入、增量拉推、衝突處理、失敗提示 | 公司電腦與家裡互通 |
-| P4 上架(提前) | 權限驗收、隱私政策頁、網域黑名單、unlisted 送審 | 公司電腦裝得起來 |
-| P3 加值 | S 鍵翻譯整句、D 鍵文法分析、TTS 朗讀、完整詞庫管理 UI、prompt template 編輯 | 功能對等原版 |
+| P4 上架(提前) | 權限驗收、隱私政策頁、網域黑名單、Hidden 送審 | 公司電腦裝得起來 |
+| P3 加值 | S 鍵翻譯整句、D 鍵文法分析、TTS 朗讀、完整詞庫管理 UI、prompt template 編輯 | 閱讀輔助功能完整 |
 
 P4 排在 P3 之前。首次審核耗時不可控,先用 P1 加 P2 的功能送出去踩一次流程,拿到已上架狀態,後續更新的審核會快很多。這是 walking skeleton 的思路:先讓一條最細的路徑從頭通到尾,再往裡面填功能。
 
@@ -346,7 +345,7 @@ P4 排在 P3 之前。首次審核耗時不可控,先用 P1 加 P2 的功能送�
 
 | 項目 | 選擇 | 理由 |
 | :--- | :--- | :--- |
-| 擴充功能框架 | WXT | MV3 支援完整,有 HMR。對標產品也用它 |
+| 擴充功能框架 | WXT | MV3 支援完整,有 HMR |
 | 本地資料庫 | Dexie | IndexedDB 的薄封裝,不自己寫 transaction |
 | UI 框架 | Vue 3 | options 頁需要表格、篩選、分頁。WXT 對 Vue 支援良好 |
 | 詞頻資料 | SUBTLEX-US | 授權允許商業使用,約 200KB |
@@ -356,4 +355,4 @@ P4 排在 P3 之前。首次審核耗時不可控,先用 P1 加 P2 的功能送�
 
 - 詞形還原的不規則變化表從哪裡取得,以及它的實際覆蓋率
 - 網域黑名單的預設值(至少要含常見內網網段和 localhost)
-- 專案正式名稱。目前目錄名 `vocab-ext` 是暫定,不影響商店上架的顯示名稱
+- Edge 與 macOS Safari 實機的商店封裝與相容性驗收

@@ -58,7 +58,9 @@ describe('collectTokens', () => {
 describe('conjunctionKind', () => {
   it('區分並列連接詞、從句連接詞與一般單字', () => {
     expect(conjunctionKind('and')).toBe('coordinating');
+    expect(conjunctionKind('yet')).toBe('coordinating');
     expect(conjunctionKind('Which')).toBe('clause');
+    expect(conjunctionKind('with')).toBe(null);
     expect(conjunctionKind('deploy')).toBe(null);
   });
 });

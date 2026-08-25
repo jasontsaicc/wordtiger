@@ -29,7 +29,7 @@ onMounted(async () => {
     await refreshGrant();
   } catch (err) {
     loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    console.error('[pv] options 載入失敗', err);
+    console.error('[wordtiger] options 載入失敗', err);
   }
 });
 
@@ -72,15 +72,18 @@ async function grantHost() {
 <template>
   <main v-if="loadError" class="wrap">
     <header class="page-head">
-      <div class="logo">V</div>
-      <div><h1>個人詞庫</h1><p>閱讀、收藏，在每台裝置接著學</p></div>
+      <img class="logo" src="/icons/48.png" alt="" />
+      <div><h1>攔詞虎</h1><p>把英文裡的攔路虎，一隻隻抓起來</p></div>
     </header>
     <p class="warn">設定載入失敗:{{ loadError }}</p>
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
   </main>
 
   <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' }">
-    <h1>個人詞庫</h1>
+    <header class="page-head">
+      <img class="logo" src="/icons/48.png" alt="" />
+      <div><h1>攔詞虎</h1><p>WordTiger by JasonDevOps</p></div>
+    </header>
 
     <nav>
       <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">設定</button>
@@ -177,7 +180,7 @@ async function grantHost() {
 .page-head h1, .page-head p { margin: 0; }
 .page-head h1 { color: #0f172a; font-size: 25px; line-height: 1.2; letter-spacing: -.03em; }
 .page-head p { color: #64748b; font-size: 13px; }
-.logo { display: grid; place-items: center; width: 42px; height: 42px; color: white; background: linear-gradient(145deg, #4f46e5, #7c3aed); border-radius: 12px; box-shadow: 0 7px 18px #6366f140; font-size: 20px; font-weight: 800; }
+.logo { width: 42px; height: 42px; border-radius: 10px; }
 section { margin-bottom: 1rem; padding: 1.25rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
 section h2 { margin-top: 0; color: #0f172a; font-size: 17px; }
 nav { display: flex; gap: .35rem; margin-bottom: 1.25rem; padding: .3rem; border: 1px solid #e2e8f0; border-radius: 11px; background: #eef0f6; }

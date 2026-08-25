@@ -1,7 +1,10 @@
-# 個人詞庫瀏覽器擴充
+# 攔詞虎 WordTiger
 
-閱讀英文網頁時，依個人詞彙程度標示生詞，並提供 AI 查詞、快速看懂、拆句教學、
-發音、生詞語境與 AI 詞典快取管理。技術棧為 WXT、Vue 3、TypeScript、Dexie、Vitest。
+**把英文裡的攔路虎，一隻隻抓起來。**
+
+攔詞虎是 JasonDevOps 製作的英文閱讀助手。閱讀英文網頁時，它會依個人詞彙程度標示生詞，
+並提供 AI 查詞、快速看懂、拆句教學、發音、生詞語境與 AI 詞典快取管理。
+技術棧為 WXT、Vue 3、TypeScript、Dexie、Vitest。
 
 目前核心 MVP 已可日常使用。最新進度與下次待辦見
 [2026-08-25 作業紀錄](docs/worklogs/2026-08-25.md)。
@@ -19,9 +22,11 @@ pnpm dev
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm build:safari
 ```
 
-`pnpm build` 產物位於 `.output/chrome-mv3`，可從 Chrome／Edge 的擴充功能開發者模式載入。
+`pnpm build` 產物位於 `.output/chrome-mv3`，可從 Chrome／Edge 的擴充功能開發者模式載入；
+`pnpm build:safari` 產物位於 `.output/safari-mv3`，供 Safari Web Extension Packager 封裝。
 
 ## 多裝置同步
 
@@ -74,14 +79,20 @@ pnpm build
 ## 文件與交接
 
 - [架構決策索引](docs/adr/README.md)
-- [功能設計](docs/superpowers/specs/2026-08-23-vocab-extension-design.md)
+- [功能設計](docs/superpowers/specs/2026-08-23-wordtiger-design.md)
 - [P1 核心閉環計畫](docs/superpowers/plans/2026-08-23-p1-core-loop.md)
 - [P3 加值功能計畫](docs/superpowers/plans/2026-08-24-p3-features.md)
 - [最新作業紀錄與下次待辦](docs/worklogs/2026-08-25.md)
 
+## 品牌資產
+
+- 主 icon：[`assets/brand/wordtiger-icon-master.png`](assets/brand/wordtiger-icon-master.png)
+- 擴充功能 icon：`public/icons/16.png`、`32.png`、`48.png`、`128.png`
+- 商店素材：`store-assets/wordtiger-logo-300.png`、`wordtiger-app-icon-1024.png`
+
 ## 延後發佈規劃
 
-- Edge Add-ons：產品流程穩定後，補 icon、商店文案、隱私政策與審核說明，先以 Hidden 上架。
+- Edge Add-ons：產品流程穩定後，補商店文案、隱私政策與審核說明，先以 Hidden 上架。
 - macOS Safari：Edge 版穩定後，以 Safari 17.2 為最低版本做實機相容測試，再處理 Apple Developer Program 與 App Store 包裝。
 
 下個 session 建議先讀本檔與最新作業紀錄，再執行 `git status`、`pnpm test`；

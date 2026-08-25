@@ -3,13 +3,14 @@ import vue from '@vitejs/plugin-vue';
 
 export default defineConfig({
   manifest: {
-    name: '個人詞庫',
-    description: '英文閱讀生詞高亮與 AI 查詞',
+    name: '攔詞虎',
+    short_name: '攔詞虎',
+    description: '把英文裡的攔路虎，一隻隻抓起來：標出生詞、AI 查詞與拆句',
     permissions: ['activeTab', 'scripting', 'storage', 'alarms'],
     host_permissions: [],
     optional_host_permissions: ['<all_urls>'],
     web_accessible_resources: [
-      { resources: ['freq.json'], matches: ['<all_urls>'] },
+      { resources: ['freq.json', 'icons/32.png'], matches: ['<all_urls>'] },
     ],
     commands: {
       highlight: {

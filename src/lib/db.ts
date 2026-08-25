@@ -53,28 +53,28 @@ export interface CacheRow {
   pending?: 0 | 1;
 }
 
-class VocabDb extends Dexie {
+class WordTigerDb extends Dexie {
   words!: Table<WordRow, string>;
   contexts!: Table<ContextRow, string>;
   lookupCache!: Table<CacheRow, string>;
   sentenceCache!: Table<SentenceRow, string>;
 
   constructor() {
-    super('vocab');
+    super('wordtiger');
     this.version(1).stores({
       words: 'word, updatedAt, deletedAt',
       contexts: 'id, word, updatedAt, deletedAt, [word+createdAt]',
       lookupCache: 'word, fetchedAt',
     });
     // Dexie 的每個 version 只宣告跟前一版的差異,沒提到的表原封不動保留。
-    // 已經裝在瀏覽器裡的舊資料庫靠這個 version 升上來,不會被清掉。
+    // 同名資料庫未來再升版時會沿用這條 migration chain。
     this.version(2).stores({
       sentenceCache: 'id, fetchedAt',
     });
   }
 }
 
-export const db = new VocabDb();
+export const db = new WordTigerDb();
 
 export async function markWord(word: string, status: WordStatus): Promise<void> {
   const now = Date.now();

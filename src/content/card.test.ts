@@ -5,12 +5,15 @@ describe('renderCardHtml', () => {
   it('有標題時畫標題那一行', () => {
     const html = renderCardHtml({ title: 'deploy', body: '部署' });
     expect(html).toContain('class="title"');
+    expect(html).toContain('class="brand"');
+    expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('deploy');
   });
 
   it('標題是空字串時不畫標題,漸進揭露的第一層靠這個', () => {
     const html = renderCardHtml({ title: '', body: '部署' });
     expect(html).not.toContain('class="title"');
+    expect(html).not.toContain('class="brand"');
     expect(html).toContain('部署');
   });
 

@@ -11,8 +11,8 @@ const SKIP_TAGS = new Set([
   'CODE', 'PRE', 'KBD', 'SAMP',
 ]);
 
-// 沿用 personal-vocabulary 的連詞詞表，讓兩個專案的閱讀標記一致。
-const COORDINATING_CONJUNCTIONS = new Set(['and', 'or', 'nor', 'but', 'with']);
+// 保留在閱讀時最有助於看出句子骨架的常見連詞。
+const COORDINATING_CONJUNCTIONS = new Set(['and', 'or', 'nor', 'but', 'yet']);
 const CLAUSE_CONJUNCTIONS = new Set([
   'as', 'since', 'because', 'although', 'though', 'that', 'which', 'where', 'what',
   'who', 'whom', 'whose', 'why', 'when', 'how', 'while',

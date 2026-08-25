@@ -1,11 +1,12 @@
 {
-  "name": "vocab-ext",
+  "name": "wordtiger",
   "version": "1.0.0",
-  "description": "",
+  "description": "攔詞虎：標出生詞、AI 查詞與拆句的英文閱讀助手",
   "main": "index.js",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "build:safari": "tsx scripts/build-freq.ts && wxt build -b safari --mv3",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare",
@@ -15,7 +16,7 @@
     "zip": "wxt zip"
   },
   "keywords": [],
-  "author": "",
+  "author": "JasonDevOps",
   "license": "ISC",
   "devEngines": {
     "packageManager": {

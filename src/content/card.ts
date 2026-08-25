@@ -37,6 +37,7 @@ function ensureRoot(): ShadowRoot {
         animation: enter 120ms ease-out;
       }
       .header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+      .brand { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 6px; opacity: .78; }
       .title { min-width: 0; flex: 1; color: #111827; font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
       .close { width: 26px; height: 26px; padding: 0; color: #64748b; background: #f1f5f9; border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
       .close:hover { color: #111827; background: #e2e8f0; }
@@ -89,7 +90,8 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
 
   if (opts.title) {
     const cls = opts.marked ? 'title marked' : 'title';
-    parts.push(`<div class="header"><div class="${cls}">${escapeHtml(opts.title)}</div><button class="close" type="button" aria-label="關閉">×</button></div>`);
+    const icon = browser.runtime.getURL('/icons/32.png');
+    parts.push(`<div class="header"><img class="brand" src="${icon}" alt="" aria-hidden="true"><div class="${cls}">${escapeHtml(opts.title)}</div><button class="close" type="button" aria-label="關閉">×</button></div>`);
   }
   parts.push(`<div class="body">${renderMarkdown(opts.body)}</div>`);
   if (opts.hint) {

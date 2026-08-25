@@ -49,7 +49,7 @@ async function isRunning(): Promise<boolean> {
   try {
     const [result] = await browser.scripting.executeScript({
       target: { tabId: tab.value.id },
-      func: () => Boolean((window as unknown as { __pvAbort?: unknown }).__pvAbort),
+      func: () => Boolean((window as unknown as { __wordTigerAbort?: unknown }).__wordTigerAbort),
     });
     return Boolean(result?.result);
   } catch {
@@ -125,6 +125,7 @@ async function openOptions() {
 
 <template>
   <main v-if="settings">
+    <header><img src="/icons/32.png" alt="" /><b>攔詞虎</b><span>WordTiger</span></header>
     <div class="actions">
       <button class="primary" :disabled="!pagePattern || blocked" @click="toggleHighlight">
         {{ running ? '關閉本頁標示' : '開啟本頁標示' }}
@@ -172,6 +173,10 @@ async function openOptions() {
 :root { font: 14px/1.45 system-ui, sans-serif; color: #202124; }
 body { margin: 0; }
 main { width: 340px; padding: 12px; box-sizing: border-box; }
+header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+header img { width: 32px; height: 32px; border-radius: 7px; }
+header b { font-size: 16px; }
+header span { margin-left: auto; color: #6b7280; font-size: 12px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 button { border: 1px solid #ccd0d5; border-radius: 7px; padding: 9px; background: white; cursor: pointer; }
 button.primary { color: white; border-color: #2563eb; background: #2563eb; }

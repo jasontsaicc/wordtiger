@@ -10,6 +10,10 @@ beforeEach(async () => {
 });
 
 describe('markWord / loadMarks', () => {
+  it('使用 WordTiger 的 IndexedDB 名稱', () => {
+    expect(db.name).toBe('wordtiger');
+  });
+
   it('標記後可以讀回來', async () => {
     await markWord('perplexing', 'unknown');
     const marks = await loadMarks();

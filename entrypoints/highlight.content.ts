@@ -7,21 +7,21 @@ import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
 
 const HIGHLIGHT_NAMES: Record<HighlightTier, string> = {
-  saved: 'pv-saved',
-  learning: 'pv-learning',
-  advanced: 'pv-advanced',
-  rare: 'pv-rare',
+  saved: 'wordtiger-saved',
+  learning: 'wordtiger-learning',
+  advanced: 'wordtiger-advanced',
+  rare: 'wordtiger-rare',
 };
 const CONJUNCTION_NAMES: Record<ConjunctionKind, string> = {
-  coordinating: 'pv-conjunction-coordinating',
-  clause: 'pv-conjunction-clause',
+  coordinating: 'wordtiger-conjunction-coordinating',
+  clause: 'wordtiger-conjunction-clause',
 };
-const STYLE_ID = 'pv-highlight-style';
+const STYLE_ID = 'wordtiger-highlight-style';
 
 declare global {
   interface Window {
     /** 這次啟用註冊的事件監聽器,關閉時用它一次拔掉 */
-    __pvAbort?: AbortController;
+    __wordTigerAbort?: AbortController;
   }
 }
 
@@ -31,21 +31,21 @@ export default defineContentScript({
   cssInjectionMode: 'manual',
 
   async main() {
-    console.log('[pv] content script in', location.href, 'CSS.highlights:', !!CSS.highlights);
+    console.log('[wordtiger] content script in', location.href, 'CSS.highlights:', !!CSS.highlights);
 
     // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
     // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
-    if (window.__pvAbort) {
+    if (window.__wordTigerAbort) {
       [...Object.values(HIGHLIGHT_NAMES), ...Object.values(CONJUNCTION_NAMES)]
         .forEach((name) => CSS.highlights.delete(name));
       document.getElementById(STYLE_ID)?.remove();
       hideCard();
-      window.__pvAbort.abort();
-      window.__pvAbort = undefined;
+      window.__wordTigerAbort.abort();
+      window.__wordTigerAbort = undefined;
       return;
     }
     const controller = new AbortController();
-    window.__pvAbort = controller;
+    window.__wordTigerAbort = controller;
 
     const [freq, marks, highlightSettings] = await Promise.all([
       fetchFreq(),
@@ -96,7 +96,7 @@ export default defineContentScript({
       for (const kind of Object.keys(CONJUNCTION_NAMES) as ConjunctionKind[]) {
         CSS.highlights.set(CONJUNCTION_NAMES[kind], new Highlight(...conjunctionRanges[kind]));
       }
-      console.log('[pv] threshold', threshold, 'marks', marks.size, 'ranges', ranges);
+      console.log('[wordtiger] threshold', threshold, 'marks', marks.size, 'ranges', ranges);
     }
 
     paintHighlights();
@@ -446,7 +446,7 @@ function streamAi(
   onText: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<ExplainResult> {
-  const port = browser.runtime.connect({ name: 'pv-ai-stream' });
+  const port = browser.runtime.connect({ name: 'wordtiger-ai-stream' });
   return new Promise((resolve) => {
     let text = '';
     let settled = false;

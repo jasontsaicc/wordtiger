@@ -2,8 +2,8 @@ import { handleMessage, handleStreamMessage, type Msg } from '@/src/lib/messages
 import { loadSettings, pageOrigin } from '@/src/lib/settings';
 import { getSyncState, syncNow } from '@/src/lib/sync';
 
-const SYNC_ALARM = 'pv-sync';
-const SYNC_SOON_ALARM = 'pv-sync-soon';
+const SYNC_ALARM = 'wordtiger-sync';
+const SYNC_SOON_ALARM = 'wordtiger-sync-soon';
 const LOCAL_CHANGES = new Set([
   'toggleMark', 'saveContext', 'deleteWord', 'setWordStatus', 'deleteCachedWord',
 ]);
@@ -25,14 +25,14 @@ export default defineBackground(() => {
         }
       })
       .catch((err) => {
-        console.error('[pv] handleMessage 失敗', msg.type, err);
+        console.error('[wordtiger] handleMessage 失敗', msg.type, err);
         sendResponse(undefined);
       });
     return true; // 保持訊息通道開著,直到 sendResponse 被呼叫
   });
 
   browser.runtime.onConnect.addListener((port) => {
-    if (port.name !== 'pv-ai-stream') return;
+    if (port.name !== 'wordtiger-ai-stream') return;
     const controller = new AbortController();
     let connected = true;
     port.onDisconnect.addListener(() => {
@@ -53,7 +53,7 @@ export default defineBackground(() => {
   browser.commands.onCommand.addListener(async (command) => {
     // 用原生 console,不用 WXT 的 logger。production build 會把 logger 換成空函式,
     // 出事時完全沒有輸出,這是這個擴充唯一的觀測點。
-    console.log('[pv] command', command);
+    console.log('[wordtiger] command', command);
     if (command !== 'highlight') return;
 
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -85,7 +85,7 @@ async function runSync(): Promise<void> {
   try {
     await syncNow();
   } catch (error) {
-    console.error('[pv] 自動同步失敗', error);
+    console.error('[wordtiger] 自動同步失敗', error);
   }
   await updateSyncBadge();
 }
@@ -107,7 +107,7 @@ async function autoHighlight(tab: Browser.tabs.Tab): Promise<void> {
 }
 
 async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<void> {
-  console.log('[pv] toggle via', via, '| tab', tab?.id, tab?.url);
+  console.log('[wordtiger] toggle via', via, '| tab', tab?.id, tab?.url);
   if (!tab?.id || !tab.url) return;
 
   const { blockedHosts } = await loadSettings();
@@ -124,5 +124,5 @@ async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<v
     target: { tabId: tab.id, allFrames: true },
     files: ['/content-scripts/highlight.js'],
   });
-  console.log('[pv] injected frames:', injected.length);
+  console.log('[wordtiger] injected frames:', injected.length);
 }
