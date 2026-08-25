@@ -189,15 +189,15 @@ async function exportJson() {
 .page-title { justify-content: space-between; margin-bottom: 1rem; }
 .page-title h2, .page-title p, h3 { margin: 0; }
 .toolbar { gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.toolbar input { flex: 1; min-width: 180px; padding: .45rem .6rem; }
-.toolbar select { width: auto; padding: .45rem; }
+.toolbar input { flex: 1; min-width: 180px; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; }
+.toolbar select { width: auto; padding: .55rem; border: 1px solid #cbd5e1; border-radius: 8px; }
 .sort { display: flex; }
 .sort button { border-radius: 0; }
 .sort button:first-child { border-radius: 5px 0 0 5px; }
 .sort button:last-child { border-radius: 0 5px 5px 0; }
 .sort .active { color: white; background: #6557c5; border-color: #6557c5; }
-.word-list { border-top: 1px solid #ddd; }
-.word-card { padding: 1.25rem 0; border-bottom: 1px solid #ddd; }
+.word-list { display: grid; gap: .75rem; }
+.word-card { padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .word-header { align-items: flex-start; gap: 1rem; }
 .word-header h3 { display: inline; margin-right: .6rem; font-size: 24px; }
 .status { padding: .12rem .45rem; border-radius: 999px; font-size: 12px; }
@@ -206,7 +206,7 @@ async function exportJson() {
 .count { margin-left: .5rem; color: #777; font-size: 13px; }
 .actions { gap: .4rem; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .danger { color: #b4451f; }
-.dictionary { margin: 1rem 0; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+.dictionary { margin: 1rem 0; border: 1px solid #dbe4f0; border-radius: 10px; padding: 1rem; background: white; }
 .dictionary :deep(.h) { margin-top: 1rem; color: #6557c5; font-weight: 700; }
 .dictionary :deep(p), .dictionary :deep(ul) { margin: .4rem 0; }
 .contexts { margin: 1rem 0 0; padding: 0; list-style: none; }
@@ -220,7 +220,8 @@ footer a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space:
 footer button { margin-left: auto; }
 .no-context, .empty { padding: 1rem; color: #777; background: #f7f7f8; }
 .note, small { color: #777; font-size: 13px; }
-button { cursor: pointer; }
+button { padding: .45rem .65rem; border: 1px solid #cbd5e1; border-radius: 7px; color: #334155; background: white; cursor: pointer; }
+button:focus-visible, input:focus, select:focus { outline: 3px solid #c7d2fe; outline-offset: 1px; }
 
 @media (max-width: 700px) {
   .word-header { display: block; }

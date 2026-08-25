@@ -12,3 +12,4 @@
 | [0006](0006-stream-ai-over-runtime-port.md) | 用 runtime Port 傳送 AI 串流結果 | accepted | 2026-08-25 |
 | [0007](0007-explicit-known-overrides-frequency.md) | 用 known 狀態覆蓋詞頻判定 | accepted | 2026-08-25 |
 | [0008](0008-unbounded-deduplicated-contexts.md) | 語境不設筆數上限並做精確去重 | accepted | 2026-08-25 |
+| [0009](0009-local-first-supabase-sync.md) | Supabase 只作為 local-first 的同步傳遞層 | accepted | 2026-08-25 |

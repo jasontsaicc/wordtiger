@@ -10,6 +10,8 @@ export interface WordRow {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+  /** 本機改動尚未被雲端確認；舊資料沒有此欄時也視為待同步 */
+  pending?: 0 | 1;
 }
 
 export interface ContextRow {
@@ -21,6 +23,7 @@ export interface ContextRow {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+  pending?: 0 | 1;
 }
 
 export interface ContextInput {
@@ -79,6 +82,7 @@ export async function markWord(word: string, status: WordStatus): Promise<void> 
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     deletedAt: null,
+    pending: 1,
   });
 }
 
@@ -87,7 +91,7 @@ export async function unmarkWord(word: string): Promise<void> {
   const now = Date.now();
   const existing = await db.words.get(word);
   if (!existing) return;
-  await db.words.put({ ...existing, updatedAt: now, deletedAt: now });
+  await db.words.put({ ...existing, updatedAt: now, deletedAt: now, pending: 1 });
 }
 
 /** options 的「刪除」比取消標記更強:單字與其語境一起留下可同步的 tombstone。 */
@@ -95,11 +99,11 @@ export async function deleteWord(word: string): Promise<void> {
   const now = Date.now();
   await db.transaction('rw', db.words, db.contexts, async () => {
     const existing = await db.words.get(word);
-    if (existing) await db.words.put({ ...existing, updatedAt: now, deletedAt: now });
+    if (existing) await db.words.put({ ...existing, updatedAt: now, deletedAt: now, pending: 1 });
 
     const contexts = await db.contexts.where('word').equals(word).toArray();
     await db.contexts.bulkPut(
-      contexts.map((row) => ({ ...row, updatedAt: now, deletedAt: now })),
+      contexts.map((row) => ({ ...row, updatedAt: now, deletedAt: now, pending: 1 as const })),
     );
   });
 }
@@ -123,6 +127,7 @@ export async function addContext(input: ContextInput): Promise<void> {
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
+    pending: 1,
   });
 }
 

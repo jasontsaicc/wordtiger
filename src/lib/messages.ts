@@ -1,6 +1,7 @@
 import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, getCached, putCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
 import { lookupWord, explainSentence } from './ai';
 import { loadSettings } from './settings';
+import { getSyncState, signIn, signOut, syncNow } from './sync';
 import type { WordStatus } from './decide';
 
 export interface ExportBundle {
@@ -29,7 +30,11 @@ export type Msg =
   | { type: 'exportData' }
   | { type: 'getCachedWord'; word: string }
   | { type: 'listCachedWords' }
-  | { type: 'deleteCachedWord'; word: string };
+  | { type: 'deleteCachedWord'; word: string }
+  | { type: 'getSyncState' }
+  | { type: 'syncLogin'; url: string; anonKey: string; email: string; password: string }
+  | { type: 'syncLogout' }
+  | { type: 'syncNow' };
 
 /**
  * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
@@ -152,6 +157,26 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'deleteCachedWord':
       await db.lookupCache.delete(msg.word);
       return null;
+
+    case 'getSyncState':
+      return getSyncState();
+
+    case 'syncLogin':
+      try {
+        return { ok: true, state: await signIn(msg.url, msg.anonKey, msg.email, msg.password) };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+
+    case 'syncLogout':
+      return { ok: true, state: await signOut() };
+
+    case 'syncNow':
+      try {
+        return { ok: true, result: await syncNow(), state: await getSyncState() };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
   }
 }
 

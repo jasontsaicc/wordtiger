@@ -1,5 +1,10 @@
 import { handleMessage, handleStreamMessage, type Msg } from '@/src/lib/messages';
 import { loadSettings, pageOrigin } from '@/src/lib/settings';
+import { getSyncState, syncNow } from '@/src/lib/sync';
+
+const SYNC_ALARM = 'pv-sync';
+const SYNC_SOON_ALARM = 'pv-sync-soon';
+const LOCAL_CHANGES = new Set(['toggleMark', 'saveContext', 'deleteWord', 'setWordStatus']);
 
 export default defineBackground(() => {
   // 用 sendResponse 加 return true,不用「listener 回傳 Promise」那種寫法。
@@ -10,7 +15,13 @@ export default defineBackground(() => {
     // 呼叫端的 await 永遠不會 settle:不回應、不拋錯、不逾時,畫面就這樣白掉。
     // 回 undefined 至少讓呼叫端立刻拿到結果,錯誤留在 service worker console。
     handleMessage(msg)
-      .then(sendResponse)
+      .then((result) => {
+        sendResponse(result);
+        if (LOCAL_CHANGES.has(msg.type)) void scheduleSync();
+        if (msg.type === 'syncLogin' || msg.type === 'syncLogout' || msg.type === 'syncNow') {
+          void updateSyncBadge();
+        }
+      })
       .catch((err) => {
         console.error('[pv] handleMessage 失敗', msg.type, err);
         sendResponse(undefined);
@@ -48,7 +59,37 @@ export default defineBackground(() => {
     if (changeInfo.status !== 'complete' || !tab.url) return;
     void autoHighlight(tab);
   });
+
+  void browser.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === SYNC_ALARM || alarm.name === SYNC_SOON_ALARM) void runSync();
+  });
+  void updateSyncBadge();
 });
+
+async function scheduleSync(): Promise<void> {
+  if ((await getSyncState()).loggedIn) {
+    await browser.alarms.create(SYNC_SOON_ALARM, { delayInMinutes: 0.5 });
+  }
+}
+
+async function runSync(): Promise<void> {
+  if (!(await getSyncState()).loggedIn) return;
+  try {
+    await syncNow();
+  } catch (error) {
+    console.error('[pv] 自動同步失敗', error);
+  }
+  await updateSyncBadge();
+}
+
+async function updateSyncBadge(): Promise<void> {
+  const state = await getSyncState();
+  await browser.action.setBadgeText({ text: state.loggedIn && state.lastError ? '!' : '' });
+  if (state.loggedIn && state.lastError) {
+    await browser.action.setBadgeBackgroundColor({ color: '#dc2626' });
+  }
+}
 
 async function autoHighlight(tab: Browser.tabs.Tab): Promise<void> {
   if (!tab.url) return;

@@ -23,6 +23,15 @@ pnpm build
 
 `pnpm build` 產物位於 `.output/chrome-mv3`，可從 Chrome／Edge 的擴充功能開發者模式載入。
 
+## 多裝置同步
+
+1. 建立 Supabase 專案，並在 SQL Editor 執行 [`supabase/schema.sql`](supabase/schema.sql)。
+2. 在 Authentication 建立 email/password 使用者。
+3. 到擴充功能設定頁填入 Project URL、anon key 與帳密後登入，再按「立即同步」。
+
+同步採 local-first：單字與語境永遠先寫 IndexedDB，離線不影響使用；登入後每 5 分鐘、
+本機變更後 30 秒與手動按鈕都會做增量同步。刪除以 tombstone 傳遞，衝突採最後寫入者勝出。
+
 ## 使用方式
 
 | 按鍵／入口 | 動作 |
@@ -50,13 +59,14 @@ pnpm build
 ## 程式入口
 
 - `entrypoints/highlight.content.ts`：高亮、快捷鍵、卡片與 AI 串流顯示。
-- `entrypoints/background.ts`：訊息處理、AI 串流通道、自動注入。
+- `entrypoints/background.ts`：訊息處理、AI 串流通道、自動注入與同步排程。
 - `entrypoints/popup/`：工具列控制中心。
 - `entrypoints/options/`：AI 設定、生詞語境與快取回答。
 - `src/lib/decide.ts`：詞頻、手動標記與色階判定。
 - `src/lib/ai.ts`：OpenAI Chat Completions 與 SSE 解析。
 - `src/lib/messages.ts`：content、options 與 background 的共用訊息入口。
 - `src/lib/db.ts`：Dexie 資料表與軟刪除規則。
+- `src/lib/sync.ts`：Supabase 登入、session 更新與增量拉推。
 
 ## 文件與交接
 

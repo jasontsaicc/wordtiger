@@ -23,6 +23,11 @@ describe('renderCardHtml', () => {
     expect(renderCardHtml({ title: 'a', body: 'b' })).not.toContain('class="hint"');
   });
 
+  it('快捷鍵提示拆成容易掃讀的標籤', () => {
+    const html = renderCardHtml({ title: 'a', body: 'b', hint: 'Space 收藏 · Esc 關閉' });
+    expect(html).toContain('<span>Space 收藏</span><span>Esc 關閉</span>');
+  });
+
   it('AI 回傳的 HTML 標籤要被跳脫,不能真的變成節點', () => {
     const html = renderCardHtml({ title: '', body: '<img src=x onerror=alert(1)>' });
     expect(html).not.toContain('<img');

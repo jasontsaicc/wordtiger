@@ -1,0 +1,384 @@
+import { db, type ContextRow, type WordRow } from './db';
+
+const KEY = 'sync';
+
+interface Session {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  email: string;
+}
+
+interface StoredSync {
+  url: string;
+  anonKey: string;
+  session?: Session;
+  accountId?: string;
+  cursor: number;
+  lastSuccessAt?: number;
+  lastError?: string;
+}
+
+export interface SyncState {
+  url: string;
+  anonKey: string;
+  email: string;
+  loggedIn: boolean;
+  lastSuccessAt?: number;
+  lastError?: string;
+}
+
+export interface SyncResult {
+  pulled: number;
+  pushed: number;
+  finishedAt: number;
+}
+
+type RemoteWord = {
+  user_id: string;
+  word: string;
+  status: WordRow['status'];
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+type RemoteContext = {
+  id: string;
+  user_id: string;
+  word: string;
+  sentence: string;
+  url: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+let running: Promise<SyncResult> | undefined;
+
+async function load(): Promise<StoredSync> {
+  const got = await browser.storage.local.get(KEY);
+  const stored = (got[KEY] ?? {}) as Partial<StoredSync>;
+  return {
+    url: typeof stored.url === 'string' ? stored.url : '',
+    anonKey: typeof stored.anonKey === 'string' ? stored.anonKey : '',
+    cursor: typeof stored.cursor === 'number' ? stored.cursor : 0,
+    session: stored.session,
+    accountId: stored.accountId,
+    lastSuccessAt: stored.lastSuccessAt,
+    lastError: stored.lastError,
+  };
+}
+
+async function save(value: StoredSync): Promise<void> {
+  await browser.storage.local.set({ [KEY]: value });
+}
+
+function cleanUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' && url.hostname !== 'localhost') {
+    throw new Error('Supabase URL 必須使用 HTTPS');
+  }
+  return url.origin;
+}
+
+export async function getSyncState(): Promise<SyncState> {
+  const stored = await load();
+  return {
+    url: stored.url,
+    anonKey: stored.anonKey,
+    email: stored.session?.email ?? '',
+    loggedIn: Boolean(stored.session),
+    lastSuccessAt: stored.lastSuccessAt,
+    lastError: stored.lastError,
+  };
+}
+
+export async function signIn(
+  url: string,
+  anonKey: string,
+  email: string,
+  password: string,
+): Promise<SyncState> {
+  if (!anonKey.trim() || !email.trim() || !password) throw new Error('登入欄位不能留空');
+  const stored = await load();
+  const normalized = cleanUrl(url);
+  const response = await fetch(`${normalized}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { apikey: anonKey.trim(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error_description ?? body.msg ?? `登入失敗 ${response.status}`);
+
+  const changedAccount = Boolean(
+    (stored.accountId && stored.accountId !== body.user.id)
+    || (stored.url && stored.url !== normalized),
+  );
+  if (changedAccount) {
+    await Promise.all([
+      db.words.toCollection().modify({ pending: 1 }),
+      db.contexts.toCollection().modify({ pending: 1 }),
+    ]);
+  }
+  await save({
+    url: normalized,
+    anonKey: anonKey.trim(),
+    cursor: changedAccount ? 0 : stored.cursor,
+    accountId: body.user.id,
+    session: {
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      expiresAt: Date.now() + body.expires_in * 1000,
+      userId: body.user.id,
+      email: body.user.email ?? email.trim(),
+    },
+  });
+  return getSyncState();
+}
+
+export async function signOut(): Promise<SyncState> {
+  const stored = await load();
+  if (stored.session) {
+    await fetch(`${stored.url}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { apikey: stored.anonKey, Authorization: `Bearer ${stored.session.accessToken}` },
+    }).catch(() => undefined);
+  }
+  await save({
+    url: stored.url, anonKey: stored.anonKey, cursor: stored.cursor,
+    accountId: stored.accountId,
+  });
+  return getSyncState();
+}
+
+async function session(stored: StoredSync): Promise<Session> {
+  if (!stored.session) throw new Error('請先登入 Supabase');
+  if (stored.session.expiresAt > Date.now() + 60_000) return stored.session;
+
+  const response = await fetch(`${stored.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { apikey: stored.anonKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: stored.session.refreshToken }),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error_description ?? body.msg ?? '登入已過期');
+  stored.session = {
+    ...stored.session,
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token,
+    expiresAt: Date.now() + body.expires_in * 1000,
+  };
+  await save(stored);
+  return stored.session;
+}
+
+async function request<T>(
+  stored: StoredSync,
+  active: Session,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const response = await fetch(`${stored.url}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: stored.anonKey,
+      Authorization: `Bearer ${active.accessToken}`,
+      'Content-Type': 'application/json',
+      ...init.headers,
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`同步失敗 ${response.status}${text ? `：${text}` : ''}`);
+  }
+  return response.status === 204 ? undefined as T : response.json();
+}
+
+function stamp(value: string | null): number | null {
+  return value ? Date.parse(value) : null;
+}
+
+function localWord(row: RemoteWord): WordRow {
+  return {
+    word: row.word,
+    status: row.status,
+    createdAt: Date.parse(row.created_at),
+    updatedAt: Date.parse(row.updated_at),
+    deletedAt: stamp(row.deleted_at),
+    pending: 0,
+  };
+}
+
+function localContext(row: RemoteContext): ContextRow {
+  return {
+    id: row.id,
+    word: row.word,
+    sentence: row.sentence,
+    url: row.url ?? '',
+    title: row.title ?? '',
+    createdAt: Date.parse(row.created_at),
+    updatedAt: Date.parse(row.updated_at),
+    deletedAt: stamp(row.deleted_at),
+    pending: 0,
+  };
+}
+
+/** 待推送的本機改動較新才保留；否則遠端資料（含 tombstone）勝出。 */
+export function resolveRow<
+  L extends { updatedAt: number; pending?: 0 | 1 },
+  R extends { updatedAt: number; pending?: 0 | 1 },
+>(local: L | undefined, remote: R): L | R {
+  return local && local.pending !== 0 && local.updatedAt > remote.updatedAt
+    ? local
+    : { ...remote, pending: 0 };
+}
+
+/** 推送途中若本機又被改過，不可用較舊的伺服器回應蓋掉它。 */
+export function acknowledgeRow<
+  C extends { updatedAt: number; pending?: 0 | 1 },
+  S extends { updatedAt: number; pending?: 0 | 1 },
+  R extends { updatedAt: number; pending?: 0 | 1 },
+>(current: C | undefined, sent: S | undefined, remote: R): C | R {
+  return !current || (sent && current.pending !== 0 && current.updatedAt === sent.updatedAt)
+    ? { ...remote, pending: 0 }
+    : current;
+}
+
+function iso(value: number | null): string | null {
+  return value === null ? null : new Date(value).toISOString();
+}
+
+function remoteWord(row: WordRow, userId: string) {
+  return {
+    user_id: userId,
+    word: row.word,
+    status: row.status,
+    created_at: iso(row.createdAt),
+    deleted_at: iso(row.deletedAt),
+  };
+}
+
+function remoteContext(row: ContextRow, userId: string) {
+  return {
+    id: row.id,
+    user_id: userId,
+    word: row.word,
+    sentence: row.sentence,
+    url: row.url,
+    title: row.title,
+    created_at: iso(row.createdAt),
+    deleted_at: iso(row.deletedAt),
+  };
+}
+
+async function pull<T>(
+  stored: StoredSync,
+  active: Session,
+  table: string,
+  cutoff: string,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const query = new URLSearchParams({
+      select: '*',
+      updated_at: `gt.${new Date(stored.cursor).toISOString()}`,
+      and: `(updated_at.lte.${cutoff})`,
+      order: 'updated_at.asc',
+      limit: '1000',
+      offset: String(offset),
+    });
+    const page = await request<T[]>(stored, active, `${table}?${query}`);
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
+
+async function push<T>(
+  stored: StoredSync,
+  active: Session,
+  table: string,
+  conflict: string,
+  rows: unknown[],
+): Promise<T[]> {
+  if (!rows.length) return [];
+  const saved: T[] = [];
+  for (let offset = 0; offset < rows.length; offset += 500) {
+    saved.push(...await request<T[]>(stored, active,
+      `${table}?on_conflict=${encodeURIComponent(conflict)}&select=*`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify(rows.slice(offset, offset + 500)),
+    }));
+  }
+  return saved;
+}
+
+async function performSync(): Promise<SyncResult> {
+  const stored = await load();
+  try {
+    const active = await session(stored);
+    const cutoff = await request<string>(stored, active, 'rpc/sync_clock', {
+      method: 'POST', body: '{}',
+    });
+    const [remoteWords, remoteContexts] = await Promise.all([
+      pull<RemoteWord>(stored, active, 'words', cutoff),
+      pull<RemoteContext>(stored, active, 'contexts', cutoff),
+    ]);
+
+    await db.transaction('rw', db.words, db.contexts, async () => {
+      for (const row of remoteWords) {
+        const remote = localWord(row);
+        await db.words.put(resolveRow(await db.words.get(remote.word), remote));
+      }
+      for (const row of remoteContexts) {
+        const remote = localContext(row);
+        await db.contexts.put(resolveRow(await db.contexts.get(remote.id), remote));
+      }
+    });
+
+    const [pendingWords, pendingContexts] = await Promise.all([
+      db.words.filter((row) => row.pending !== 0).toArray(),
+      db.contexts.filter((row) => row.pending !== 0).toArray(),
+    ]);
+    const [savedWords, savedContexts] = await Promise.all([
+      push<RemoteWord>(stored, active, 'words', 'user_id,word',
+        pendingWords.map((row) => remoteWord(row, active.userId))),
+      push<RemoteContext>(stored, active, 'contexts', 'id',
+        pendingContexts.map((row) => remoteContext(row, active.userId))),
+    ]);
+    const sentWords = new Map(pendingWords.map((row) => [row.word, row]));
+    const sentContexts = new Map(pendingContexts.map((row) => [row.id, row]));
+    await db.transaction('rw', db.words, db.contexts, async () => {
+      for (const row of savedWords.map(localWord)) {
+        await db.words.put(acknowledgeRow(
+          await db.words.get(row.word), sentWords.get(row.word), row,
+        ));
+      }
+      for (const row of savedContexts.map(localContext)) {
+        await db.contexts.put(acknowledgeRow(
+          await db.contexts.get(row.id), sentContexts.get(row.id), row,
+        ));
+      }
+    });
+
+    const finishedAt = Date.now();
+    delete stored.lastError;
+    await save({ ...stored, session: active, cursor: Date.parse(cutoff), lastSuccessAt: finishedAt });
+    return {
+      pulled: remoteWords.length + remoteContexts.length,
+      pushed: savedWords.length + savedContexts.length,
+      finishedAt,
+    };
+  } catch (error) {
+    await save({ ...stored, lastError: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+}
+
+export function syncNow(): Promise<SyncResult> {
+  // ponytail: 單一 service worker 共用一把鎖；真的需要多帳號同時同步時再拆帳號鎖。
+  return running ??= performSync().finally(() => { running = undefined; });
+}

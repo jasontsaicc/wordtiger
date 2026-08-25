@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: '個人詞庫',
     description: '英文閱讀生詞高亮與 AI 查詞',
-    permissions: ['activeTab', 'scripting', 'storage'],
+    permissions: ['activeTab', 'scripting', 'storage', 'alarms'],
     host_permissions: [],
     optional_host_permissions: ['<all_urls>'],
     web_accessible_resources: [

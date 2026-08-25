@@ -214,7 +214,7 @@ export default defineContentScript({
         }
 
         // 完整查詞要好幾秒,沒有回饋會讓人以為按鍵沒進去
-        showCard({ title: hover.lemma, body: '查詢中…', rect: hover.rect, hint: '', marked });
+        showCard({ title: hover.lemma, body: '查詢中…', rect: hover.rect, hint: '', marked, loading: true });
 
         const seq = ++explainSeq;
         const result = await streamAi({
@@ -256,7 +256,7 @@ export default defineContentScript({
         current = null;
 
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
-        showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉' });
+        showCard({ title, body: '查詢中…', rect, hint: 'Esc 關閉', loading: true });
 
         const seq = ++explainSeq;
         const result = await streamAi({

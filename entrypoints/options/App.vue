@@ -7,6 +7,7 @@ import {
 import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
 import CachedAnswers from './CachedAnswers.vue';
+import SyncPanel from './SyncPanel.vue';
 
 const settings = ref<Settings | null>(null);
 const granted = ref(false);
@@ -70,7 +71,10 @@ async function grantHost() {
 
 <template>
   <main v-if="loadError" class="wrap">
-    <h1>個人詞庫</h1>
+    <header class="page-head">
+      <div class="logo">V</div>
+      <div><h1>個人詞庫</h1><p>閱讀、收藏，在每台裝置接著學</p></div>
+    </header>
     <p class="warn">設定載入失敗:{{ loadError }}</p>
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
   </main>
@@ -85,6 +89,7 @@ async function grantHost() {
     </nav>
 
     <template v-if="tab === 'settings'">
+    <SyncPanel />
     <section>
       <h2>AI 設定</h2>
       <label>服務
@@ -164,14 +169,25 @@ async function grantHost() {
 </template>
 
 <style scoped>
-.wrap { max-width: 720px; margin: 2rem auto; font: 15px/1.7 system-ui, sans-serif; }
+:global(*) { box-sizing: border-box; }
+:global(body) { margin: 0; color: #1e293b; background: #f6f7fb; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; font: 15px/1.65 ui-sans-serif, system-ui, sans-serif; }
 .wrap.wide { max-width: 1100px; }
-section { margin-bottom: 2.5rem; }
-nav { display: flex; gap: .5rem; margin-bottom: 2rem; border-bottom: 1px solid #ddd; }
-nav button { padding: .65rem 1rem; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer; }
-nav button.active { color: #5b4bc4; border-bottom-color: #7c6ee6; font-weight: 700; }
+.page-head { display: flex; align-items: center; gap: .9rem; margin-bottom: 1.5rem; }
+.page-head h1, .page-head p { margin: 0; }
+.page-head h1 { color: #0f172a; font-size: 25px; line-height: 1.2; letter-spacing: -.03em; }
+.page-head p { color: #64748b; font-size: 13px; }
+.logo { display: grid; place-items: center; width: 42px; height: 42px; color: white; background: linear-gradient(145deg, #4f46e5, #7c3aed); border-radius: 12px; box-shadow: 0 7px 18px #6366f140; font-size: 20px; font-weight: 800; }
+section { margin-bottom: 1rem; padding: 1.25rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
+section h2 { margin-top: 0; color: #0f172a; font-size: 17px; }
+nav { display: flex; gap: .35rem; margin-bottom: 1.25rem; padding: .3rem; border: 1px solid #e2e8f0; border-radius: 11px; background: #eef0f6; }
+nav button { flex: 1; padding: .6rem 1rem; border: 0; border-radius: 8px; color: #64748b; background: transparent; cursor: pointer; }
+nav button.active { color: #3730a3; background: white; box-shadow: 0 1px 4px #0f172a18; font-weight: 700; }
 label { display: block; margin-bottom: .75rem; }
-input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .4rem; }
+input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
+input:focus, textarea:focus, select:focus, button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 1px; border-color: #6366f1; }
+button { padding: .5rem .75rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; cursor: pointer; }
+button:disabled { opacity: .55; cursor: wait; }
 input[type="range"] { width: 100%; }
 .colors { margin: 1rem 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
 .color-head, .color-row { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, 72px); align-items: center; gap: .75rem; padding: .55rem .75rem; }
@@ -180,10 +196,11 @@ input[type="range"] { width: 100%; }
 .color-row + .color-row { border-top: 1px solid #e2e8f0; }
 .color-row input[type="color"] { width: 100%; height: 32px; padding: 0; border: 0; background: none; cursor: pointer; }
 .switch { display: flex; gap: .5rem; align-items: center; }
-.note { opacity: .6; font-size: 13px; }
+.note { color: #64748b; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
 .ok { color: #2b7a3d; font-size: 13px; }
 table { width: 100%; border-collapse: collapse; }
 td { padding: .4rem; border-bottom: 1px solid #ddd; cursor: pointer; }
 blockquote { border-left: 3px solid #c8c0ff; margin: .5rem 0; padding-left: .75rem; }
+@media (max-width: 640px) { .wrap { padding: 1.25rem .75rem 3rem; } nav button { padding-inline: .35rem; } section { padding: 1rem; } }
 </style>
