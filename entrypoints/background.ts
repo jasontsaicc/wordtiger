@@ -67,6 +67,12 @@ export default defineBackground(() => {
     void autoHighlight(tab);
   });
 
+  // 第一次安裝就把設定頁開起來。沒有 API Key 之前查詞不會動,
+  // 不主動帶一下,新使用者第一個按鍵得到的就是錯誤訊息。更新版本不打擾。
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'install') void browser.runtime.openOptionsPage();
+  });
+
   void browser.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === SYNC_ALARM || alarm.name === SYNC_SOON_ALARM) void runSync();

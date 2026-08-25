@@ -1,4 +1,5 @@
-import { collectTokens, conjunctionKind, sentenceAround, sentenceContextAround, type ConjunctionKind } from '@/src/content/scan';
+import { collectTokens, sentenceAround, sentenceContextAround, type ConjunctionKind } from '@/src/content/scan';
+import { buildRanges } from '@/src/content/paint';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
 import type { ExplainResult, Msg } from '@/src/lib/messages';
@@ -65,38 +66,24 @@ export default defineContentScript({
     } = highlightSettings;
     injectStyle(highlightColors, highlightTextColors, highlightUnderlineColors);
 
-    function paintHighlights() {
-      const ranges: Record<HighlightTier, Range[]> = {
-        saved: [], learning: [], advanced: [], rare: [],
-      };
-      const conjunctionRanges: Record<ConjunctionKind, Range[]> = {
-        coordinating: [], clause: [],
-      };
+    // 斷詞結果留著重用。改一個字的狀態不該把整頁重新走一遍 TreeWalker 和 Segmenter,
+    // 只有 DOM 真的變過才需要 rescan。
+    let tokens = collectTokens(document.body);
 
-      for (const hit of collectTokens(document.body)) {
-        const decision = shouldHighlight(hit.text, {
-          freq,
-          marks,
-          threshold,
-          isSentenceStart: hit.isSentenceStart,
-        });
-        const conjunction = markConjunctions ? conjunctionKind(hit.text) : null;
-        if (!decision.hit && !conjunction) continue;
-
-        const range = document.createRange();
-        range.setStart(hit.node, hit.start);
-        range.setEnd(hit.node, hit.end);
-        if (decision.hit) ranges[decision.tier!].push(range);
-        if (conjunction) conjunctionRanges[conjunction].push(range);
-      }
+    function paintHighlights(rescan = false) {
+      if (rescan) tokens = collectTokens(document.body);
+      const { tiers, conjunctions } = buildRanges(
+        tokens, { freq, marks, threshold }, markConjunctions,
+      );
 
       for (const tier of Object.keys(HIGHLIGHT_NAMES) as HighlightTier[]) {
-        CSS.highlights.set(HIGHLIGHT_NAMES[tier], new Highlight(...ranges[tier]));
+        CSS.highlights.set(HIGHLIGHT_NAMES[tier], new Highlight(...tiers[tier]));
       }
       for (const kind of Object.keys(CONJUNCTION_NAMES) as ConjunctionKind[]) {
-        CSS.highlights.set(CONJUNCTION_NAMES[kind], new Highlight(...conjunctionRanges[kind]));
+        CSS.highlights.set(CONJUNCTION_NAMES[kind], new Highlight(...conjunctions[kind]));
       }
-      console.log('[wordtiger] threshold', threshold, 'marks', marks.size, 'ranges', ranges);
+      // 只印數量。印 Range 物件的話,DevTools 開著時 console 會一直抓住它們。
+      console.log('[wordtiger] threshold', threshold, 'marks', marks.size, 'tokens', tokens.length);
     }
 
     paintHighlights();
@@ -105,7 +92,7 @@ export default defineContentScript({
     let scanTimer: ReturnType<typeof setTimeout> | undefined;
     const observer = new MutationObserver(() => {
       clearTimeout(scanTimer);
-      scanTimer = setTimeout(paintHighlights, 300);
+      scanTimer = setTimeout(() => paintHighlights(true), 300);
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     controller.signal.addEventListener('abort', () => {

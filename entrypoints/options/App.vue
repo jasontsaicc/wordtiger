@@ -86,6 +86,12 @@ async function refreshGrant() {
  * 授權必須由使用者手勢直接觸發,所以 request 要是這個 handler 的第一件事。
  * 中間先 await 別的東西,Chrome 會判定手勢已經過期而拒絕。
  */
+/** 換了端點,舊網域的授權就不算數了,存完立刻重新檢查一次。 */
+async function onEndpointChange() {
+  await persist();
+  await refreshGrant();
+}
+
 async function grantHost() {
   const origin = originPattern(settings.value?.baseUrl ?? '');
   if (!origin) return;
@@ -130,21 +136,26 @@ async function grantHost() {
       <h2>AI 閱讀教練</h2>
       <p class="note">查詞、快速看懂和拆句共用這組設定。</p>
       <label>服務
-        <select v-model="settings.baseUrl" @change="persist">
-          <option :value="OPENAI_BASE_URL">OpenAI — {{ OPENAI_BASE_URL }}</option>
-        </select>
+        <input v-model.trim="settings.baseUrl" type="url"
+          :placeholder="OPENAI_BASE_URL" @change="onEndpointChange" />
       </label>
       <label>API Key
         <input v-model="settings.apiKey" type="password" @change="persist" />
       </label>
       <label>Model
-        <select v-model="settings.model" @change="persist">
+        <input v-model.trim="settings.model" list="ai-models"
+          placeholder="gpt-4o-mini" @change="persist" />
+        <datalist id="ai-models">
           <option v-for="item in OPENAI_MODELS" :key="item.value" :value="item.value">
             {{ item.label }}
           </option>
-        </select>
+        </datalist>
       </label>
-      <p class="note">目前先固定 OpenAI；GPT-4o mini 適合快速翻譯，GPT-4.1 mini 適合較完整的查詞輸出。</p>
+      <p class="note">
+        任何 OpenAI 相容端點都可以，網址填到 <code>/v1</code> 為止。
+        Model 欄位可直接輸入該服務的模型名稱，下拉的是 OpenAI 的常用選項。
+        換服務之後要重新授權新的網域。
+      </p>
 
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
         先填一個完整網址,例如 https://api.openai.com/v1。
@@ -188,6 +199,10 @@ async function grantHost() {
         連詞標記：並列連詞用點線，從句連詞用雙線
       </label>
       <p class="note">背景色支援透明度；新配色使用淡色背景、黑字和較深下劃線，讓技術文件更容易掃讀。</p>
+      <p class="note">
+        詞頻排名資料來自 SUBTLEX-US（Brysbaert &amp; New, 2009），
+        經 npm 套件 <code>subtlex-word-frequencies</code> 轉成本地詞表，不會連外查詢。
+      </p>
     </section>
 
     <section>
@@ -223,7 +238,7 @@ nav button { flex: 1; min-width: 120px; padding: .6rem 1rem; border: 0; border-r
 nav button.active { color: #3730a3; background: white; box-shadow: 0 1px 4px #0f172a18; font-weight: 700; }
 .nav-count { display: inline-grid; min-width: 19px; height: 19px; place-items: center; margin-left: .25rem; padding: 0 .25rem; border-radius: 999px; color: white; background: #ea580c; font-size: 11px; }
 label { display: block; margin-bottom: .75rem; }
-input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
+input[type="text"], input[type="password"], input[type="url"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
 input:focus, textarea:focus, select:focus, button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 1px; border-color: #6366f1; }
 button { padding: .5rem .75rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; cursor: pointer; }
 button:disabled { opacity: .55; cursor: wait; }

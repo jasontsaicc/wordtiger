@@ -55,6 +55,18 @@ describe('lookupWord', () => {
     expect(got).toContain('部署');
   });
 
+  it('自訂的相容端點也打到同一條 /chat/completions 路徑', async () => {
+    const fetchMock = mockOk('內容');
+
+    await lookupWord({ w: 'deploy', s: 'b' }, {
+      ...settings, baseUrl: 'https://api.example-llm.com/v1', model: 'tiny-fast-v2',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.example-llm.com/v1/chat/completions');
+    expect(JSON.parse(init.body).model).toBe('tiny-fast-v2');
+  });
+
   it('不再開 JSON 模式,只有一筆結果不需要結構化', async () => {
     const fetchMock = mockOk('內容');
     await lookupWord({ w: 'a', s: 'b' }, settings);

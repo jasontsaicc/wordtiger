@@ -70,6 +70,17 @@ describe('loadSettings 的 template 合併', () => {
     expect(s.templates).toEqual(DEFAULT_TEMPLATES);
   });
 
+  it('自訂的相容端點與模型名稱要原封不動存讀', async () => {
+    // 服務欄位開放輸入之後,任何 OpenAI 相容端點都可能出現在這裡,
+    // 模型名稱也不再限於 OPENAI_MODELS 那份清單。
+    await fakeBrowser.storage.local.set({ settings: {
+      baseUrl: 'https://api.example-llm.com/v1', model: 'tiny-fast-v2',
+    } });
+    const s = await loadSettings();
+    expect(s.baseUrl).toBe('https://api.example-llm.com/v1');
+    expect(s.model).toBe('tiny-fast-v2');
+  });
+
   it('辨認舊版過長的預設查詞 prompt 並自動換成精簡版', async () => {
     await fakeBrowser.storage.local.set({ settings: {
       templates: { ...DEFAULT_TEMPLATES, lookup: '舊內容\n13. 不要輸出總結' },

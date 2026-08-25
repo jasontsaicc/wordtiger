@@ -28,6 +28,16 @@ pnpm build:safari
 `pnpm build` 產物位於 `.output/chrome-mv3`，可從 Chrome／Edge 的擴充功能開發者模式載入；
 `pnpm build:safari` 產物位於 `.output/safari-mv3`，供 Safari Web Extension Packager 封裝。
 
+## 給同事試用
+
+1. `pnpm zip` 產出 `.output/wordtiger-1.0.0-chrome.zip`，解壓縮到一個資料夾。
+2. Edge 開 `edge://extensions`，開啟開發人員模式，按「載入解壓縮」選那個資料夾。
+3. 首次安裝會自動打開設定頁。填服務網址、API Key 與 Model 之後才能查詞。
+4. 服務欄位吃任何 OpenAI 相容端點，不限 OpenAI。填完要按「授權這個網域」。
+5. 不需要 Supabase。沒登入時高亮、查詞、拆句、收藏與複習全部照常，只是不跨裝置同步。
+
+每個人要自備一把 API Key。
+
 ## 多裝置同步
 
 1. 建立 Supabase 專案，並在 SQL Editor 執行 [`supabase/schema.sql`](supabase/schema.sql)。
@@ -87,6 +97,11 @@ pnpm build:safari
 - [P1 核心閉環計畫](docs/superpowers/plans/2026-08-23-p1-core-loop.md)
 - [P3 加值功能計畫](docs/superpowers/plans/2026-08-24-p3-features.md)
 - [最新作業紀錄與下次待辦](docs/worklogs/2026-08-25.md)
+
+## 資料來源
+
+詞頻排名來自 SUBTLEX-US（Brysbaert & New, 2009），經 npm 套件
+`subtlex-word-frequencies` 在 build 時轉成本地 `freq.json`，執行期不連外查詢。
 
 ## 品牌資產
 
