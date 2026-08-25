@@ -121,6 +121,11 @@ async function openOptions() {
   await browser.runtime.openOptionsPage();
   window.close();
 }
+
+async function openReview() {
+  await browser.tabs.create({ url: browser.runtime.getURL('/options.html#review') });
+  window.close();
+}
 </script>
 
 <template>
@@ -130,6 +135,7 @@ async function openOptions() {
       <button class="primary" :disabled="!pagePattern || blocked" @click="toggleHighlight">
         {{ running ? '關閉本頁標示' : '開啟本頁標示' }}
       </button>
+      <button class="review" @click="openReview">今晚打老虎</button>
       <button @click="openOptions">設定與詞庫</button>
     </div>
 
@@ -179,7 +185,8 @@ header b { font-size: 16px; }
 header span { margin-left: auto; color: #6b7280; font-size: 12px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 button { border: 1px solid #ccd0d5; border-radius: 7px; padding: 9px; background: white; cursor: pointer; }
-button.primary { color: white; border-color: #2563eb; background: #2563eb; }
+button.primary { grid-column: 1 / -1; color: white; border-color: #2563eb; background: #2563eb; }
+button.review { color: #9a3412; border-color: #fed7aa; background: #fff7ed; font-weight: 700; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .switch { display: flex; gap: 8px; align-items: center; margin: 13px 0; font-weight: 600; }
 section { border-top: 1px solid #e5e7eb; padding-top: 9px; margin-top: 9px; }

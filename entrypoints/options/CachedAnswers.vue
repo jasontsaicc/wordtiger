@@ -34,8 +34,8 @@ async function remove(row: CachedWord) {
 
 <template>
   <section>
-    <h2>快取回答（單詞）</h2>
-    <p class="note">查過的單字先留在本機；登入後會與同一帳號的裝置同步。清除也會同步，下次按 A 才重新詢問 AI。</p>
+    <h2>AI 回答庫</h2>
+    <p class="note">老虎已經查過的單字，下次不用再花一次 AI 費用；登入後會與同一帳號的裝置同步。</p>
     <input v-model="keyword" class="search" placeholder="搜尋快取單字" />
 
     <div class="layout">
@@ -44,7 +44,7 @@ async function remove(row: CachedWord) {
           <b>{{ row.word }}</b>
           <small>{{ row.model ?? '未知模型' }} · {{ new Date(row.fetchedAt).toLocaleString() }}</small>
         </button>
-        <p v-if="filtered.length === 0" class="note">目前沒有符合的快取回答。</p>
+        <p v-if="filtered.length === 0" class="note">還沒有留下回答。回到文章按 A，這裡就會慢慢累積。</p>
       </div>
 
       <article v-if="selected">

@@ -14,3 +14,4 @@
 | [0008](0008-unbounded-deduplicated-contexts.md) | 語境不設筆數上限並做精確去重 | accepted | 2026-08-25 |
 | [0009](0009-local-first-supabase-sync.md) | Supabase 只作為 local-first 的同步傳遞層 | accepted | 2026-08-25 |
 | [0010](0010-wordtiger-brand-and-restrained-mascot.md) | 統一使用攔詞虎品牌並限制吉祥物的位置 | accepted | 2026-08-25 |
+| [0011](0011-contextual-binary-spaced-review.md) | 用真實語境與二選一自評做最小間隔複習 | accepted | 2026-08-25 |

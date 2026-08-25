@@ -1,4 +1,4 @@
-import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, getCached, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
+import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, recordReview, getCached, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
 import { lookupWord, explainSentence } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
@@ -24,6 +24,8 @@ export type Msg =
   | { type: 'lookup'; word: string; sentence: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
+  | { type: 'listReviewItems' }
+  | { type: 'reviewWord'; word: string; remembered: boolean }
   | {
     type: 'explain'; kind: 'translate' | 'grammar'; sentence: string;
     focus?: string; previous?: string; title?: string;
@@ -134,6 +136,12 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       );
       return rows;
     }
+
+    case 'listReviewItems':
+      return listReviewItems();
+
+    case 'reviewWord':
+      return recordReview(msg.word, msg.remembered);
 
     case 'deleteWord':
       await deleteWord(msg.word);

@@ -44,6 +44,10 @@ async function reload() {
 const contextTotal = computed(() =>
   words.value.reduce((total, word) => total + word.contexts.length, 0),
 );
+const phraseTotal = computed(() => words.value.filter((word) => isPhrase(word.word)).length);
+const knownTotal = computed(() => words.value.filter((word) => word.status === 'known').length);
+const unknownWordTotal = computed(() => words.value
+  .filter((word) => !isPhrase(word.word) && word.status === 'unknown').length);
 
 const filtered = computed(() => {
   const query = keyword.value.trim().toLowerCase();
@@ -110,8 +114,11 @@ async function exportJson() {
   <section>
     <div class="page-title">
       <div>
-        <h2>生詞與片語</h2>
-        <p class="note">{{ words.length }} 個收藏 · {{ contextTotal }} 條語境</p>
+        <h2>我的攔路虎</h2>
+        <p class="note">
+          {{ unknownWordTotal }} 隻生詞 · {{ phraseTotal }} 組片語 ·
+          {{ knownTotal }} 隻已馴服 · {{ contextTotal }} 條語境
+        </p>
       </div>
       <button @click="exportJson">匯出 JSON</button>
     </div>
@@ -124,7 +131,7 @@ async function exportJson() {
       <input v-model="keyword" placeholder="搜尋單字或片語" />
       <select v-model="statusFilter">
         <option value="unknown">生詞</option>
-        <option value="known">已認得</option>
+        <option value="known">已馴服</option>
         <option value="all">全部</option>
       </select>
     </div>
@@ -137,7 +144,7 @@ async function exportJson() {
           <div>
             <h3>{{ w.word }}</h3>
             <span class="status" :class="w.status">
-              {{ isPhrase(w.word) ? '片語' : (w.status === 'unknown' ? '生詞' : '已認得') }}
+              {{ isPhrase(w.word) ? '片語' : (w.status === 'unknown' ? '生詞' : '已馴服') }}
             </span>
             <span class="count">{{ w.contexts.length }} 條語境</span>
           </div>
@@ -146,7 +153,7 @@ async function exportJson() {
               {{ selected === w.word ? '收起詞典' : 'AI 詞典' }}
             </button>
             <button v-if="!isPhrase(w.word)" @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
-              {{ w.status === 'unknown' ? '標成已認得' : '改回生詞' }}
+              {{ w.status === 'unknown' ? '標成已馴服' : '改回生詞' }}
             </button>
             <button class="danger" @click="remove(w.word)">刪除</button>
           </div>

@@ -3,7 +3,7 @@
 **把英文裡的攔路虎，一隻隻抓起來。**
 
 攔詞虎是 JasonDevOps 製作的英文閱讀助手。閱讀英文網頁時，它會依個人詞彙程度標示生詞，
-並提供 AI 查詞、快速看懂、拆句教學、發音、生詞語境與 AI 詞典快取管理。
+並提供 AI 查詞、快速看懂、拆句教學、發音、生詞語境、「今晚打老虎」間隔複習與 AI 詞典快取管理。
 技術棧為 WXT、Vue 3、TypeScript、Dexie、Vitest。
 
 目前核心 MVP 已可日常使用。最新進度與下次待辦見
@@ -34,7 +34,7 @@ pnpm build:safari
 2. 在 Authentication 建立 email/password 使用者。
 3. 到擴充功能設定頁填入 Project URL、anon key 與帳密後登入，再按「立即同步」。
 
-同步採 local-first：單字、語境與 AI 詞典 cache 永遠先寫 IndexedDB，離線不影響使用；登入後每 5 分鐘、
+同步採 local-first：單字、語境、複習進度與 AI 詞典 cache 永遠先寫 IndexedDB，離線不影響使用；登入後每 5 分鐘、
 本機變更後 30 秒與手動按鈕都會做增量同步。刪除以 tombstone 傳遞，衝突採最後寫入者勝出。
 只有同一 Supabase 帳號能讀取該帳號的 cache；AI Key、prompt、顏色與句子翻譯／拆句 cache 仍僅存本機。
 
@@ -43,6 +43,7 @@ pnpm build:safari
 | 按鍵／入口 | 動作 |
 |---|---|
 | 工具列圖示 | 開啟目前網站控制、高亮樣式與設定入口 |
+| popup「今晚打老虎」 | 開啟本次 5 題的間隔複習 |
 | `Alt+U` | 開關目前頁面的生詞標示 |
 | `A` | 查詢滑鼠所在單字 |
 | `S` | 快速看懂所在句子 |
@@ -60,6 +61,8 @@ pnpm build:safari
 - 按 `A` 只查詞，不儲存語境。按 `Space` 加入生詞時才儲存所在句子；相同頁面的相同句子不重複，語境數量不設上限；少於 26 字元不存。
 - `S` 用「意思／關鍵」快速消除誤讀；`D` 用「意思／拆法／卡點」幫助學習同類句型。兩者都會參考游標詞、同段落前一句和頁面標題。
 - `D` 回覆有「帶走」片語時，按 `Space` 可連同來源句、頁面標題與網址收藏；片語直接沿用現有詞庫與裝置同步。
+- 「今晚打老虎」每次最多取 5 個到期收藏：單字回想語境義，片語從來源句回想被挖空的內容；
+  自評「抓到了」依 1、3、7、14、30 天延長間隔，「又讓牠溜了」則隔天再來。
 - content script 不直接連外或操作 IndexedDB。AI 與資料操作由 background 負責；
   AI 文字透過 `runtime.Port` 串流回卡片，成功完成後才寫入快取。
 - 高亮使用 CSS Custom Highlight API，不包裹或修改網頁正文節點。
@@ -70,6 +73,7 @@ pnpm build:safari
 - `entrypoints/background.ts`：訊息處理、AI 串流通道、自動注入與同步排程。
 - `entrypoints/popup/`：工具列控制中心。
 - `entrypoints/options/`：AI 設定、生詞語境與快取回答。
+- `entrypoints/options/ReviewSession.vue`：「今晚打老虎」五題複習介面。
 - `src/lib/decide.ts`：詞頻、手動標記與色階判定。
 - `src/lib/ai.ts`：OpenAI Chat Completions 與 SSE 解析。
 - `src/lib/messages.ts`：content、options 與 background 的共用訊息入口。

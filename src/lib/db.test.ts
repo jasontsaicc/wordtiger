@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -150,6 +150,74 @@ describe('lookupCache', () => {
     expect(await getCached(['deploy'])).toEqual(new Map());
     expect((await db.lookupCache.get('deploy'))).toMatchObject({ pending: 1 });
     expect((await db.lookupCache.get('deploy'))!.deletedAt).not.toBe(null);
+  });
+});
+
+describe('今晚打老虎', () => {
+  it('只列出到期且有答案材料的生詞與片語，最多五題', async () => {
+    for (let i = 0; i < 6; i++) {
+      const word = `word${i}`;
+      await markWord(word, 'unknown');
+      await putCached([{ word, payload: `definition ${i}` }]);
+    }
+    await markWord('already-known', 'known');
+    await putCached([{ word: 'already-known', payload: '不該出現' }]);
+    await markWord('not-ready', 'unknown');
+    await putCached([{ word: 'not-ready', payload: '尚未到期' }]);
+    await db.words.update('not-ready', { reviewDueAt: Date.now() + 86_400_000 });
+    await markWord('roll back', 'unknown');
+    await addContext({
+      word: 'roll back', sentence: 'We should roll back this release now.',
+      url: 'https://example.com', title: 'Release guide',
+    });
+
+    const items = await listReviewItems(5);
+    expect(items).toHaveLength(5);
+    expect(items.every((item) => item.word !== 'already-known' && item.word !== 'not-ready')).toBe(true);
+  });
+
+  it('片語使用來源語境，單字使用既有 AI 詞典', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{ word: 'deploy', payload: '## 動詞\n- 部署' }]);
+    await markWord('roll back', 'unknown');
+    await addContext({
+      word: 'roll back', sentence: 'We should roll back this release now.',
+      url: 'https://example.com', title: 'Release guide',
+    });
+
+    expect(await listReviewItems()).toEqual([
+      expect.objectContaining({ word: 'deploy', isPhrase: false, definition: expect.stringContaining('部署') }),
+      expect.objectContaining({ word: 'roll back', isPhrase: true, context: expect.objectContaining({ title: 'Release guide' }) }),
+    ]);
+  });
+
+  it('片語不在來源句中時不出成無法作答的題目', async () => {
+    await markWord('roll back', 'unknown');
+    await addContext({
+      word: 'roll back', sentence: 'The deployment failed during the release.',
+      url: 'https://example.com', title: 'Release guide',
+    });
+    expect(await listReviewItems()).toEqual([]);
+  });
+
+  it('自評後更新排程並留下待同步標記', async () => {
+    await db.words.put({
+      word: 'deploy', status: 'unknown', createdAt: 1, updatedAt: 1,
+      deletedAt: null, reviewStep: 1, pending: 0,
+    });
+    expect(await recordReview('deploy', true, 100)).toBe(true);
+    expect(await db.words.get('deploy')).toMatchObject({
+      reviewStep: 2,
+      reviewDueAt: 100 + 3 * 86_400_000,
+      updatedAt: 100,
+      pending: 1,
+    });
+  });
+
+  it('已認得或不存在的字不接受複習結果', async () => {
+    await markWord('deploy', 'known');
+    expect(await recordReview('deploy', true)).toBe(false);
+    expect(await recordReview('missing', true)).toBe(false);
   });
 });
 

@@ -20,34 +20,43 @@ function reset(key: keyof Templates) {
 </script>
 
 <template>
-  <section>
-    <h2>Prompt 編輯</h2>
-    <p class="note">
-      輸出格式那層是鎖定的,改不到。這裡改的是要求本身。
-      placeholder 打錯字會原樣留在 prompt 裡,發現 AI 答非所問先檢查這個。
-    </p>
+  <details>
+    <summary>
+      <span><b>回答方式</b><small>進階設定，一般使用不需要修改</small></span>
+    </summary>
 
-    <div v-for="f in FIELDS" :key="f.key" class="field">
-      <label>
-        {{ f.label }}
-        <span class="note">可用變數:{{ f.vars }}</span>
-      </label>
-      <textarea
-        rows="7"
-        :value="modelValue[f.key]"
-        @change="(e: any) => update(f.key, e.target.value)"
-      />
-      <button
-        v-if="modelValue[f.key] !== DEFAULT_TEMPLATES[f.key]"
-        @click="reset(f.key)"
-      >
-        還原成預設
-      </button>
+    <div class="content">
+      <p class="note">
+        輸出格式由系統保護；這裡只調整要求本身。placeholder 打錯字會原樣保留。
+      </p>
+
+      <div v-for="f in FIELDS" :key="f.key" class="field">
+        <label>
+          {{ f.label }}
+          <span class="note">可用變數:{{ f.vars }}</span>
+        </label>
+        <textarea
+          rows="7"
+          :value="modelValue[f.key]"
+          @change="(e: any) => update(f.key, e.target.value)"
+        />
+        <button
+          v-if="modelValue[f.key] !== DEFAULT_TEMPLATES[f.key]"
+          @click="reset(f.key)"
+        >
+          還原成預設
+        </button>
+      </div>
     </div>
-  </section>
+  </details>
 </template>
 
 <style scoped>
+details { margin-bottom: 1rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
+summary { padding: 1rem 1.25rem; cursor: pointer; }
+summary span { display: inline-flex; flex-direction: column; margin-left: .35rem; }
+summary small { color: #64748b; font-size: 12px; font-weight: 400; }
+.content { padding: 0 1.25rem 1.25rem; }
 .field { margin-bottom: 1.25rem; }
 label { display: block; margin-bottom: .25rem; }
 textarea { width: 100%; padding: .4rem; font: 13px/1.5 ui-monospace, monospace; }

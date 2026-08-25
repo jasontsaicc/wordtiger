@@ -12,7 +12,8 @@ MV3 service worker 沒有 `localStorage`，而目前只需要 Supabase Auth 與 
 
 ## Decision
 
-IndexedDB 永遠是 source of truth，Supabase 傳遞 `words`、`contexts` 與 `lookup_cache`。
+IndexedDB 永遠是 source of truth，Supabase 傳遞 `words`、`contexts` 與 `lookup_cache`；
+`words` 也承載「今晚打老虎」的 `reviewStep`、`reviewDueAt`，不另建同步表。
 AI 詞典回答在同一帳號的裝置間同步，避免重複消耗 token，也讓詞庫頁能直接顯示其他裝置查過的詞典。
 AI Key、prompt、顏色與含頁面上下文的句子翻譯／拆句 cache 仍保持本機限定。
 切換帳號時不把既有詞典 cache 標成待上傳，避免舊帳號內容被複製到新帳號。

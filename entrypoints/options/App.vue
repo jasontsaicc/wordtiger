@@ -8,11 +8,18 @@ import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
 import CachedAnswers from './CachedAnswers.vue';
 import SyncPanel from './SyncPanel.vue';
+import ReviewSession from './ReviewSession.vue';
+import type { ReviewItem } from '@/src/lib/db';
 
 const settings = ref<Settings | null>(null);
 const granted = ref(false);
 const loadError = ref('');
-const tab = ref<'settings' | 'contexts' | 'cache'>('settings');
+type Tab = 'review' | 'contexts' | 'cache' | 'settings';
+const tab = ref<Tab>(location.hash === '#review' ? 'review' : 'settings');
+const reviewItems = ref<ReviewItem[]>([]);
+const reviewTotal = ref(0);
+const reviewDone = ref(0);
+const reviewCaught = ref(0);
 const highlightTiers = [
   { key: 'saved', label: '我收藏的生詞' },
   { key: 'learning', label: '我的程度之外' },
@@ -26,12 +33,30 @@ onMounted(async () => {
   // 頁面就是一片白,而且 console 乾乾淨淨。白畫面要能說出自己為什麼白。
   try {
     settings.value = await loadSettings();
-    await refreshGrant();
+    await Promise.all([refreshGrant(), loadReviewItems()]);
   } catch (err) {
     loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     console.error('[wordtiger] options 載入失敗', err);
   }
 });
+
+async function loadReviewItems() {
+  reviewItems.value = (await browser.runtime.sendMessage({ type: 'listReviewItems' })) ?? [];
+  reviewTotal.value = reviewItems.value.length;
+  reviewDone.value = 0;
+  reviewCaught.value = 0;
+}
+
+function selectTab(next: Tab) {
+  tab.value = next;
+  history.replaceState(null, '', next === 'review' ? '#review' : location.pathname);
+}
+
+function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
+  reviewItems.value = reviewItems.value.filter((item) => item.word !== word);
+  reviewDone.value++;
+  if (remembered) reviewCaught.value++;
+}
 
 async function persist() {
   if (settings.value) await saveSettings(settings.value);
@@ -86,15 +111,24 @@ async function grantHost() {
     </header>
 
     <nav>
-      <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">設定</button>
-      <button :class="{ active: tab === 'contexts' }" @click="tab = 'contexts'">生詞與片語</button>
-      <button :class="{ active: tab === 'cache' }" @click="tab = 'cache'">快取回答</button>
+      <button :class="{ active: tab === 'review' }" @click="selectTab('review')">
+        今晚打老虎 <span v-if="reviewItems.length" class="nav-count">{{ reviewItems.length }}</span>
+      </button>
+      <button :class="{ active: tab === 'contexts' }" @click="selectTab('contexts')">我的攔路虎</button>
+      <button :class="{ active: tab === 'cache' }" @click="selectTab('cache')">AI 回答庫</button>
+      <button :class="{ active: tab === 'settings' }" @click="selectTab('settings')">設定</button>
     </nav>
 
-    <template v-if="tab === 'settings'">
+    <ReviewSession v-if="tab === 'review'"
+      :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
+      :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
+      :caught="reviewCaught" @reviewed="reviewed" />
+
+    <template v-else-if="tab === 'settings'">
     <SyncPanel />
     <section>
-      <h2>AI 設定</h2>
+      <h2>AI 閱讀教練</h2>
+      <p class="note">查詞、快速看懂和拆句共用這組設定。</p>
       <label>服務
         <select v-model="settings.baseUrl" @change="persist">
           <option :value="OPENAI_BASE_URL">OpenAI — {{ OPENAI_BASE_URL }}</option>
@@ -125,14 +159,15 @@ async function grantHost() {
     </section>
 
     <section>
-      <h2>你的背景</h2>
+      <h2>讓老虎認識你</h2>
       <textarea v-model="settings.profile" rows="4" @change="persist"
         placeholder="我是 DevOps 工程師,熟 Python / Shell / AWS。解釋單字時,如果這個字在軟體工程或維運領域有特定用法,優先給那個意思。" />
-      <p class="note">這段會被放進查詞、快速看懂、拆句的 prompt。</p>
+      <p class="note">告訴攔詞虎你的工作與英文程度，回答會更貼近你正在讀的內容。</p>
     </section>
 
     <section>
-      <h2>高亮門檻</h2>
+      <h2>閱讀標示</h2>
+      <p class="note">決定哪些字會跳出來攔你。</p>
       <input type="range" min="1000" max="30000" step="2000"
         v-model.number="settings.threshold" @change="persist" />
       <p>高亮詞頻排名 <b>{{ settings.threshold.toLocaleString() }}</b> 名以外的字。每次調整 2,000 名；往右拉，亮的字變少。</p>
@@ -156,7 +191,7 @@ async function grantHost() {
     </section>
 
     <section>
-      <h2>不啟用的網域</h2>
+      <h2>老虎不出沒的地方</h2>
       <textarea rows="3" :value="settings.blockedHosts.join('\n')"
         @change="(e: any) => { settings!.blockedHosts = e.target.value.split('\n').map((s: string) => s.trim()).filter(Boolean); persist(); }" />
       <p class="note">一行一個。公司內網放這裡,網頁內容就不會被送到 AI。</p>
@@ -166,7 +201,7 @@ async function grantHost() {
     </template>
 
     <WordLibrary v-else-if="tab === 'contexts'" />
-    <CachedAnswers v-else />
+    <CachedAnswers v-else-if="tab === 'cache'" />
 
   </main>
 </template>
@@ -183,9 +218,10 @@ async function grantHost() {
 .logo { width: 42px; height: 42px; border-radius: 10px; }
 section { margin-bottom: 1rem; padding: 1.25rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
 section h2 { margin-top: 0; color: #0f172a; font-size: 17px; }
-nav { display: flex; gap: .35rem; margin-bottom: 1.25rem; padding: .3rem; border: 1px solid #e2e8f0; border-radius: 11px; background: #eef0f6; }
-nav button { flex: 1; padding: .6rem 1rem; border: 0; border-radius: 8px; color: #64748b; background: transparent; cursor: pointer; }
+nav { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1.25rem; padding: .3rem; border: 1px solid #e2e8f0; border-radius: 11px; background: #eef0f6; }
+nav button { flex: 1; min-width: 120px; padding: .6rem 1rem; border: 0; border-radius: 8px; color: #64748b; background: transparent; cursor: pointer; }
 nav button.active { color: #3730a3; background: white; box-shadow: 0 1px 4px #0f172a18; font-weight: 700; }
+.nav-count { display: inline-grid; min-width: 19px; height: 19px; place-items: center; margin-left: .25rem; padding: 0 .25rem; border-radius: 999px; color: white; background: #ea580c; font-size: 11px; }
 label { display: block; margin-bottom: .75rem; }
 input[type="text"], input[type="password"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
 input:focus, textarea:focus, select:focus, button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 1px; border-color: #6366f1; }

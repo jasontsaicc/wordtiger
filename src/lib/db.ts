@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type { WordStatus } from './decide';
+import { nextReview } from './review';
 
 /** 語境句子的最短長度。太短的句子沒有語境價值 */
 const MIN_SENTENCE_LENGTH = 26;
@@ -10,8 +11,19 @@ export interface WordRow {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+  /** 0 是剛開始；5 是最長 30 天間隔 */
+  reviewStep?: number;
+  reviewDueAt?: number;
   /** 本機改動尚未被雲端確認；舊資料沒有此欄時也視為待同步 */
   pending?: 0 | 1;
+}
+
+export interface ReviewItem {
+  word: string;
+  isPhrase: boolean;
+  reviewStep: number;
+  definition?: string;
+  context?: Pick<ContextRow, 'sentence' | 'url' | 'title'>;
 }
 
 export interface ContextRow {
@@ -80,6 +92,7 @@ export async function markWord(word: string, status: WordStatus): Promise<void> 
   const now = Date.now();
   const existing = await db.words.get(word);
   await db.words.put({
+    ...existing,
     word,
     status,
     createdAt: existing?.createdAt ?? now,
@@ -142,6 +155,69 @@ export async function listContexts(word: string): Promise<ContextRow[]> {
   return rows
     .filter((r) => r.deletedAt === null)
     .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export async function listReviewItems(limit = 5, now = Date.now()): Promise<ReviewItem[]> {
+  // ponytail: 最多檢查題數的五倍；若大量孤兒資料真的讓題目補不滿，再改成分批查詢。
+  const candidates = (await db.words
+    .filter((row) => row.deletedAt === null
+      && row.status === 'unknown'
+      && (row.reviewDueAt ?? 0) <= now)
+    .toArray())
+    .sort((a, b) => (a.reviewDueAt ?? 0) - (b.reviewDueAt ?? 0)
+      || a.createdAt - b.createdAt)
+    .slice(0, limit * 5);
+  if (!candidates.length) return [];
+
+  const words = candidates.map((row) => row.word);
+  const wanted = new Set(words);
+  const [contexts, caches] = await Promise.all([
+    db.contexts.filter((row) => row.deletedAt === null && wanted.has(row.word)).toArray(),
+    db.lookupCache.where('word').anyOf(words)
+      .filter((row) => row.deletedAt === null).toArray(),
+  ]);
+  const latest = new Map<string, ContextRow>();
+  for (const row of contexts) {
+    if ((latest.get(row.word)?.createdAt ?? -1) < row.createdAt) latest.set(row.word, row);
+  }
+  const definitions = new Map(caches.map((row) => [row.word, row.payload]));
+
+  const items: ReviewItem[] = [];
+  for (const row of candidates) {
+    const isPhrase = /\s/.test(row.word);
+    const context = latest.get(row.word);
+    const definition = definitions.get(row.word);
+    if ((isPhrase && (!context
+      || !context.sentence.toLowerCase().includes(row.word.toLowerCase())))
+      || (!isPhrase && !definition)) continue;
+    items.push({
+      word: row.word,
+      isPhrase,
+      reviewStep: row.reviewStep ?? 0,
+      definition,
+      context: context && {
+        sentence: context.sentence, url: context.url, title: context.title,
+      },
+    });
+    if (items.length === limit) break;
+  }
+  return items;
+}
+
+export async function recordReview(
+  word: string,
+  remembered: boolean,
+  now = Date.now(),
+): Promise<boolean> {
+  const row = await db.words.get(word);
+  if (!row || row.deletedAt !== null || row.status !== 'unknown') return false;
+  await db.words.put({
+    ...row,
+    ...nextReview(row.reviewStep ?? 0, remembered, now),
+    updatedAt: now,
+    pending: 1,
+  });
+  return true;
 }
 
 export async function getCached(words: string[]): Promise<Map<string, string>> {

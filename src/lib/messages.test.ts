@@ -297,3 +297,20 @@ describe('詞庫管理', () => {
     expect(bundle.words).toHaveLength(0);
   });
 });
+
+describe('今晚打老虎訊息', () => {
+  it('列出題目並記錄自評', async () => {
+    await markWord('deploy', 'unknown');
+    await db.lookupCache.put({
+      word: 'deploy', payload: '部署', fetchedAt: 1,
+      updatedAt: 1, deletedAt: null, pending: 0,
+    });
+    expect(await handleMessage({ type: 'listReviewItems' })).toEqual([
+      expect.objectContaining({ word: 'deploy', definition: '部署' }),
+    ]);
+    expect(await handleMessage({
+      type: 'reviewWord', word: 'deploy', remembered: true,
+    })).toBe(true);
+    expect((await db.words.get('deploy'))!.reviewStep).toBe(1);
+  });
+});

@@ -75,8 +75,8 @@ async function logout() {
   <section class="sync-card">
     <div class="heading">
       <div>
-        <h2>多裝置同步</h2>
-        <p>Local-first · Supabase</p>
+        <h2>裝置同步</h2>
+        <p>讓生詞、片語、AI 詞典和複習進度跟著你走。</p>
       </div>
       <span class="dot" :class="state?.loggedIn ? 'online' : 'offline'">
         {{ state?.loggedIn ? '已登入' : '未登入' }}

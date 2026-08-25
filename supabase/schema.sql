@@ -8,6 +8,10 @@ create table if not exists public.words (
   primary key (user_id, word)
 );
 
+alter table public.words
+  add column if not exists review_step integer not null default 0 check (review_step between 0 and 5),
+  add column if not exists review_due_at timestamptz;
+
 create table if not exists public.contexts (
   id uuid primary key,
   user_id uuid references auth.users on delete cascade not null,
