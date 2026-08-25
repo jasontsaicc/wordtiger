@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { handleMessage, type ExplainResult } from './messages';
+import { handleMessage, handleStreamMessage, type ExplainResult } from './messages';
 import { db, markWord } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
@@ -58,30 +58,34 @@ describe('handleMessage', () => {
   it('lookup 命中快取時不呼叫 AI', async () => {
     const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
 
-    await handleMessage({ type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' });
+    await handleStreamMessage(
+      { type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' }, () => {},
+    );
     expect(spy).toHaveBeenCalledOnce();
     spy.mockClear();
 
     // 第一次已寫入快取,第二次應該完全不打 AI
-    const got = await handleMessage({
+    const got = await handleStreamMessage({
       type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.',
-    }) as ExplainResult;
+    }, () => {}) as ExplainResult;
     expect(spy).not.toHaveBeenCalled();
     expect(got.ok && got.text).toContain('部署');
   });
 
   it('lookup 把出處句子一起送給 AI 做消歧義', async () => {
     const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('內容');
-    await handleMessage({ type: 'lookup', word: 'scale', sentence: 'We scale the deployment.' });
+    await handleStreamMessage(
+      { type: 'lookup', word: 'scale', sentence: 'We scale the deployment.' }, () => {},
+    );
     expect(spy.mock.calls[0]![0]).toEqual({ w: 'scale', s: 'We scale the deployment.' });
   });
 
   it('AI 失敗時回錯誤信封,而且不寫進快取', async () => {
     vi.spyOn(ai, 'lookupWord').mockRejectedValue(new Error('AI 請求失敗 401'));
 
-    const got = await handleMessage({
+    const got = await handleStreamMessage({
       type: 'lookup', word: 'staging', sentence: 'x',
-    }) as ExplainResult;
+    }, () => {}) as ExplainResult;
 
     expect(got.ok).toBe(false);
     expect(!got.ok && got.error).toContain('401');
@@ -100,9 +104,9 @@ describe('handleMessage', () => {
     });
     const spy = vi.spyOn(ai, 'lookupWord');
 
-    const got = await handleMessage({
+    const got = await handleStreamMessage({
       type: 'lookup', word: 'deploy', sentence: 'x',
-    }) as ExplainResult;
+    }, () => {}) as ExplainResult;
 
     expect(got.ok).toBe(false);
     expect(!got.ok && got.error).toContain('options');
@@ -148,7 +152,9 @@ describe('詞庫列表', () => {
 describe('單字快取管理', () => {
   it('保留使用模型並可列出與清除', async () => {
     vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
-    await handleMessage({ type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' });
+    await handleStreamMessage(
+      { type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' }, () => {},
+    );
 
     const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
     expect(rows[0]).toMatchObject({ word: 'deploy', model: 'm' });
@@ -192,7 +198,9 @@ describe('explain', () => {
       title: 'Deployment guide',
     };
     await handleMessage(msg);
-    expect(spy).toHaveBeenCalledWith('grammar', msg, expect.anything());
+    // 只斷言這個測試真正在乎的前兩個引數。後面是 settings 與串流參數,
+    // 綁死整串會讓簽章一長就假性失敗。
+    expect(spy.mock.calls[0]!.slice(0, 2)).toEqual(['grammar', msg]);
   });
 
   it('同一句改變焦點詞時重新分析', async () => {

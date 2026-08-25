@@ -46,10 +46,8 @@ export interface ContextInput {
 }
 
 export interface SentenceRow {
-  /** `v2:${kind}:${sentence}\0${variant}` */
+  /** `v2:${kind}:${sentence}\0${variant}`,kind 與 sentence 都編碼在裡面 */
   id: string;
-  kind: string;
-  sentence: string;
   result: string;
   fetchedAt: number;
 }
@@ -268,8 +266,6 @@ export async function putSentence(
 ): Promise<void> {
   await db.sentenceCache.put({
     id: sentenceKey(kind, sentence, variant),
-    kind,
-    sentence,
     result,
     fetchedAt: Date.now(),
   });

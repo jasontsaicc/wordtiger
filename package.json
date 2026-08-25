@@ -32,6 +32,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
+    "subtlex-word-frequencies": "^2.0.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
@@ -39,7 +40,6 @@
     "wxt": "^0.21.4"
   },
   "dependencies": {
-    "dexie": "^4.4.5",
-    "subtlex-word-frequencies": "^2.0.0"
+    "dexie": "^4.4.5"
   }
 }

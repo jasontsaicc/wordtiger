@@ -210,9 +210,6 @@ importers:
       dexie:
         specifier: ^4.4.5
         version: 4.4.5
-      subtlex-word-frequencies:
-        specifier: ^2.0.0
-        version: 2.0.0
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -226,6 +223,9 @@ importers:
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1
+      subtlex-word-frequencies:
+        specifier: ^2.0.0
+        version: 2.0.0
       tsx:
         specifier: ^4.23.12
         version: 4.23.12

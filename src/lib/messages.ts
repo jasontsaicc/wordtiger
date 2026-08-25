@@ -73,58 +73,14 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return next;
     }
 
-    case 'lookup': {
-      // 快取鍵仍然是原形。同一個字在不同句子查到的結果會共用第一次的,
-      // 這是刻意的取捨:一個字換一句就重查一次太貴,而多數情況語意是一樣的。
-      const cached = await getCached([msg.word]);
-      const hit = cached.get(msg.word);
-      if (hit !== undefined) return { ok: true, text: hit } satisfies ExplainResult;
-
-      const settings = await loadSettings();
-      if (!settings.baseUrl || !settings.apiKey) {
-        return { ok: false, error: NOT_CONFIGURED } satisfies ExplainResult;
-      }
-
-      try {
-        const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings);
-        if (!text) return { ok: false, error: 'AI 回了空的結果' } satisfies ExplainResult;
-        // 失敗不寫快取,不然一次網路抖動會被記住,之後永遠拿到錯誤結果
-        await putCached([{ word: msg.word, payload: text, model: settings.model }]);
-        return { ok: true, text } satisfies ExplainResult;
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        } satisfies ExplainResult;
-      }
-    }
-
     case 'saveContext':
       await addContext(msg);
       return null;
 
-    case 'explain': {
-      const settings = await loadSettings();
-      const variant = explainVariant(msg, settings);
-      const cached = await getSentence(msg.kind, msg.sentence, variant);
-      if (cached !== null) return { ok: true, text: cached } satisfies ExplainResult;
-
-      if (!settings.baseUrl || !settings.apiKey) {
-        return { ok: false, error: NOT_CONFIGURED } satisfies ExplainResult;
-      }
-
-      try {
-        const text = await explainSentence(msg.kind, msg, settings);
-        // 失敗不寫快取,不然一次網路抖動會被記住,之後永遠拿到錯誤結果
-        await putSentence(msg.kind, msg.sentence, text, variant);
-        return { ok: true, text } satisfies ExplainResult;
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        } satisfies ExplainResult;
-      }
-    }
+    // 非串流版就是串流版把 onDelta 換成空函式,兩邊的快取與錯誤處理必須一致,
+    // 所以直接借用,不要再寫一份會慢慢走鐘的複本。
+    case 'explain':
+      return handleStreamMessage(msg, () => {});
 
     case 'listWords': {
       const marks = await loadMarks();
@@ -160,8 +116,10 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return { exportedAt: Date.now(), words, contexts } satisfies ExportBundle;
     }
 
-    case 'getCachedWord':
-      return db.lookupCache.get(msg.word).then((row) => row?.deletedAt == null ? row : undefined);
+    case 'getCachedWord': {
+      const row = await db.lookupCache.get(msg.word);
+      return row?.deletedAt == null ? row : undefined;
+    }
 
     case 'listCachedWords':
       return db.lookupCache.orderBy('fetchedAt').reverse()
