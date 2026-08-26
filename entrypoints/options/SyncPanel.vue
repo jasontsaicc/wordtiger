@@ -21,16 +21,10 @@ async function refresh() {
 
 async function login() {
   message.value = '';
-  let origin: string;
   try {
-    origin = `${new URL(url.value).origin}/*`;
+    new URL(url.value);
   } catch {
     message.value = 'Supabase URL 格式不正確。';
-    return;
-  }
-  // permissions.request 必須直接留在使用者手勢裡。
-  if (!await browser.permissions.request({ origins: [origin] })) {
-    message.value = '未取得 Supabase 網域權限。';
     return;
   }
   busy.value = true;

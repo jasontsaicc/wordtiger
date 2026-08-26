@@ -8,6 +8,7 @@ const settings = ref<Settings | null>(null);
 const tab = ref<Browser.tabs.Tab | null>(null);
 const running = ref(false);
 const status = ref('');
+const version = browser.runtime.getManifest().version;
 
 const pagePattern = computed(() => {
   const origin = pageOrigin(tab.value?.url ?? '');
@@ -66,6 +67,9 @@ async function toggleHighlight() {
       files: ['/content-scripts/highlight.js'],
     });
     running.value = await isRunning();
+    await browser.tabs.sendMessage(tab.value.id, {
+      type: 'highlightState', active: running.value,
+    }).catch(() => {});
   } catch (err) {
     status.value = err instanceof Error ? err.message : String(err);
   }
@@ -76,12 +80,6 @@ async function toggleAuto(event: Event) {
   const enabled = (event.target as HTMLInputElement).checked;
 
   if (enabled) {
-    // permissions.request 必須直接留在使用者事件裡，前面不能先 await。
-    const granted = await browser.permissions.request({ origins: [pagePattern.value] });
-    if (!granted) {
-      status.value = '未取得這個網站的自動標示權限。';
-      return;
-    }
     settings.value.autoOrigins = [...new Set([...settings.value.autoOrigins, pagePattern.value])];
     status.value = '已開啟；重新載入本頁後會自動標示。';
   } else {
@@ -130,7 +128,7 @@ async function openReview() {
 
 <template>
   <main v-if="settings">
-    <header><img src="/icons/32.png" alt="" /><b>攔詞虎</b><span>WordTiger</span></header>
+    <header><img src="/icons/32.png" alt="" /><b>攔詞虎</b><span>WordTiger v{{ version }}</span></header>
     <div class="actions">
       <button class="primary" :disabled="!pagePattern || blocked" @click="toggleHighlight">
         {{ running ? '關閉本頁標示' : '開啟本頁標示' }}
@@ -140,6 +138,7 @@ async function openReview() {
     </div>
 
     <p v-if="blocked" class="warn">目前網站在黑名單內。</p>
+    <p class="note">小虎預設在所有一般網頁出現；點一下等同 Alt+U，也可以直接拖開。</p>
     <label class="switch">
       <input type="checkbox" :checked="auto" :disabled="!pagePattern || blocked" @change="toggleAuto" />
       永遠在此網站自動標示

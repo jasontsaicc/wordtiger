@@ -299,22 +299,17 @@ Supabase 免費專案閒置一週後暫停,暫停後 90 天內可從 dashboard �
 ### manifest 權限
 
 ```json
-"permissions": ["activeTab", "scripting", "storage", "tts", "alarms"],
-"host_permissions": [],
-"optional_host_permissions": ["<all_urls>"],
+"permissions": ["scripting", "storage", "alarms"],
+"host_permissions": ["<all_urls>"],
 "commands": {
   "highlight": { "suggested_key": { "default": "Alt+U" } }
 }
 ```
 
-Chrome 官方文件明列四種授予 `activeTab` 的使用者手勢,其中包含「Executing a keyboard shortcut from the commands API」。所以 `Alt+U` 本身就足以取得當前分頁的注入權限,不需要 `<all_urls>` 的常駐 content script。
-
-安裝時只要求核心功能必需的權限。自動高亮白名單放在
-`optional_host_permissions`,由使用者針對單一網站授權。
-
-`activeTab` 在跨網域導航時撤銷,所以換網站要重按 `Alt+U`。產品定位本來就是按快捷鍵才啟動,這不算退步。
-
-AI provider 的 base URL 由使用者填寫,網域不固定,同樣走 `optional_host_permissions` 動態授權。
+小虎 launcher 是 `<all_urls>` 的靜態 content script，因此安裝時直接要求全站 host permission。
+小虎本身不連外；點擊後才由 background 注入高亮功能。自動高亮白名單仍以 origin 儲存，
+但只控制是否自動啟用，不再負責權限授予。AI provider 與 Supabase 的自訂網址也由同一份
+host permission 涵蓋。此處原本的逐網站 optional permission 決策已由 ADR-0016 取代。
 
 ### 上架
 

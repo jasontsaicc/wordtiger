@@ -19,3 +19,5 @@
 | [0013](0013-takeaway-is-not-a-highlight-key.md) | 「帶走」片語只服務教學，不作為高亮比對 key | accepted | 2026-08-26 |
 | [0014](0014-stable-development-extension-id.md) | 用固定公開 key 維持開發版 extension ID | accepted | 2026-08-26 |
 | [0015](0015-learning-activity-from-saved-data.md) | 學習足跡只由收藏資料推導 | accepted | 2026-08-26 |
+| [0016](0016-global-mascot-and-host-access.md) | 小虎預設出現並使用全站 host permission | accepted | 2026-08-26 |
+| [0017](0017-save-context-when-looking-up-saved-word.md) | 已收藏單字按 A 時累積目前語境 | accepted | 2026-08-26 |

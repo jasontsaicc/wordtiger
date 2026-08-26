@@ -170,6 +170,7 @@ describe('今晚打老虎', () => {
       word: 'roll back', sentence: 'We should roll back this release now.',
       url: 'https://example.com', title: 'Release guide',
     });
+    await putCached([{ word: 'roll back', payload: '## 核心意思\n- 回滾變更' }]);
 
     const items = await listReviewItems(5);
     expect(items).toHaveLength(5);
@@ -184,25 +185,39 @@ describe('今晚打老虎', () => {
       word: 'roll back', sentence: 'We should roll back this release now.',
       url: 'https://example.com', title: 'Release guide',
     });
+    await putCached([{ word: 'roll back', payload: '## 核心意思\n- 回滾變更' }]);
 
     expect(await listReviewItems()).toEqual([
-      expect.objectContaining({ word: 'deploy', isPhrase: false, isCloze: false, definition: expect.stringContaining('部署') }),
-      expect.objectContaining({ word: 'roll back', isPhrase: true, isCloze: true, context: expect.objectContaining({ title: 'Release guide' }) }),
+      expect.objectContaining({ word: 'deploy', isPhrase: false, isPattern: false, definition: expect.stringContaining('部署') }),
+      expect.objectContaining({ word: 'roll back', isPhrase: true, isPattern: false, definition: expect.stringContaining('回滾'), context: expect.objectContaining({ title: 'Release guide' }) }),
     ]);
   });
 
-  it('泛化句型不在來源句中時改成完整語境題', async () => {
+  it('泛化句型不在來源句中時改成造句題', async () => {
     await markWord('keep A pending until B becomes available', 'unknown');
     await addContext({
       word: 'keep A pending until B becomes available',
       sentence: 'Keep the request pending until capacity becomes available.',
       url: 'https://example.com', title: 'Release guide',
     });
+    await putCached([{
+      word: 'keep A pending until B becomes available',
+      payload: '## 使用場景\n- 等待依賴就緒',
+    }]);
     expect(await listReviewItems()).toEqual([
       expect.objectContaining({
-        word: 'keep A pending until B becomes available', isPhrase: true, isCloze: false,
+        word: 'keep A pending until B becomes available', isPhrase: true, isPattern: true,
       }),
     ]);
+  });
+
+  it('沒有 AI 詞典的片語不出題', async () => {
+    await markWord('roll back', 'unknown');
+    await addContext({
+      word: 'roll back', sentence: 'We should roll back this release now.',
+      url: 'https://example.com', title: 'Release guide',
+    });
+    expect(await listReviewItems()).toEqual([]);
   });
 
   it('無答案的舊收藏不會擋住後面的有效題目', async () => {

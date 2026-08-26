@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
-import { maskPhrase } from '@/src/lib/review';
+import { speak } from '@/src/content/speak';
 import type { ReviewItem } from '@/src/lib/db';
 
 const props = defineProps<{
@@ -18,9 +18,6 @@ const emit = defineEmits<{
 const revealed = ref(false);
 const busy = ref(false);
 const error = ref('');
-const maskedContext = computed(() => props.item?.context
-  ? maskPhrase(props.item.context.sentence, props.item.word)
-  : '');
 
 async function grade(remembered: boolean) {
   if (!props.item || busy.value) return;
@@ -86,15 +83,18 @@ async function master() {
 
     <article v-else class="review-card">
       <div class="card-meta">
-        <span>{{ item.isPhrase ? '片語' : '單字' }}</span>
+        <span>{{ item.isPattern ? '句型' : item.isPhrase ? '片語' : '單字' }}</span>
         <span>第 {{ done + 1 }}／{{ total }} 隻</span>
       </div>
 
       <template v-if="item.isPhrase">
         <p class="question">
-          {{ item.isCloze ? '這裡原本是哪個片語？' : '這句可以抽成哪個句型？' }}
+          {{ item.isPattern
+            ? '把句型換成你的工作情境，口頭造一句。'
+            : '先用自己的話說：這個片語在原句裡是什麼意思？什麼情況會用？' }}
         </p>
-        <blockquote>{{ item.isCloze ? maskedContext : item.context?.sentence }}</blockquote>
+        <h3 class="word">{{ item.word }}</h3>
+        <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
       </template>
       <template v-else>
         <p class="question">
@@ -104,23 +104,33 @@ async function master() {
         <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
       </template>
 
-      <button v-if="!revealed" class="reveal" @click="revealed = true">讓牠現形</button>
+      <button class="listen" type="button"
+        @click="speak(item.isPattern ? item.context?.sentence ?? item.word : item.word)">
+        {{ item.isPattern ? '🔊 聽原句' : '🔊 發音' }}
+      </button>
+      <button v-if="!revealed" class="reveal" @click="revealed = true">
+        {{ item.isPhrase ? '看老師回饋' : '讓牠現形' }}
+      </button>
 
       <div v-else class="answer" aria-live="polite">
-        <template v-if="item.isPhrase">
-          <p class="answer-label">答案</p>
-          <h3 class="word">{{ item.word }}</h3>
-          <p v-if="item.context">{{ item.context.sentence }}</p>
-        </template>
-        <div v-else-if="item.definition" v-html="renderMarkdown(item.definition)" />
+        <p v-if="item.isPhrase" class="answer-label">老師回饋</p>
+        <div v-html="renderMarkdown(item.definition)" />
 
         <a v-if="item.context?.url" :href="item.context.url" target="_blank" rel="noreferrer">
           {{ item.context.title || '查看來源' }}
         </a>
-        <p class="self-check">剛才有想起來嗎？</p>
+        <p class="self-check">
+          {{ item.isPattern
+            ? '剛才有造出自然的句子嗎？'
+            : item.isPhrase ? '剛才有說出正確意思和用法嗎？' : '剛才有想起來嗎？' }}
+        </p>
         <div class="grade-actions">
-          <button :disabled="busy" @click="grade(false)">又讓牠溜了</button>
-          <button class="caught" :disabled="busy" @click="grade(true)">抓到了</button>
+          <button :disabled="busy" @click="grade(false)">
+            {{ item.isPattern ? '還造不出來' : item.isPhrase ? '意思還沒抓到' : '又讓牠溜了' }}
+          </button>
+          <button class="caught" :disabled="busy" @click="grade(true)">
+            {{ item.isPattern ? '能自然造句' : item.isPhrase ? '意思和用法都對' : '抓到了' }}
+          </button>
           <button v-if="item.reviewStep === 5" class="mastered" :disabled="busy" @click="master">
             已經馴服
           </button>
@@ -151,6 +161,7 @@ async function master() {
 blockquote { margin: .8rem 0 1.2rem; padding: .85rem 1rem; border-left: 3px solid #22d3ee; border-radius: 0 10px 10px 0; color: #334155; background: #f8fafc; }
 button { transition: transform 100ms ease, background 140ms ease; }
 button:active { transform: scale(.98); }
+.listen { margin-bottom: .8rem; }
 .reveal { width: 100%; padding: .7rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
 .answer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
 .answer :deep(.h) { margin-top: .8rem; color: #4f46e5; font-weight: 800; }

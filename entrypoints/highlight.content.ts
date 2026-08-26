@@ -230,6 +230,13 @@ export default defineContentScript({
         const marked = marks.get(hover.lemma) === 'unknown';
         const cached = defs.get(hover.lemma);
 
+        // 已收藏的字再次查詢，代表使用者在新的地方又遇到它；順手累積這次語境。
+        // addContext 會忽略同一網址的相同句子，所以重複按 A 不會製造副本。
+        if (marked) void browser.runtime.sendMessage({
+          type: 'saveContext', word: hover.lemma, sentence: hover.sentence,
+          url: location.href, title: document.title,
+        });
+
         if (cached !== undefined) {
           showCard({
             title: hover.lemma, body: cached, rect: hover.rect,

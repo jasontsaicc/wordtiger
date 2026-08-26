@@ -21,9 +21,9 @@ export interface WordRow {
 export interface ReviewItem {
   word: string;
   isPhrase: boolean;
-  isCloze: boolean;
+  isPattern: boolean;
   reviewStep: number;
-  definition?: string;
+  definition: string;
   context?: Pick<ContextRow, 'sentence' | 'url' | 'title'>;
 }
 
@@ -185,7 +185,7 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
   for (const row of candidates) {
     const isPhrase = /\s/.test(row.word);
     const definition = definitions.get(row.word);
-    if ((isPhrase && !latest.has(row.word)) || (!isPhrase && !definition)) continue;
+    if (!definition || (isPhrase && !latest.has(row.word))) continue;
 
     let context = isPhrase ? latest.get(row.word) : undefined;
     if (!isPhrase && definition?.sentence) {
@@ -198,14 +198,14 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
       : definition?.sentence
         ? { sentence: definition.sentence, url: '', title: '' }
         : undefined;
-    const isCloze = Boolean(isPhrase && reviewContext
-      && reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
+    const isPattern = Boolean(isPhrase && reviewContext
+      && !reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
     items.push({
       word: row.word,
       isPhrase,
-      isCloze,
+      isPattern,
       reviewStep: row.reviewStep ?? 0,
-      definition: definition?.payload,
+      definition: definition.payload,
       context: reviewContext,
     });
     if (items.length === limit) break;

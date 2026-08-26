@@ -8,11 +8,20 @@ const LOCAL_CHANGES = new Set([
   'toggleMark', 'saveContext', 'lookup', 'reviewWord', 'deleteWord', 'setWordStatus',
   'deleteCachedWord',
 ]);
+type BackgroundMsg = Msg | { type: 'toggleHighlightFromMascot' };
 
 export default defineBackground(() => {
   // 用 sendResponse 加 return true,不用「listener 回傳 Promise」那種寫法。
   // 後者在不同瀏覽器和不同 polyfill 設定下的行為不一致,錯了會安靜地收不到回應。
-  browser.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((msg: BackgroundMsg, sender, sendResponse) => {
+    if (msg.type === 'toggleHighlightFromMascot') {
+      toggle(sender.tab, 'mascot').then(sendResponse).catch((err) => {
+        console.error('[wordtiger] 懸浮球切換失敗', err);
+        sendResponse(false);
+      });
+      return true;
+    }
+
     // catch 不能省。上面已經 return true 答應瀏覽器「等我回話」,
     // handleMessage 一 reject 就再也沒人呼叫 sendResponse,通道會一直開著,
     // 呼叫端的 await 永遠不會 settle:不回應、不拋錯、不逾時,畫面就這樣白掉。
@@ -62,10 +71,9 @@ export default defineBackground(() => {
   });
 
   // 使用者在 popup 為某個 origin 開啟自動標示後，每次載入完成自動注入。
-  // 不加 tabs 權限：已授權的 origin 本身就讓 tab.url 對擴充功能可見。
   browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete' || !tab.url) return;
-    void autoHighlight(tab);
+    void autoHighlight(tab).catch((err) => console.error('[wordtiger] 自動標示失敗', err));
   });
 
   // 第一次安裝就把設定頁開起來。沒有 API Key 之前查詞不會動,
@@ -113,23 +121,38 @@ async function autoHighlight(tab: Browser.tabs.Tab): Promise<void> {
   if (settings.autoOrigins.includes(`${origin}/*`)) await toggle(tab, 'auto');
 }
 
-async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<void> {
+async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<boolean> {
   console.log('[wordtiger] toggle via', via, '| tab', tab?.id, tab?.url);
-  if (!tab?.id || !tab.url) return;
+  if (!tab?.id || !tab.url) return false;
 
   const { blockedHosts } = await loadSettings();
   const origin = pageOrigin(tab.url);
-  if (!origin) return;
+  if (!origin) return false;
   const host = new URL(origin).hostname;
   if (blockedHosts.some((h) => host === h || host.endsWith(`.${h}`))) {
     console.warn(`${host} 在黑名單內,不注入`);
-    return;
+    return false;
   }
 
-  // 這個手勢本身就授予 activeTab,所以這裡不需要 host_permissions
+  // 全站 host permission 讓快捷鍵、popup、懸浮球與自動標示共用這條注入路徑。
   const injected = await browser.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     files: ['/content-scripts/highlight.js'],
   });
   console.log('[wordtiger] injected frames:', injected.length);
+  const active = await isRunning(tab.id);
+  try {
+    await browser.tabs.sendMessage(tab.id, { type: 'highlightState', active });
+  } catch {
+    // 瀏覽器內建頁不能載入 content script，沒有接收端是正常情況。
+  }
+  return active;
+}
+
+async function isRunning(tabId: number): Promise<boolean> {
+  const [result] = await browser.scripting.executeScript({
+    target: { tabId },
+    func: () => Boolean((window as unknown as { __wordTigerAbort?: unknown }).__wordTigerAbort),
+  });
+  return Boolean(result?.result);
 }

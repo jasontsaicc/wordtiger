@@ -1,6 +1,6 @@
 # ADR-0005: 工具列 popup 作為目前網站的控制中心
 
-Date: 2026-08-25 | Status: accepted | Supersedes: [ADR-0001](0001-toolbar-action-as-second-trigger.md)
+Date: 2026-08-25 | Status: accepted; permission model superseded by [ADR-0016](0016-global-mascot-and-host-access.md) | Supersedes: [ADR-0001](0001-toolbar-action-as-second-trigger.md)
 
 ## Context
 

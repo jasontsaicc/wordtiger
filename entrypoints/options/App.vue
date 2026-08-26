@@ -13,8 +13,8 @@ import LearningDashboard from './LearningDashboard.vue';
 import type { ReviewItem } from '@/src/lib/db';
 
 const settings = ref<Settings | null>(null);
-const granted = ref(false);
 const loadError = ref('');
+const version = browser.runtime.getManifest().version;
 type Tab = 'review' | 'activity' | 'contexts' | 'cache' | 'settings';
 const tab = ref<Tab>(location.hash === '#review' || location.hash === '#activity'
   ? location.hash.slice(1) as Tab
@@ -36,7 +36,7 @@ onMounted(async () => {
   // 頁面就是一片白,而且 console 乾乾淨淨。白畫面要能說出自己為什麼白。
   try {
     settings.value = await loadSettings();
-    await Promise.all([refreshGrant(), loadReviewItems()]);
+    await loadReviewItems();
   } catch (err) {
     loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     console.error('[wordtiger] options 載入失敗', err);
@@ -65,7 +65,6 @@ function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
 
 async function persist() {
   if (settings.value) await saveSettings(settings.value);
-  await refreshGrant();
 }
 
 function pickerColor(value: string) {
@@ -80,36 +79,13 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
   void persist();
 }
 
-async function refreshGrant() {
-  const origin = originPattern(settings.value?.baseUrl ?? '');
-  granted.value = origin
-    ? await browser.permissions.contains({ origins: [origin] })
-    : false;
-}
-
-/**
- * 授權必須由使用者手勢直接觸發,所以 request 要是這個 handler 的第一件事。
- * 中間先 await 別的東西,Chrome 會判定手勢已經過期而拒絕。
- */
-/** 換了端點,舊網域的授權就不算數了,存完立刻重新檢查一次。 */
-async function onEndpointChange() {
-  await persist();
-  await refreshGrant();
-}
-
-async function grantHost() {
-  const origin = originPattern(settings.value?.baseUrl ?? '');
-  if (!origin) return;
-  granted.value = await browser.permissions.request({ origins: [origin] });
-}
-
 </script>
 
 <template>
   <main v-if="loadError" class="wrap">
     <header class="page-head">
       <img class="logo" src="/icons/48.png" alt="" />
-      <div><h1>攔詞虎</h1><p>把英文裡的攔路虎，一隻隻抓起來</p></div>
+      <div><h1>攔詞虎</h1><p>v{{ version }} · 把英文裡的攔路虎，一隻隻抓起來</p></div>
     </header>
     <p class="warn">設定載入失敗:{{ loadError }}</p>
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
@@ -118,7 +94,7 @@ async function grantHost() {
   <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' || tab === 'activity' }">
     <header class="page-head">
       <img class="logo" src="/icons/48.png" alt="" />
-      <div><h1>攔詞虎</h1><p>WordTiger by JasonDevOps</p></div>
+      <div><h1>攔詞虎</h1><p>WordTiger v{{ version }} by JasonDevOps</p></div>
     </header>
 
     <nav>
@@ -145,7 +121,7 @@ async function grantHost() {
       <p class="note">查詞、快速看懂和拆句共用這組設定。</p>
       <label>服務
         <input v-model.trim="settings.baseUrl" type="url"
-          :placeholder="OPENAI_BASE_URL" @change="onEndpointChange" />
+          :placeholder="OPENAI_BASE_URL" @change="persist" />
       </label>
       <label>API Key
         <input v-model="settings.apiKey" type="password" @change="persist" />
@@ -172,13 +148,6 @@ async function grantHost() {
 
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
         先填一個完整網址,例如 https://api.openai.com/v1。
-      </p>
-      <p v-else-if="granted" class="ok">
-        已授權連線到 {{ originPattern(settings.baseUrl) }}
-      </p>
-      <p v-else class="warn">
-        還沒授權連線到 {{ originPattern(settings.baseUrl) }},查詞會失敗。
-        <button @click="grantHost">授權這個網域</button>
       </p>
     </section>
 
@@ -267,7 +236,6 @@ input[type="range"] { width: 100%; }
 .warn { color: #b4451f; font-size: 13px; }
 .chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: white; color: #475569; cursor: pointer; }
 .chip:hover { border-color: #6366f1; color: #1e293b; }
-.ok { color: #2b7a3d; font-size: 13px; }
 table { width: 100%; border-collapse: collapse; }
 td { padding: .4rem; border-bottom: 1px solid #ddd; cursor: pointer; }
 blockquote { border-left: 3px solid #c8c0ff; margin: .5rem 0; padding-left: .75rem; }

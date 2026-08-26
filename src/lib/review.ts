@@ -12,10 +12,3 @@ export function nextReview(
   const interval = remembered ? INTERVAL_DAYS[reviewStep - 1]! : INTERVAL_DAYS[0];
   return { reviewStep, reviewDueAt: now + interval * DAY };
 }
-
-export function maskPhrase(sentence: string, phrase: string): string {
-  const start = sentence.toLowerCase().indexOf(phrase.toLowerCase());
-  if (start < 0) return sentence;
-  const blank = phrase.trim().split(/\s+/).map(() => '______').join(' ');
-  return sentence.slice(0, start) + blank + sentence.slice(start + phrase.length);
-}
