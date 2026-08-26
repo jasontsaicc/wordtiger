@@ -308,7 +308,7 @@ describe('sentenceCache', () => {
   });
 
   it('空白差異視為不同句,不做正規化', async () => {
-    // 這是刻意的。正規化會讓 key 跟原句對不起來,除錯時很難追
+    // Cache key 必須保留原句以利追查。
     await putSentence('translate', sentence, '譯文');
     expect(await getSentence('translate', ` ${sentence}`)).toBe(null);
   });

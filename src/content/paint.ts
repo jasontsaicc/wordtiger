@@ -6,11 +6,7 @@ export interface PaintRanges {
   conjunctions: Record<ConjunctionKind, Range[]>;
 }
 
-/**
- * 把 token 分到各層與連詞的 Range 桶裡。
- *
- * 抽出來是為了能測。呼叫端只負責把結果交給 CSS.highlights。
- */
+/** 將 tokens 分配至詞頻層級與連詞 Range。 */
 export function buildRanges(
   tokens: TokenHit[],
   ctx: Omit<DecideContext, 'isSentenceStart'>,
@@ -28,8 +24,7 @@ export function buildRanges(
     const conjunction = markConjunctions ? conjunctionKind(hit.text) : null;
     if (!decision.hit && !conjunction) continue;
 
-    // token 可能比目前的文字節點舊。setStart 超出長度會丟 IndexSizeError,
-    // 那會讓整批高亮一起畫不出來,所以這裡跳過而不是讓它炸。
+    // DOM 變更可能使快取 token 越界；跳過以保留其他高亮。
     if (hit.end > hit.node.data.length) continue;
 
     const range = document.createRange();

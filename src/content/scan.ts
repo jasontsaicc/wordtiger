@@ -21,7 +21,7 @@ const CLAUSE_CONJUNCTIONS = new Set([
 export type ConjunctionKind = 'coordinating' | 'clause';
 
 /**
- * ponytail: 這是字面詞表，不做句法解析；誤標真的影響閱讀時再接 NLP parser。
+ * ponytail: 這是字面詞表，不做句法解析；誤標造成可測干擾時再引入 NLP parser。
  */
 export function conjunctionKind(word: string): ConjunctionKind | null {
   const normalized = word.toLowerCase();
@@ -34,7 +34,7 @@ function shouldSkip(node: Text): boolean {
   let el = node.parentElement;
   while (el) {
     if (SKIP_TAGS.has(el.tagName)) return true;
-    // 屬性和 isContentEditable 都看。jsdom 沒實作後者,瀏覽器則靠後者處理繼承來的可編輯狀態。
+    // 瀏覽器以 isContentEditable 處理繼承；jsdom 需檢查屬性。
     const attr = el.getAttribute('contenteditable');
     if (attr !== null && attr !== 'false') return true;
     if (el.isContentEditable) return true;
@@ -43,12 +43,7 @@ function shouldSkip(node: Text): boolean {
   return false;
 }
 
-/**
- * 走訪文字節點並斷詞。
- *
- * 用 Intl.Segmenter 而不是 regex,因為它處理縮寫、連字號和 Unicode
- * 的規則跟瀏覽器選字一致,不用自己維護一套邊界規則。
- */
+/** 使用 Intl.Segmenter 取得 Unicode-aware 單字邊界。 */
 export function collectTokens(root: Node): TokenHit[] {
   const segmenter = new Intl.Segmenter('en', { granularity: 'word' });
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -92,7 +87,7 @@ export interface SentenceContext {
   previous: string;
 }
 
-/** 取文字位移所在的那一句和前一句,跨行內元素也能正確計算。 */
+/** 取得文字位移所在句與前一句，並支援跨行內元素。 */
 export function sentenceContextAround(node: Text, offsetInNode = 0): SentenceContext {
   const block = node.parentElement?.closest('p, li, td, h1, h2, h3, h4, div');
   if (!block) return { sentence: node.data.trim().slice(0, 300), previous: '' };
@@ -120,7 +115,7 @@ export function sentenceContextAround(node: Text, offsetInNode = 0): SentenceCon
   return { sentence: text.trim().slice(0, 300), previous: '' };
 }
 
-/** 只要目前句的舊呼叫端不用知道上下文。 */
+/** 僅回傳目前句子。 */
 export function sentenceAround(node: Text, offsetInNode = 0): string {
   return sentenceContextAround(node, offsetInNode).sentence;
 }

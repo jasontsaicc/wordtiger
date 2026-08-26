@@ -32,8 +32,7 @@ const highlightTiers = [
 type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
 onMounted(async () => {
-  // 沒有這個 try 的話,載入失敗時 settings 停在 null,下面的 v-if 什麼都不畫,
-  // 頁面就是一片白,而且 console 乾乾淨淨。白畫面要能說出自己為什麼白。
+  // 顯示載入錯誤，避免 settings 為 null 時呈現空白頁。
   try {
     settings.value = await loadSettings();
     await loadReviewItems();
@@ -137,7 +136,7 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       </label>
       <p class="note">
         任何 OpenAI 相容端點都可以，網址填到 <code>/v1</code> 為止。
-        Model 欄位可直接輸入該服務的模型名稱。換服務之後要重新授權新的網域。
+        Model 欄位可直接輸入該服務的模型名稱。
         已快取的回答不會自動重查；測試新服務時可到「AI 回答庫」清除。
       </p>
       <p class="note">
@@ -147,14 +146,14 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       </p>
 
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
-        先填一個完整網址,例如 https://api.openai.com/v1。
+        先填一個完整網址，例如 https://api.openai.com/v1。
       </p>
     </section>
 
     <section>
       <h2>讓老虎認識你</h2>
       <textarea v-model="settings.profile" rows="4" @change="persist"
-        placeholder="我是 DevOps 工程師,熟 Python / Shell / AWS。解釋單字時,如果這個字在軟體工程或維運領域有特定用法,優先給那個意思。" />
+        placeholder="我是 DevOps 工程師，熟悉 Python／Shell／AWS。解釋單字時，若軟體工程或維運領域有特定用法，優先提供該詞義。" />
       <p class="note">告訴攔詞虎你的工作與英文程度，回答會更貼近你正在讀的內容。</p>
     </section>
 
@@ -191,7 +190,7 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       <h2>老虎不出沒的地方</h2>
       <textarea rows="3" :value="settings.blockedHosts.join('\n')"
         @change="(e: any) => { settings!.blockedHosts = e.target.value.split('\n').map((s: string) => s.trim()).filter(Boolean); persist(); }" />
-      <p class="note">一行一個。公司內網放這裡,網頁內容就不會被送到 AI。</p>
+      <p class="note">一行一個。加入公司內網後，網頁內容不會傳送至 AI。</p>
     </section>
 
     <PromptEditor v-model="settings.templates" @update:modelValue="persist" />

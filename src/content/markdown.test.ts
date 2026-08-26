@@ -12,8 +12,7 @@ describe('escapeHtml', () => {
 });
 
 describe('renderMarkdown 的安全性', () => {
-  // 這一組是這個檔案存在的理由。卡片會被插進任何網頁,
-  // 任何一條漏掉就是每個瀏覽過的網站上的 XSS。
+  // 防止未受信任的 AI 輸出造成 XSS。
   it('img onerror 不能變成真的節點', () => {
     const html = renderMarkdown('<img src=x onerror=alert(1)>');
     expect(html).not.toContain('<img');

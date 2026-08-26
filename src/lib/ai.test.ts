@@ -23,7 +23,8 @@ describe('generateSpeech', () => {
       model: 'gpt-4o-mini-tts', voice: 'marin',
       input: 'We deploy on Friday.', response_format: 'mp3',
     });
-    expect(body.instructions).toContain('English learner');
+    expect(body.instructions).toContain('warm, friendly');
+    expect(body.instructions).toContain('follow and imitate');
   });
 });
 
@@ -43,7 +44,7 @@ describe('buildLookupPrompt', () => {
   });
 
   it('輸出契約在鎖定的系統層,不在使用者可編輯的 template', () => {
-    // template 開放編輯之後,格式就不能靠它保證。使用者刪掉一句話不該讓渲染全歪
+    // 可編輯 template 不負責渲染契約。
     const prompt = buildLookupPrompt({ w: 'a', s: 'b' }, '');
     expect(prompt).not.toContain('不要用 ``` 把整份回應包起來');
     expect(SYSTEM_RULES.lookup).toContain('不要用 ``` 把整份回應包起來');
@@ -82,7 +83,6 @@ describe('lookupWord', () => {
   });
 
   it('依模型family送出可接受的 reasoning_effort', async () => {
-    // gpt-5-mini 傳 'none' 會回 400 Unsupported value,最低只到 'minimal'。2026-08-26 實測。
     const cases: Array<[string, string | undefined]> = [
       ['gpt-5.6-luna', 'none'],
       ['gpt-5-mini', 'minimal'],

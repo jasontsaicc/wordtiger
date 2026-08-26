@@ -15,7 +15,7 @@ interface WordItem {
   word: string;
   status: 'unknown' | 'known';
   createdAt: number;
-  /** 由新到舊 */
+  /** 由新到舊。 */
   contexts: ContextItem[];
 }
 
@@ -40,8 +40,7 @@ const isPhrase = (value: string) => /\s/.test(value);
 onMounted(reload);
 
 async function reload() {
-  // sendMessage 在 background 出錯時會拿到 undefined。直接指派進去的話,
-  // filtered 這個 computed 會在 render 中途炸掉,整個元件變空白。
+  // Background 失敗時維持陣列型別，避免 computed render error。
   words.value = (await browser.runtime.sendMessage({ type: 'listWords' })) ?? [];
 }
 

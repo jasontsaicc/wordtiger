@@ -75,8 +75,7 @@ describe('loadSettings 的 template 合併', () => {
   });
 
   it('自訂的相容端點與模型名稱要原封不動存讀', async () => {
-    // 服務欄位開放輸入之後,任何 OpenAI 相容端點都可能出現在這裡,
-    // 模型名稱也不再限於 OPENAI_MODELS 那份清單。
+    // 自訂端點與模型名稱必須原樣保留。
     await fakeBrowser.storage.local.set({ settings: {
       baseUrl: 'https://api.example-llm.com/v1', model: 'tiny-fast-v2',
     } });
@@ -148,13 +147,13 @@ describe('blockedHosts 一定是陣列', () => {
   });
 
   it('storage 裡已經壞成物件時,讀回來會被修成預設陣列', async () => {
-    // 這就是 Edge 上實際存到的形狀:陣列被序列化成帶數字 key 的物件
+    // 模擬舊版將陣列序列化成數字鍵物件。
     await fakeBrowser.storage.local.set({
       settings: { blockedHosts: { 0: 'localhost', 1: '127.0.0.1' } },
     });
     const s = await loadSettings();
     expect(Array.isArray(s.blockedHosts)).toBe(true);
-    // .some() 和 .join() 是實際炸掉的兩個呼叫
+    // 讀回後必須維持陣列介面。
     expect(s.blockedHosts.some((h) => h === 'localhost')).toBe(true);
     expect(() => s.blockedHosts.join('\n')).not.toThrow();
   });

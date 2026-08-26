@@ -6,7 +6,7 @@ export interface WordSpan {
 
 const LETTER = /[a-zA-Z]/;
 
-/** 從一個字元位移往兩側擴張,取出完整單字 */
+/** 從字元位移向兩側擴張，取出完整單字。 */
 export function expandToWord(text: string, offset: number): WordSpan | null {
   if (offset < 0 || offset >= text.length) return null;
   if (!LETTER.test(text.charAt(offset))) return null;
@@ -20,12 +20,7 @@ export function expandToWord(text: string, offset: number): WordSpan | null {
   return { text: text.slice(start, end), start, end };
 }
 
-/**
- * 從畫面座標找出滑鼠底下的單字。
- *
- * caretPositionFromPoint 是標準 API 且支援 Shadow DOM。
- * caretRangeFromPoint 是舊 Blink 的非標準版本,留著當 fallback。
- */
+/** 從座標找出單字；舊 Blink 退回 caretRangeFromPoint。 */
 export function wordAtPoint(
   x: number,
   y: number,
@@ -53,15 +48,12 @@ export function wordAtPoint(
   return span ? { node: textNode, span } : null;
 }
 
-/**
- * 只取座標底下的文字節點,不要求一定落在字母上。
- * S 和 D 針對整句,滑鼠停在空白或標點上時也該有反應。
- */
+/** 取得座標下的文字位置，允許空白與標點供 S/D 使用。 */
 export function textNodeAtPoint(x: number, y: number): Text | null {
   return textPositionAtPoint(x, y)?.node ?? null;
 }
 
-/** S/D 需要文字節點內的位移,才能從多句段落中取出真正所在的句子。 */
+/** 取得 S/D 定位多句段落所需的文字節點位移。 */
 export function textPositionAtPoint(
   x: number,
   y: number,

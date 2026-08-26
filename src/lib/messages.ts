@@ -11,7 +11,7 @@ export interface ExportBundle {
   contexts: ContextRow[];
 }
 
-/** 查詞、快速看懂、拆句共用這個信封。三者都是「一段文字或一個錯誤」 */
+/** 文字 AI 請求的統一結果。 */
 export type ExplainResult =
   | { ok: true; text: string }
   | { ok: false; error: string };
@@ -20,7 +20,8 @@ export type SpeechResult =
   | { ok: true; audio: string }
   | { ok: false; error: string };
 
-const NOT_CONFIGURED = '還沒設定 AI,請到 options 頁填 base URL 和 API key';
+const NOT_CONFIGURED = '尚未設定 AI，請到設定頁填入 Base URL 與 API Key';
+let speechController: AbortController | undefined;
 
 export type Msg =
   | { type: 'getMarks' }
@@ -47,10 +48,7 @@ export type Msg =
   | { type: 'syncLogout' }
   | { type: 'syncNow' };
 
-/**
- * Map 不能通過 chrome.runtime.sendMessage 的結構化複製,所以回傳 entries 陣列。
- * content script 端自己 new Map(...) 還原。
- */
+/** Chrome runtime message 不保留 Map，因此回傳 entries。 */
 export async function handleMessage(msg: Msg): Promise<unknown> {
   switch (msg.type) {
     case 'getMarks':
@@ -90,8 +88,11 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       if (!settings.baseUrl || !settings.apiKey) {
         return { ok: false, error: NOT_CONFIGURED } satisfies SpeechResult;
       }
+      speechController?.abort();
+      const controller = new AbortController();
+      speechController = controller;
       try {
-        const audio = await generateSpeech(text, settings);
+        const audio = await generateSpeech(text, settings, controller.signal);
         const bytes = new Uint8Array(audio);
         let binary = '';
         for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -106,11 +107,12 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
           ok: false,
           error: err instanceof Error ? err.message : String(err),
         } satisfies SpeechResult;
+      } finally {
+        if (speechController === controller) speechController = undefined;
       }
     }
 
-    // 非串流版就是串流版把 onDelta 換成空函式,兩邊的快取與錯誤處理必須一致,
-    // 所以直接借用,不要再寫一份會慢慢走鐘的複本。
+    // 非串流呼叫沿用相同的快取與錯誤處理。
     case 'lookup':
     case 'explain':
       return handleStreamMessage(msg, () => {});
@@ -135,7 +137,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       await deleteWord(msg.word);
       return null;
 
-    // markWord 會把 deletedAt 寫回 null,所以這個 case 同時是「救回誤刪的字」
+    // markWord 會清除 deletedAt，因此也能復原軟刪除資料。
     case 'setWordStatus':
       await markWord(msg.word, msg.status);
       return true;
@@ -183,7 +185,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
   }
 }
 
-/** content script 的長連線版本；快取命中也走同一條 UI 更新路徑。 */
+/** 內容腳本的長連線版本；快取命中也走同一條 UI 更新路徑。 */
 export async function handleStreamMessage(
   msg: Extract<Msg, { type: 'lookup' | 'explain' }>,
   onDelta: (delta: string) => void,

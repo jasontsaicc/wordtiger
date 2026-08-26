@@ -47,12 +47,11 @@ describe('lemmatize', () => {
   });
 
   it('候選不在詞典裡就退回原字', () => {
-    // university 去 -y 加 -ies 的反向規則會產生 universit,不在詞典
+    // university 的 -ies 反向規則會產生不存在的 universit。
     expect(lemmatize('university', inDict)).toBe('university');
   });
 
-  it('原字本身在詞典時,優先採用原字不做還原', () => {
-    // is 是 be 的變化,但 is 本身在詞典裡,仍應還原成 be(不規則表優先)
+  it('不規則表優先於原字詞典命中', () => {
     expect(lemmatize('is', inDict)).toBe('be');
   });
 
@@ -61,7 +60,7 @@ describe('lemmatize', () => {
   });
 
   it('字根本身也是常見字時,仍優先採用補回 e 的候選', () => {
-    // 真實詞頻表裡 us 存在。先試 us 會讓 using 還原成 us,所以 use 必須排在前面。
+    // 補回 e 的候選必須優先，避免 using 被還原為 us。
     const withUs = (w: string) => DICT.has(w) || w === 'us' || w === 'hop' || w === 'hope';
     expect(lemmatize('using', withUs)).toBe('use');
     expect(lemmatize('hoping', withUs)).toBe('hope');

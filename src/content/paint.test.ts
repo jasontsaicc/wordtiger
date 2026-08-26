@@ -41,7 +41,7 @@ describe('buildRanges', () => {
     expect(buildRanges(tokens, ctx(), false).conjunctions.coordinating).toEqual([]);
   });
 
-  // 快取 token 之後才會踩到:節點文字被改短,舊的 end 就超出範圍。
+  // DOM 變短時，快取 token 可能越界。
   it('文字節點縮短時跳過過期的 token,其餘照畫', () => {
     const root = dom('<p>perplexing</p><p>arcane</p>');
     const tokens = collectTokens(root);

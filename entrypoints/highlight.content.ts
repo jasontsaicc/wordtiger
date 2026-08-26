@@ -21,7 +21,7 @@ const STYLE_ID = 'wordtiger-highlight-style';
 
 declare global {
   interface Window {
-    /** 這次啟用註冊的事件監聽器,關閉時用它一次拔掉 */
+    /** 本次啟用的監聽器生命週期。 */
     __wordTigerAbort?: AbortController;
   }
 }
@@ -32,10 +32,7 @@ export default defineContentScript({
   cssInjectionMode: 'manual',
 
   async main() {
-    console.log('[wordtiger] content script in', location.href, 'CSS.highlights:', !!CSS.highlights);
-
-    // 重複按 Alt+U 時關閉。每按一次 Alt+U 都是一次全新的 executeScript,
-    // 只清掉高亮而不解除監聽器的話,舊的監聽器會留著,下一次啟用再疊一組上去。
+    // executeScript 每次都會重新註冊；關閉時同步移除舊監聽器。
     if (window.__wordTigerAbort) {
       [...Object.values(HIGHLIGHT_NAMES), ...Object.values(CONJUNCTION_NAMES)]
         .forEach((name) => CSS.highlights.delete(name));
@@ -66,8 +63,7 @@ export default defineContentScript({
     } = highlightSettings;
     injectStyle(highlightColors, highlightTextColors, highlightUnderlineColors);
 
-    // 斷詞結果留著重用。改一個字的狀態不該把整頁重新走一遍 TreeWalker 和 Segmenter,
-    // 只有 DOM 真的變過才需要 rescan。
+    // 僅 DOM 變動時重新斷詞；標記狀態變更沿用既有 tokens。
     let tokens = collectTokens(document.body);
 
     function paintHighlights(rescan = false) {
@@ -82,13 +78,11 @@ export default defineContentScript({
       for (const kind of Object.keys(CONJUNCTION_NAMES) as ConjunctionKind[]) {
         CSS.highlights.set(CONJUNCTION_NAMES[kind], new Highlight(...conjunctions[kind]));
       }
-      // 只印數量。印 Range 物件的話,DevTools 開著時 console 會一直抓住它們。
-      console.log('[wordtiger] threshold', threshold, 'marks', marks.size, 'tokens', tokens.length);
     }
 
     paintHighlights();
 
-    // ponytail: 先用 300ms 防抖後全文補掃；大型即時頁面真的卡頓時再升級成分區 IntersectionObserver。
+    // ponytail: 300ms 防抖後全文掃描；出現可測延遲時再改為分區掃描。
     let scanTimer: ReturnType<typeof setTimeout> | undefined;
     const observer = new MutationObserver(() => {
       clearTimeout(scanTimer);
@@ -100,16 +94,14 @@ export default defineContentScript({
       clearTimeout(scanTimer);
     }, { once: true });
 
-    // 沒有批次預取了。查詞改成單字一次完整輸出,一頁 30 個字先打 30 通
-    // 每通幾百 token 的請求,絕大多數還用不到。改成按 A 才查。
+    // 按 A 才查詞，避免未使用的整頁批次 API request。
     const defs = new Map<string, string>();
     let pointerX = 0;
     let pointerY = 0;
     let current: Hover | null = null;
     let currentTakeaway: Takeaway | null = null;
     let currentSpeech = '';
-    // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
-    // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
+    // 序號阻止舊 request 覆蓋較新的卡片狀態。
     let explainSeq = 0;
     let activeAi: AbortController | undefined;
 
@@ -146,8 +138,7 @@ export default defineContentScript({
       `${marks.get(phrase) === 'unknown' ? 'Space 取消片語收藏' : 'Space 收藏片語'} · F AI 原句 · Esc 關閉`;
     const sentenceHint = 'F AI 原句 · Esc 關閉';
 
-    // mousemove 只記座標。命中測試留到按鍵時才做,滑鼠移動每秒觸發幾十次,
-    // 在這裡做 caretPositionFromPoint 加 getBoundingClientRect 會逼出重複的版面計算。
+    // mousemove 僅記錄座標，命中測試延後到按鍵事件。
     document.addEventListener('mousemove', (e) => {
       pointerX = e.clientX;
       pointerY = e.clientY;
@@ -186,7 +177,7 @@ export default defineContentScript({
       }
 
       if (e.key === 'f' || e.key === 'F') {
-        // 整句卡片念原句；單字卡片念 lemma；沒有卡片才念滑鼠底下的字。
+        // 整句卡念原句；單字卡念 lemma；無卡片時念游標詞。
         const text = currentSpeech || current?.lemma || hoveredWord()?.word;
         if (!text) return;
         e.preventDefault();
@@ -194,8 +185,7 @@ export default defineContentScript({
         return;
       }
 
-      // 已經認得的字不值得先花一次 AI 查詢；直接指著按 X 就能排除。
-      // 卡片開著時則固定作用在卡片單字，避免滑鼠稍微移動就標錯字。
+      // 卡片開啟時固定操作卡片單字，避免游標移動造成誤標。
       if (e.key === 'x' || e.key === 'X') {
         const hover = current ?? hoveredWord();
         if (!hover) return;
@@ -236,8 +226,7 @@ export default defineContentScript({
         const marked = marks.get(hover.lemma) === 'unknown';
         const cached = defs.get(hover.lemma);
 
-        // 已收藏的字再次查詢，代表使用者在新的地方又遇到它；順手累積這次語境。
-        // addContext 會忽略同一網址的相同句子，所以重複按 A 不會製造副本。
+        // 已收藏單字再次查詢時累積語境；addContext 負責去重。
         if (marked) void browser.runtime.sendMessage({
           type: 'saveContext', word: hover.lemma, sentence: hover.sentence,
           url: location.href, title: document.title,
@@ -251,7 +240,7 @@ export default defineContentScript({
           return;
         }
 
-        // 完整查詞要好幾秒,沒有回饋會讓人以為按鍵沒進去
+        // 網路查詢期間先提供載入狀態。
         showCard({
           title: hover.lemma, body: '老虎正在抓這個字…', rect: hover.rect,
           hint: '', marked, loading: true, onClose: closeAiCard,
@@ -299,12 +288,12 @@ export default defineContentScript({
         const cardBody = (body: string) => kind === 'translate'
           ? `原文｜${sentence}\n${body}`
           : body;
-        // 卡片換成整句的內容了,Space 不該再標記剛才那個單字
+        // 整句卡不保留先前的單字操作目標。
         current = null;
         currentTakeaway = null;
         currentSpeech = sentence;
 
-        // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
+        // 網路查詢期間先提供載入狀態。
         showCard({
           title,
           body: cardBody(kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…'),
@@ -352,7 +341,7 @@ export default defineContentScript({
             type: 'saveContext', word: takeaway.phrase,
             sentence: takeaway.sentence, url: location.href, title: document.title,
           });
-          // 拆句已經找出片語；收藏後沿用查詞入口補齊片語詞典並寫入同一份快取。
+          // 收藏後沿用查詞流程建立片語詞典快取。
           void browser.runtime.sendMessage({
             type: 'lookup', word: takeaway.phrase, sentence: takeaway.sentence,
           }).catch((err) => console.error('[wordtiger] 建立片語詞典失敗', err));
@@ -368,7 +357,7 @@ export default defineContentScript({
         return;
       }
 
-      // Space 標記的是卡片上那個字,不是滑鼠現在指到的字
+      // Space 固定操作卡片單字。
       if (e.key === ' ' && current) {
         e.preventDefault();
         const hover = current;

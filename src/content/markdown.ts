@@ -1,13 +1,6 @@
 /**
- * 極簡 Markdown 渲染器,只認查詞卡片實際會用到的那幾種語法。
- *
- * 為什麼不用現成套件:卡片會被插進**任何**網頁,AI 回來的內容直接塞 innerHTML
- * 等於在每個你瀏覽的網站上開一個 XSS 洞。marked 加 DOMPurify 要拉兩個相依、
- * 幾十 KB,而卡片只需要粗體、標題、清單三種東西。
- *
- * 安全性靠一條不變式:**先跳脫整行,再在已跳脫的字串上套用行內樣式**。
- * 跳脫之後字串裡不可能再有 `<`,所以輸出裡的標籤只可能是這個檔案自己產的那幾個。
- * 順序反過來就會有洞,改這個檔案時務必守住這一點。
+ * 僅支援卡片所需 Markdown。
+ * 安全不變式：先跳脫完整輸入，再套用受控的行內格式。
  */
 
 const ESCAPES: Record<string, string> = {
@@ -22,7 +15,7 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ESCAPES[c]!);
 }
 
-/** 只能在已經跳脫過的字串上呼叫。粗體和行內程式碼,其他一律當純文字。 */
+/** 僅接受已跳脫文字；支援粗體與行內程式碼。 */
 function inline(escaped: string): string {
   return escaped
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -41,7 +34,7 @@ export function renderMarkdown(src: string): string {
   };
   const flushPara = () => {
     if (para.length === 0) return;
-    // 段落內的單一換行保留成 <br>。拆句卡片那種「一點一行」的輸出靠這個。
+    // 保留段落內換行。
     out.push(`<p>${para.join('<br>')}</p>`);
     para = [];
   };
@@ -49,8 +42,7 @@ export function renderMarkdown(src: string): string {
   for (const raw of src.split('\n')) {
     const line = raw.trim();
 
-    // 系統層叫模型不要包 code fence,但模型常常還是包。與其讓 ``` 原樣顯示在
-    // 卡片上,不如直接丟掉這一行。
+    // 忽略模型偶爾加入的外層 code fence。
     if (line.startsWith('```')) continue;
 
     if (!line) {

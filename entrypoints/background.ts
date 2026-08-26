@@ -11,21 +11,17 @@ const LOCAL_CHANGES = new Set([
 type BackgroundMsg = Msg | { type: 'toggleHighlightFromMascot' };
 
 export default defineBackground(() => {
-  // 用 sendResponse 加 return true,不用「listener 回傳 Promise」那種寫法。
-  // 後者在不同瀏覽器和不同 polyfill 設定下的行為不一致,錯了會安靜地收不到回應。
+  // 明確使用 sendResponse + return true，確保跨瀏覽器行為一致。
   browser.runtime.onMessage.addListener((msg: BackgroundMsg, sender, sendResponse) => {
     if (msg.type === 'toggleHighlightFromMascot') {
-      toggle(sender.tab, 'mascot').then(sendResponse).catch((err) => {
+      toggle(sender.tab).then(sendResponse).catch((err) => {
         console.error('[wordtiger] 懸浮球切換失敗', err);
         sendResponse(false);
       });
       return true;
     }
 
-    // catch 不能省。上面已經 return true 答應瀏覽器「等我回話」,
-    // handleMessage 一 reject 就再也沒人呼叫 sendResponse,通道會一直開著,
-    // 呼叫端的 await 永遠不會 settle:不回應、不拋錯、不逾時,畫面就這樣白掉。
-    // 回 undefined 至少讓呼叫端立刻拿到結果,錯誤留在 service worker console。
+    // return true 後必須回應；錯誤時回 undefined，避免呼叫端永久等待。
     handleMessage(msg)
       .then((result) => {
         sendResponse(result);
@@ -38,7 +34,7 @@ export default defineBackground(() => {
         console.error('[wordtiger] handleMessage 失敗', msg.type, err);
         sendResponse(undefined);
       });
-    return true; // 保持訊息通道開著,直到 sendResponse 被呼叫
+    return true;
   });
 
   browser.runtime.onConnect.addListener((port) => {
@@ -59,25 +55,19 @@ export default defineBackground(() => {
     });
   });
 
-  // Alt+U 直接切換；工具列圖示現在開 popup，由 popup 提供切換與設定入口。
   browser.commands.onCommand.addListener(async (command) => {
-    // 用原生 console,不用 WXT 的 logger。production build 會把 logger 換成空函式,
-    // 出事時完全沒有輸出,這是這個擴充唯一的觀測點。
-    console.log('[wordtiger] command', command);
     if (command !== 'highlight') return;
 
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    await toggle(tab, 'command');
+    await toggle(tab);
   });
 
-  // 使用者在 popup 為某個 origin 開啟自動標示後，每次載入完成自動注入。
   browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete' || !tab.url) return;
     void autoHighlight(tab).catch((err) => console.error('[wordtiger] 自動標示失敗', err));
   });
 
-  // 第一次安裝就把設定頁開起來。沒有 API Key 之前查詞不會動,
-  // 不主動帶一下,新使用者第一個按鍵得到的就是錯誤訊息。更新版本不打擾。
+  // 僅首次安裝開啟設定頁，更新版本不打擾使用者。
   browser.runtime.onInstalled.addListener(({ reason }) => {
     if (reason === 'install') void browser.runtime.openOptionsPage();
   });
@@ -118,11 +108,10 @@ async function autoHighlight(tab: Browser.tabs.Tab): Promise<void> {
   const origin = pageOrigin(tab.url);
   if (!origin) return;
   const settings = await loadSettings();
-  if (settings.autoOrigins.includes(`${origin}/*`)) await toggle(tab, 'auto');
+  if (settings.autoOrigins.includes(`${origin}/*`)) await toggle(tab);
 }
 
-async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<boolean> {
-  console.log('[wordtiger] toggle via', via, '| tab', tab?.id, tab?.url);
+async function toggle(tab: Browser.tabs.Tab | undefined): Promise<boolean> {
   if (!tab?.id || !tab.url) return false;
 
   const { blockedHosts } = await loadSettings();
@@ -130,16 +119,15 @@ async function toggle(tab: Browser.tabs.Tab | undefined, via: string): Promise<b
   if (!origin) return false;
   const host = new URL(origin).hostname;
   if (blockedHosts.some((h) => host === h || host.endsWith(`.${h}`))) {
-    console.warn(`${host} 在黑名單內,不注入`);
+    console.warn(`${host} 在黑名單內，不注入`);
     return false;
   }
 
   // 全站 host permission 讓快捷鍵、popup、懸浮球與自動標示共用這條注入路徑。
-  const injected = await browser.scripting.executeScript({
+  await browser.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     files: ['/content-scripts/highlight.js'],
   });
-  console.log('[wordtiger] injected frames:', injected.length);
   const active = await isRunning(tab.id);
   try {
     await browser.tabs.sendMessage(tab.id, { type: 'highlightState', active });

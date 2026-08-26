@@ -6,10 +6,7 @@ export interface FreqEntry {
   count: number;
 }
 
-/**
- * entries 必須已按 count 由大到小排序(subtlex-word-frequencies 本來就是)。
- * rank 直接取名次,不取 count,因為使用者調的是「前幾名」不是「出現幾次」。
- */
+/** 輸入依 count 降冪；輸出名次供詞頻門檻使用。 */
 export function buildFreqMap(
   entries: FreqEntry[],
   limit: number,
@@ -26,9 +23,9 @@ export function buildFreqMap(
   return map;
 }
 
-// 只有直接執行這支腳本時才產檔。被 test import 時不執行。
+// 測試 import 時不產檔。
 if (process.argv[1]?.endsWith('build-freq.ts')) {
-  // 套件是純 JSON,ESM 下的 import 需要 import attribute,用 createRequire 省事
+  // createRequire 直接載入套件 JSON。
   const entries: FreqEntry[] = createRequire(import.meta.url)('subtlex-word-frequencies');
   const map = buildFreqMap(entries, 30000);
   writeFileSync('public/freq.json', JSON.stringify(map));

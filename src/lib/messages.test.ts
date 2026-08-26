@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { handleMessage, handleStreamMessage, type ExplainResult } from './messages';
+import { handleMessage, handleStreamMessage, type ExplainResult, type SpeechResult } from './messages';
 import { db, markWord, sentenceKey } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
@@ -33,6 +33,24 @@ describe('handleMessage', () => {
       audio: 'data:audio/mpeg;base64,AQID',
     });
     expect(spy.mock.calls[0]![0]).toBe('We deploy.');
+  });
+
+  it('新的 speak request 會取消尚未完成的前一筆', async () => {
+    let firstSignal: AbortSignal | undefined;
+    vi.spyOn(ai, 'generateSpeech')
+      .mockImplementationOnce((_text, _settings, signal) => new Promise((_resolve, reject) => {
+        firstSignal = signal;
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }))
+      .mockResolvedValueOnce(Uint8Array.from([4, 5, 6]).buffer);
+
+    const first = handleMessage({ type: 'speak', text: 'first' });
+    await vi.waitFor(() => expect(firstSignal).toBeDefined());
+    const second = await handleMessage({ type: 'speak', text: 'second' }) as SpeechResult;
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(((await first) as SpeechResult).ok).toBe(false);
   });
 
   it('getMarks 回傳標記,格式是可序列化的陣列', async () => {
@@ -75,7 +93,6 @@ describe('handleMessage', () => {
     expect(spy).toHaveBeenCalledOnce();
     spy.mockClear();
 
-    // 第一次已寫入快取,第二次應該完全不打 AI
     const got = await handleStreamMessage({
       type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.',
     }, () => {}) as ExplainResult;
@@ -113,11 +130,11 @@ describe('handleMessage', () => {
 
     expect(got.ok).toBe(false);
     expect(!got.ok && got.error).toContain('401');
-    // 一次網路抖動不該被記住,不然之後永遠拿到錯誤結果
+    // 暫時性錯誤不得寫入快取。
     expect(await db.lookupCache.get('staging')).toBeUndefined();
   });
 
-  it('沒設定 AI 時回可讀的錯誤,不是空白卡片', async () => {
+  it('未設定 AI 時回傳可讀錯誤', async () => {
     vi.spyOn(settings, 'loadSettings').mockResolvedValue({
       baseUrl: '', apiKey: '', model: '', profile: '',
       threshold: 5000, blockedHosts: [], templates: DEFAULT_TEMPLATES,
@@ -133,7 +150,7 @@ describe('handleMessage', () => {
     }, () => {}) as ExplainResult;
 
     expect(got.ok).toBe(false);
-    expect(!got.ok && got.error).toContain('options');
+    expect(!got.ok && got.error).toContain('設定頁');
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -237,8 +254,7 @@ describe('explain', () => {
       title: 'Deployment guide',
     };
     await handleMessage(msg);
-    // 只斷言這個測試真正在乎的前兩個引數。後面是 settings 與串流參數,
-    // 綁死整串會讓簽章一長就假性失敗。
+    // 僅驗證此案例相關的前兩個參數。
     expect(spy.mock.calls[0]!.slice(0, 2)).toEqual(['grammar', msg]);
   });
 
@@ -261,7 +277,7 @@ describe('explain', () => {
     const spy = vi.spyOn(ai, 'explainSentence');
 
     const got = await handleMessage({ type: 'explain', kind: 'translate', sentence });
-    expect(got).toEqual({ ok: false, error: '還沒設定 AI,請到 options 頁填 base URL 和 API key' });
+    expect(got).toEqual({ ok: false, error: '尚未設定 AI，請到設定頁填入 Base URL 與 API Key' });
     expect(spy).not.toHaveBeenCalled();
   });
 

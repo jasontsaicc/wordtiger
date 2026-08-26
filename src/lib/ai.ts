@@ -10,18 +10,18 @@ export interface AiSettings {
   apiKey: string;
   model: string;
   profile: string;
-  /** 沒給就用 DEFAULT_TEMPLATES。設成選填是為了讓既有呼叫端不必全部改 */
+  /** 未提供時使用 DEFAULT_TEMPLATES。 */
   templates?: Templates;
 }
 
 export interface LookupItem {
-  /** 單字原形 */
+  /** 單字原形。 */
   w: string;
-  /** 這個字出現的句子,用來消除一詞多義 */
+  /** 用於消歧義的來源句。 */
   s: string;
 }
 
-/** 用同一組 API 設定產生自然英文語音；TTS 模型不跟查詞模型綁在一起。 */
+/** TTS 使用獨立模型，不受查詞模型設定影響。 */
 export async function generateSpeech(
   text: string,
   settings: AiSettings,
@@ -41,7 +41,7 @@ export async function generateSpeech(
       model: 'gpt-4o-mini-tts',
       voice: 'marin',
       input,
-      instructions: 'Speak in natural American English with clear articulation, natural intonation, and a moderately slow pace for an English learner.',
+      instructions: 'Speak in warm, friendly, natural American English. Use clear articulation and natural intonation at a slightly slower-than-conversational pace, so non-native English learners can comfortably follow and imitate. Avoid exaggerated pronunciation or a robotic teaching tone.',
       response_format: 'mp3',
     }),
   });
@@ -50,7 +50,7 @@ export async function generateSpeech(
     throw new Error(`AI 語音請求失敗 ${res.status}: ${await res.text()}`);
   }
   const audio = await res.arrayBuffer();
-  if (!audio.byteLength) throw new Error('AI 語音回了空的結果');
+  if (!audio.byteLength) throw new Error('AI 語音回傳空內容');
   return audio;
 }
 
@@ -66,26 +66,18 @@ export function buildLookupPrompt(
   });
 }
 
-/**
- * 查詞與拆句不需要推理鏈,推理會讓一次查詢從 4 秒變 28 秒。
- * 但可接受的值分兩段:gpt-5.6 系列吃 'none',其餘 gpt-5 系列最低只到 'minimal',
- * 傳 'none' 會直接回 400 Unsupported value。2026-08-26 實測。
- */
+/** 使用各模型支援的最低推理量。 */
 function reasoningEffort(model: string): { reasoning_effort: string } | undefined {
   if (model.startsWith('gpt-5.6')) return { reasoning_effort: 'none' };
   if (model.startsWith('gpt-5')) return { reasoning_effort: 'minimal' };
   return undefined;
 }
 
-/**
- * 唯一一個對外送 request 的地方。三個功能的差別只有 system 訊息、
- * user 訊息,以及要不要開 JSON 模式。
- */
+/** 查詞與句子分析共用的 Chat Completions request。 */
 async function chat(
   system: string,
   user: string,
   settings: AiSettings,
-  jsonMode: boolean,
   onDelta?: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
@@ -101,7 +93,6 @@ async function chat(
     body: JSON.stringify({
       model: settings.model,
       ...reasoningEffort(settings.model),
-      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
       ...(onDelta ? { stream: true } : {}),
       messages: [
         { role: 'system', content: system },
@@ -154,13 +145,7 @@ export async function readChatStream(
   return content.trim();
 }
 
-/**
- * 查一個字,回 Markdown。
- *
- * 以前是一次送 30 個字、靠 JSON 把結果拆回各個單字。改成單字之後 JSON 就沒必要了:
- * 只有一筆結果,不需要結構化,也就沒有回應被截斷導致整批解析失敗的風險。
- * 少開一個 response_format,相容端點的支援度也更好。
- */
+/** 查詢單字並回傳 Markdown。 */
 export async function lookupWord(
   item: LookupItem,
   settings: AiSettings,
@@ -174,16 +159,11 @@ export async function lookupWord(
     settings.profile,
     settings.templates?.lookup ?? DEFAULT_TEMPLATES.lookup,
   );
-  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, false, onDelta, signal);
+  const content = await chat(SYSTEM_RULES.lookup, prompt, settings, onDelta, signal);
   return content.trim();
 }
 
-/**
- * 翻譯整句或分析文法。回純文字,不是 JSON。
- *
- * 這兩個功能只有一筆結果,不需要結構化回傳,也就沒有 JSON 被截斷的風險。
- * 少開一個 response_format,相容端點的支援度也更好。
- */
+/** 翻譯或分析句子並回傳純文字。 */
 export interface SentenceInput {
   sentence: string;
   focus?: string;
@@ -210,6 +190,6 @@ export async function explainSentence(
     title: input.title?.trim().slice(0, 200) ?? '',
   });
 
-  const content = await chat(SYSTEM_RULES[kind], user, settings, false, onDelta, signal);
+  const content = await chat(SYSTEM_RULES[kind], user, settings, onDelta, signal);
   return content.trim();
 }

@@ -6,14 +6,7 @@ export interface Templates {
   grammar: string;
 }
 
-/**
- * 系統層。不開放使用者編輯。
- *
- * 這一層只放「程式碼依賴的輸出契約」,不放內容要求。內容要求屬於使用者層,
- * 使用者想怎麼改都行。查詞從批次 JSON 改成單字 Markdown 之後,
- * 程式碼依賴的只剩三件事:是 Markdown、沒有 code fence 包整份、沒有寒暄。
- * 篇幅限制留給快速看懂和拆句,那兩個是一句話的回應,回三百字卡片塞不下。
- */
+/** 不可編輯的輸出契約；內容要求由使用者 templates 定義。 */
 export const SYSTEM_RULES: Record<PromptKind, string> = {
   lookup: [
     '用繁體中文回答。',
@@ -79,10 +72,7 @@ export const PREVIOUS_DEFAULT_TEMPLATES: Templates = {
   ].join('\n'),
 };
 
-/**
- * 使用者層。options 頁可以整段改寫。
- * {{profile}} 是使用者的背景描述,{{word}} 和 {{sentence}} 由呼叫端填。
- */
+/** 可在 options 編輯的使用者層 templates。 */
 export const DEFAULT_TEMPLATES: Templates = {
   lookup: [
     '你是一位專業英文老師與英漢詞典編輯,擅長教非母語的 DevOps 工程師。',
@@ -131,13 +121,7 @@ export const DEFAULT_TEMPLATES: Templates = {
 
 const PLACEHOLDER = /\{\{\s*(\w+)\s*\}\}/g;
 
-/**
- * 把 {{key}} 換成 vars 裡的值。
- *
- * 用一次 replace 配 callback 走完,不是對每個 key 各跑一次 replace。
- * 差別在於這樣展開出來的內容不會再被掃第二次。使用者讀的句子如果剛好
- * 含有 {{profile}} 這種字串,不該把使用者的背景描述插進去。
- */
+/** 單次展開 placeholders，避免替換值再次被解析。 */
 export function renderTemplate(
   template: string,
   vars: Record<string, string>,
@@ -148,7 +132,7 @@ export function renderTemplate(
 }
 
 const CJK = /[\u4e00-\u9fff]/;
-/** 模型自己截斷了片語。存進詞庫會變成永遠比對不到的死 key。 */
+/** 拒絕模型截斷的片語，避免建立無法匹配的 key。 */
 const ELLIPSIS = /…|\.\.\./;
 
 /** 只取「帶走」裡可當作詞庫 key 的英文片語或句型。 */
@@ -156,8 +140,7 @@ export function extractTakeaway(response: string): string | null {
   const line = response.split(/\r?\n/).find((item) => item.trim().startsWith('帶走｜'));
   if (!line) return null;
 
-  // 不固定取第二段。模型偶爾會多印一次「帶走｜」前綴,那時片語會落在第三段。
-  // 排除含中日韓字的段落,才不會在片語缺席時誤收中文提示。
+  // 掃描所有區段並排除 CJK，容忍重複前綴與缺少片語的回覆。
   const phrase = line.split('｜').slice(1)
     .map((part) => part.trim().replace(/^`|`$/g, ''))
     .find((part) => /[a-z]/i.test(part) && !CJK.test(part)) ?? '';

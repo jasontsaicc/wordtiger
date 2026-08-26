@@ -4,13 +4,13 @@ export type WordStatus = 'unknown' | 'known';
 export type HighlightTier = 'saved' | 'learning' | 'advanced' | 'rare';
 
 export interface DecideContext {
-  /** 單字小寫 -> 詞頻排名,1 最常見 */
+  /** 小寫單字對應詞頻排名；1 最常見。 */
   freq: Record<string, number>;
-  /** 原形 -> 使用者標記。沒有記錄代表交給詞頻決定 */
+  /** 原形對應使用者標記；未記錄時由詞頻決定。 */
   marks: Map<string, WordStatus>;
-  /** 排名落後於這個數字的字視為生詞 */
+  /** 詞頻排名落後於此門檻的字視為生詞。 */
   threshold: number;
-  /** 這個 token 是不是句子的第一個字 */
+  /** 此 token 是否為句首字。 */
   isSentenceStart: boolean;
 }
 
@@ -20,12 +20,7 @@ export interface Decision {
   tier: HighlightTier | null;
 }
 
-/**
- * 判定一個 token 該不該高亮。
- *
- * 優先序:使用者標記 > 專有名詞排除 > 詞頻閾值。
- * 使用者標記永遠贏,這是「words 表只記錄例外」這個設計的直接後果。
- */
+/** 優先序：使用者標記、專有名詞排除、詞頻門檻。 */
 export function shouldHighlight(token: string, ctx: DecideContext): Decision {
   const lemma = lemmatize(token, (w) => w in ctx.freq);
 
@@ -35,15 +30,15 @@ export function shouldHighlight(token: string, ctx: DecideContext): Decision {
   if (mark === 'unknown') return { hit: true, lemma, tier: 'saved' };
   if (mark === 'known') return { hit: false, lemma, tier: null };
 
-  // 句中的首字母大寫,幾乎都是人名地名產品名。高亮它們只會製造噪音。
+  // 排除非句首大寫詞，避免人名、地名與產品名噪音。
   const isCapitalized = token[0] === token[0]?.toUpperCase()
     && token[0] !== token[0]?.toLowerCase();
   if (isCapitalized && !ctx.isSentenceStart) return { hit: false, lemma, tier: null };
 
   const rank = ctx.freq[lemma];
-  // 詞表外多半是網址、品牌或領域術語；沒有排名不等於值得背。
+  // 詞表外多為網址、品牌或領域術語，不自動視為生詞。
   if (rank === undefined || rank <= ctx.threshold) return { hit: false, lemma, tier: null };
-  // 三層跟著程度移動：門檻後 50%、再後 100%，更後面的字通常不值得優先背。
+  // 色階相對於使用者門檻分為 1.5 倍與 2.5 倍。
   const tier: HighlightTier = rank > ctx.threshold * 2.5
     ? 'rare'
     : rank > ctx.threshold * 1.5

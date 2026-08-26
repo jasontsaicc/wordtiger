@@ -1,7 +1,4 @@
-/**
- * 不規則變化表。只收高頻的,長尾交給後綴規則加詞典驗證。
- * 這張表刻意保持小,因為每多一筆就多一份維護成本,而規則能處理九成以上的情況。
- */
+/** 高頻不規則變化；長尾由後綴規則與詞典驗證處理。 */
 const IRREGULAR: Record<string, string> = {
   am: 'be', is: 'be', are: 'be', was: 'be', were: 'be', been: 'be', being: 'be',
   has: 'have', had: 'have', having: 'have',
@@ -32,7 +29,6 @@ const IRREGULAR: Record<string, string> = {
   better: 'good', best: 'good', worse: 'bad', worst: 'bad',
 };
 
-/** 產生候選原形,由呼叫端的詞典決定採用哪一個 */
 function candidates(word: string): string[] {
   const out: string[] = [];
 
@@ -45,7 +41,7 @@ function candidates(word: string): string[] {
   if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) {
     out.push(word.slice(0, -1));
   }
-  // 動名詞的字根一定含母音。thing -> th、bring -> br 沒有母音,那是原形不是變化形。
+  // 避免將 thing、bring 誤判為 -ing 變化。
   if (word.endsWith('ing') && word.length > 4 && /[aeiou]/.test(word.slice(0, -3))) {
     const stem = word.slice(0, -3);
     out.push(stem + 'e');      // using -> use、hoping -> hope
@@ -69,20 +65,14 @@ function candidates(word: string): string[] {
   return out;
 }
 
-/**
- * 把一個 token 還原成原形。
- *
- * 策略:不規則表優先,再用後綴規則產生候選,最後由 isKnownWord 決定採用哪個。
- * 沒有任何候選通過驗證時退回原字,這是刻意的保守做法。寧可漏還原一個字
- * (使用者多標記一次),也不要把 university 錯還原成 universit(整個字查不到)。
- */
+/** 不規則表優先，再以詞典驗證後綴候選；無有效候選時保留原字。 */
 export function lemmatize(
   token: string,
   isKnownWord: (w: string) => boolean,
 ): string {
   const word = token.toLowerCase();
 
-  // 不規則表要先查。is、am、be 這類字只有兩個字母,擋在長度判斷後面就永遠查不到。
+  // 短字也可能是不規則變化，必須先於長度檢查。
   const irregular = IRREGULAR[word];
   if (irregular) return irregular;
 

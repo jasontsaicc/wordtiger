@@ -15,7 +15,7 @@ describe('renderTemplate', () => {
   });
 
   it('變數的值裡面含 placeholder 時不會被二次展開', () => {
-    // 使用者的句子如果剛好含 {{profile}},不該把 profile 塞進去
+    // 替換值中的 placeholder 不應再次展開。
     expect(renderTemplate('{{a}}', { a: '{{b}}', b: '炸了' })).toBe('{{b}}');
   });
 
@@ -36,22 +36,18 @@ describe('extractTakeaway', () => {
     expect(extractTakeaway('帶走｜只有中文｜提示')).toBe(null);
   });
 
-  // 以下兩筆是 2026-08-26 對真實 API 打出來的輸出,不是想像出來的邊界。
   it('模型多印一次前綴時仍抓得到片語', () => {
-    // gpt-4.1-nano 實際回覆
     expect(extractTakeaway('帶走｜帶走｜idempotent operation｜冪等操作'))
       .toBe('idempotent operation');
   });
 
   it('模型自己截斷的片語不收藏', () => {
-    // gpt-5.6-luna 實際回覆。存下去會是永遠比對不到網頁文字的死 key。
     expect(extractTakeaway('帶走｜can be retried without changing…｜可重試而不改變……'))
       .toBe(null);
     expect(extractTakeaway('帶走｜can be retried without changing...｜提示')).toBe(null);
   });
 
   it('英文夾中文佔位的句型不當作詞庫 key', () => {
-    // gpt-5.6-luna 實際回覆。教學上有用,但這種字串永遠比對不到網頁上的文字。
     expect(extractTakeaway('帶走｜provided [條件]｜前提是……才……')).toBe(null);
   });
 });
@@ -66,7 +62,7 @@ describe('DEFAULT_TEMPLATES', () => {
   it('查詞 template 必須有 profile、word、sentence 三個 placeholder', () => {
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{profile}}');
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{word}}');
-    // 出處句子是一詞多義的消歧義依據,少了它 scale 在 K8s 和音樂文章裡會查到同一個意思
+    // 來源句提供一詞多義的消歧義依據。
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{sentence}}');
   });
 
@@ -94,10 +90,10 @@ describe('SYSTEM_RULES', () => {
   });
 
   it('查詞的系統層只鎖輸出契約,不鎖內容', () => {
-    // 這一層存在的理由是保證卡片渲染得出來。內容要求屬於使用者層,可以整段改寫。
+    // 系統層僅保留渲染依賴的契約。
     expect(SYSTEM_RULES.lookup).toContain('```');
     expect(SYSTEM_RULES.lookup).toContain('繁體中文');
-    // 不該再有 JSON 的字眼,批次查詞已經拿掉了
+    // 單筆查詞不需要 JSON 契約。
     expect(SYSTEM_RULES.lookup).not.toContain('JSON');
   });
 

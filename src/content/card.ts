@@ -1,9 +1,9 @@
 import { renderMarkdown, escapeHtml } from './markdown';
 
 export interface CardOptions {
-  /** 空字串代表不畫標題 */
+  /** 空字串代表不顯示標題。 */
   title: string;
-  /** 當成 Markdown 渲染。內容來自 AI,渲染器負責跳脫 */
+  /** 以 Markdown 渲染；渲染器負責跳脫 AI 內容。 */
   body: string;
   rect: DOMRect;
   hint?: string;
@@ -24,10 +24,7 @@ let dragAbort: AbortController | null = null;
 const GAP = 10;
 const MARGIN = 12;
 
-/**
- * 卡片是唯一一個被插進網頁的節點,而且掛在 body 底下不碰正文。
- * 用 Shadow DOM 隔離樣式,不然要寫幾十 KB 的防禦性 CSS 去對抗各網站的樣式。
- */
+/** Shadow DOM 隔離網站樣式，卡片掛在獨立 host 上。 */
 function ensureRoot(): ShadowRoot {
   if (root) return root;
   host = document.createElement('div');
@@ -53,9 +50,7 @@ function ensureRoot(): ShadowRoot {
       .title { min-width: 0; flex: 1; color: #111827; font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
       .close { width: 26px; height: 26px; padding: 0; color: #64748b; background: #f1f5f9; border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
       .close:hover { color: #111827; background: #e2e8f0; }
-      /* 查詞是整份 Markdown,會很長,一定要能捲 */
       .body { max-height: min(60vh, 520px); overflow-y: auto; scrollbar-width: thin; }
-      /* 以下對應 renderMarkdown 產出的那幾個標籤 */
       .body p { margin: 0 0 6px; }
       .body ul { margin: 0 0 6px; padding-left: 18px; }
       .body li { margin: 1px 0; }
@@ -132,10 +127,7 @@ export function chooseCardPlacement(
   return below >= above ? 'below' : 'above';
 }
 
-/**
- * 產卡片的 HTML。純函式,不碰 DOM 狀態,所以測得到。
- * body 來自 AI,一定要跳脫。
- */
+/** 渲染卡片 HTML；AI 內容由 renderMarkdown 跳脫。 */
 export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
   const parts: string[] = [];
 

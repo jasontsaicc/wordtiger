@@ -21,3 +21,4 @@
 | [0015](0015-learning-activity-from-saved-data.md) | 學習足跡只由收藏資料推導 | accepted | 2026-08-26 |
 | [0016](0016-global-mascot-and-host-access.md) | 小虎預設出現並使用全站 host permission | accepted | 2026-08-26 |
 | [0017](0017-save-context-when-looking-up-saved-word.md) | 已收藏單字按 A 時累積目前語境 | accepted | 2026-08-26 |
+| [0018](0018-ai-tts-in-background-with-local-fallback.md) | AI 語音由 background 產生並保留裝置 fallback | accepted | 2026-08-26 |

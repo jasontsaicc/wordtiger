@@ -133,7 +133,7 @@ export async function signIn(
     await Promise.all([
       db.words.toCollection().modify({ pending: 1 }),
       db.contexts.toCollection().modify({ pending: 1 }),
-      // cache 只在同一帳號間傳遞，切換帳號時不把舊帳號內容上傳給新帳號。
+      // 切換帳號時不將原帳號 cache 上傳至新帳號。
       db.lookupCache.toCollection().modify({ pending: 0 }),
     ]);
   }
@@ -315,7 +315,7 @@ function remoteLookupCache(row: CacheRow, userId: string) {
   };
 }
 
-/** 查詞句子只有按 Space 收藏後才可進 contexts；同步 cache 時保留本機欄位但不外傳。 */
+/** 保留本機詞典生成句，但不將該欄位同步至遠端。 */
 function preserveLocalSentence(local: CacheRow | undefined, merged: CacheRow): CacheRow {
   return local?.sentence && local.payload === merged.payload
     ? { ...merged, sentence: local.sentence }
@@ -443,6 +443,6 @@ async function performSync(): Promise<SyncResult> {
 }
 
 export function syncNow(): Promise<SyncResult> {
-  // ponytail: 單一 service worker 共用一把鎖；真的需要多帳號同時同步時再拆帳號鎖。
+  // ponytail: 單一 service worker 共用鎖；需要多帳號並行時再拆分。
   return running ??= performSync().finally(() => { running = undefined; });
 }

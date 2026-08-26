@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { WordStatus } from './decide';
 import { nextReview } from './review';
 
-/** 語境句子的最短長度。太短的句子沒有語境價值 */
+/** 單字語境的最短長度。 */
 const MIN_SENTENCE_LENGTH = 26;
 
 export interface WordRow {
@@ -11,10 +11,10 @@ export interface WordRow {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
-  /** 0 是剛開始；5 是最長 30 天間隔 */
+  /** 0 是初始階段；5 是最長 30 天間隔。 */
   reviewStep?: number;
   reviewDueAt?: number;
-  /** 本機改動尚未被雲端確認；舊資料沒有此欄時也視為待同步 */
+  /** 本機改動尚未被雲端確認；舊資料缺少此欄時也視為待同步。 */
   pending?: 0 | 1;
 }
 
@@ -47,7 +47,7 @@ export interface ContextInput {
 }
 
 export interface SentenceRow {
-  /** `v2:${kind}:${sentence}\0${variant}`,kind 與 sentence 都編碼在裡面 */
+  /** `v2:${kind}:${sentence}\0${variant}`，包含 kind 與 sentence。 */
   id: string;
   result: string;
   fetchedAt: number;
@@ -56,9 +56,9 @@ export interface SentenceRow {
 export interface CacheRow {
   word: string;
   payload: string;
-  /** 產生詞典時使用的句子；只留本機，舊快取或其他裝置沒有時改出一般字義題。 */
+  /** 詞典生成句；僅保存在本機，缺少時退回一般字義題。 */
   sentence?: string;
-  /** 舊快取沒有這欄,顯示時退回「未知模型」 */
+  /** 缺少時顯示「未知模型」。 */
   model?: string;
   fetchedAt: number;
   updatedAt: number;
@@ -79,8 +79,7 @@ class WordTigerDb extends Dexie {
       contexts: 'id, word, updatedAt, deletedAt, [word+createdAt]',
       lookupCache: 'word, fetchedAt',
     });
-    // Dexie 的每個 version 只宣告跟前一版的差異,沒提到的表原封不動保留。
-    // 同名資料庫未來再升版時會沿用這條 migration chain。
+    // 每版只宣告 schema delta；Dexie 依序套用 migration chain。
     this.version(2).stores({
       sentenceCache: 'id, fetchedAt',
     });
@@ -103,7 +102,7 @@ export async function markWord(word: string, status: WordStatus): Promise<void> 
   });
 }
 
-/** 軟刪除。P2 的同步靠 deletedAt 把刪除事件傳到另一台,硬刪會讓那台把它推回來 */
+/** 軟刪除以同步 tombstone；硬刪除會被其他裝置重新建立。 */
 export async function unmarkWord(word: string): Promise<void> {
   const now = Date.now();
   const existing = await db.words.get(word);
@@ -111,7 +110,7 @@ export async function unmarkWord(word: string): Promise<void> {
   await db.words.put({ ...existing, updatedAt: now, deletedAt: now, pending: 1 });
 }
 
-/** options 的「刪除」比取消標記更強:單字與其語境一起留下可同步的 tombstone。 */
+/** 刪除單字與語境，並保留可同步的 tombstone。 */
 export async function deleteWord(word: string): Promise<void> {
   const now = Date.now();
   await db.transaction('rw', db.words, db.contexts, async () => {
@@ -131,14 +130,14 @@ export async function loadMarks(): Promise<Map<string, WordStatus>> {
 }
 
 export async function addContext(input: ContextInput): Promise<void> {
-  // 片語的來源句可能很短,仍值得保留；單字語境繼續過濾碎片。
+  // 片語來源句不套用單字語境的最短長度限制。
   if (!input.sentence.trim()
     || (input.sentence.length < MIN_SENTENCE_LENGTH && !/\s/.test(input.word))) return;
 
   const alive = await listContexts(input.word);
-  // ponytail: 每字線性掃描去重；單人資料真的大到新增變慢時再加 [word+url] 索引。
+  // ponytail: 每字 O(n) 去重；新增出現可測延遲時再加 [word+url] 索引。
   if (alive.some((r) => r.sentence === input.sentence && r.url === input.url)) return;
-  // 同一毫秒內連續寫入會讓 createdAt 相同,汰換誰就變成不確定的。往後推一毫秒保證嚴格遞增。
+  // 保證 createdAt 嚴格遞增，避免同毫秒寫入造成排序不穩定。
   const now = Math.max(Date.now(), (alive.at(-1)?.createdAt ?? 0) + 1);
   await db.contexts.put({
     id: crypto.randomUUID(),
@@ -150,7 +149,7 @@ export async function addContext(input: ContextInput): Promise<void> {
   });
 }
 
-/** 由舊到新排序 */
+/** 由舊到新排序。 */
 export async function listContexts(word: string): Promise<ContextRow[]> {
   const rows = await db.contexts.where('word').equals(word).toArray();
   return rows
@@ -189,7 +188,7 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
 
     let context = isPhrase ? latest.get(row.word) : undefined;
     if (!isPhrase && definition?.sentence) {
-      // ponytail: 每題線性找同句語境；個人詞庫真的大到取五題變慢時再建複合索引。
+      // ponytail: 每題 O(n) 尋找語境；取題出現可測延遲時再建複合索引。
       context = contexts.find((item) =>
         item.word === row.word && item.sentence === definition.sentence);
     }
@@ -250,13 +249,9 @@ export async function deleteCached(word: string): Promise<void> {
   await db.lookupCache.put({ ...row, updatedAt: now, deletedAt: now, pending: 1 });
 }
 
-/**
- * 快取鍵直接用原句,不做小寫化或空白正規化。
- * 正規化能提高命中率,但會讓 key 跟原句對不起來,除錯時要多猜一層。
- * 同一句在同一篇文章裡本來就是逐字相同,命中率的損失很小。
- */
+/** 保留原句作為 cache key，便於追查；同頁原句通常逐字相同。 */
 export function sentenceKey(kind: string, sentence: string, variant = ''): string {
-  // v2 讓舊版「純譯文 / 教科書文法」回覆自然失效。
+  // v2 使舊版「純譯文／教科書文法」快取失效。
   return `v2:${kind}:${sentence}\0${variant}`;
 }
 
