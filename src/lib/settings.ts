@@ -166,7 +166,8 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
  */
 export function originPattern(baseUrl: string): string | null {
   try {
-    return `${new URL(baseUrl).origin}/*`;
+    const url = new URL(baseUrl);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? `${url.origin}/*` : null;
   } catch {
     return null;
   }

@@ -186,18 +186,53 @@ describe('今晚打老虎', () => {
     });
 
     expect(await listReviewItems()).toEqual([
-      expect.objectContaining({ word: 'deploy', isPhrase: false, definition: expect.stringContaining('部署') }),
-      expect.objectContaining({ word: 'roll back', isPhrase: true, context: expect.objectContaining({ title: 'Release guide' }) }),
+      expect.objectContaining({ word: 'deploy', isPhrase: false, isCloze: false, definition: expect.stringContaining('部署') }),
+      expect.objectContaining({ word: 'roll back', isPhrase: true, isCloze: true, context: expect.objectContaining({ title: 'Release guide' }) }),
     ]);
   });
 
-  it('片語不在來源句中時不出成無法作答的題目', async () => {
-    await markWord('roll back', 'unknown');
+  it('泛化句型不在來源句中時改成完整語境題', async () => {
+    await markWord('keep A pending until B becomes available', 'unknown');
     await addContext({
-      word: 'roll back', sentence: 'The deployment failed during the release.',
+      word: 'keep A pending until B becomes available',
+      sentence: 'Keep the request pending until capacity becomes available.',
       url: 'https://example.com', title: 'Release guide',
     });
-    expect(await listReviewItems()).toEqual([]);
+    expect(await listReviewItems()).toEqual([
+      expect.objectContaining({
+        word: 'keep A pending until B becomes available', isPhrase: true, isCloze: false,
+      }),
+    ]);
+  });
+
+  it('無答案的舊收藏不會擋住後面的有效題目', async () => {
+    for (let i = 0; i < 26; i++) await markWord(`orphan${i}`, 'unknown');
+    await markWord('valid', 'unknown');
+    await putCached([{ word: 'valid', payload: 'answer' }]);
+    expect(await listReviewItems()).toEqual([
+      expect.objectContaining({ word: 'valid' }),
+    ]);
+  });
+
+  it('單字題使用產生答案時的句子，不混用最新語境', async () => {
+    const answerSentence = 'The certificate authority will issue a new certificate tomorrow.';
+    await markWord('issue', 'unknown');
+    await putCached([{ word: 'issue', payload: '核發', sentence: answerSentence }]);
+    await addContext({
+      word: 'issue', sentence: answerSentence,
+      url: 'https://example.com/cert', title: 'Certificate guide',
+    });
+    await addContext({
+      word: 'issue', sentence: 'A production issue interrupted the deployment this morning.',
+      url: 'https://example.com/incident', title: 'Incident',
+    });
+
+    expect(await listReviewItems()).toEqual([
+      expect.objectContaining({
+        word: 'issue', definition: '核發',
+        context: expect.objectContaining({ sentence: answerSentence, title: 'Certificate guide' }),
+      }),
+    ]);
   });
 
   it('自評後更新排程並留下待同步標記', async () => {

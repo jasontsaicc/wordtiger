@@ -81,7 +81,9 @@ describe('syncNow', () => {
   });
 
   it('同一帳號會拉回別台裝置的詞典 cache 並推送本機 cache', async () => {
-    await putCached([{ word: 'local', payload: '本機詞典', model: 'm1' }]);
+    await putCached([{
+      word: 'local', payload: '本機詞典', sentence: 'Local sentence.', model: 'm1',
+    }]);
     const response = (body: unknown) => ({
       ok: true, status: 200,
       json: async () => body,
@@ -111,8 +113,11 @@ describe('syncNow', () => {
     await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
     expect(await syncNow()).toMatchObject({ pulled: 1, pushed: 1 });
     expect((await getCached(['remote'])).get('remote')).toBe('遠端詞典');
+    expect((await db.lookupCache.get('remote'))!.sentence).toBeUndefined();
     expect((await db.lookupCache.get('local'))!.pending).toBe(0);
+    expect((await db.lookupCache.get('local'))!.sentence).toBe('Local sentence.');
     expect(fetchMock.mock.calls[5]![1]?.body).toContain('"payload":"本機詞典"');
+    expect(fetchMock.mock.calls[5]![1]?.body).not.toContain('"sentence"');
   });
 
   it('切換不同帳號時不會把舊帳號 cache 標成待上傳', async () => {

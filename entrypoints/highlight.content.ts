@@ -283,6 +283,9 @@ export default defineContentScript({
 
         const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
         const title = kind === 'translate' ? '快速看懂' : '拆懂這句';
+        const cardBody = (body: string) => kind === 'translate'
+          ? `原文｜${sentence}\n${body}`
+          : body;
         // 卡片換成整句的內容了,Space 不該再標記剛才那個單字
         current = null;
         currentTakeaway = null;
@@ -290,7 +293,7 @@ export default defineContentScript({
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
         showCard({
           title,
-          body: kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…',
+          body: cardBody(kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…'),
           rect, hint: 'Esc 關閉',
           loading: true, onClose: closeAiCard,
         });
@@ -300,7 +303,8 @@ export default defineContentScript({
           type: 'explain', kind, sentence, previous, focus, title: document.title,
         }, (body) => {
           if (seq === explainSeq) showCard({
-            title, body, rect, hint: 'Esc 關閉', loading: true, onClose: closeAiCard,
+            title, body: cardBody(body), rect,
+            hint: 'Esc 關閉', loading: true, onClose: closeAiCard,
           });
         });
         if (seq !== explainSeq) return;
@@ -313,7 +317,7 @@ export default defineContentScript({
 
         showCard({
           title,
-          body: result.ok ? result.text : `查詢失敗:${result.error}`,
+          body: cardBody(result.ok ? result.text : `查詢失敗:${result.error}`),
           rect,
           hint: phrase ? takeawayHint(phrase) : 'Esc 關閉',
           onClose: closeAiCard,
@@ -334,6 +338,10 @@ export default defineContentScript({
             type: 'saveContext', word: takeaway.phrase,
             sentence: takeaway.sentence, url: location.href, title: document.title,
           });
+          // 拆句已經找出片語；收藏後沿用查詞入口補齊片語詞典並寫入同一份快取。
+          void browser.runtime.sendMessage({
+            type: 'lookup', word: takeaway.phrase, sentence: takeaway.sentence,
+          }).catch((err) => console.error('[wordtiger] 建立片語詞典失敗', err));
         } else {
           marks.delete(takeaway.phrase);
         }

@@ -35,8 +35,8 @@ async function remove(row: CachedWord) {
 <template>
   <section>
     <h2>AI 回答庫</h2>
-    <p class="note">老虎已經查過的單字，下次不用再花一次 AI 費用；登入後會與同一帳號的裝置同步。</p>
-    <input v-model="keyword" class="search" placeholder="搜尋快取單字" />
+    <p class="note">老虎已經查過的單字與片語，下次不用再花一次 AI 費用；登入後會與同一帳號的裝置同步。</p>
+    <input v-model="keyword" class="search" placeholder="搜尋快取單字或片語" />
 
     <div class="layout">
       <div class="list">
@@ -49,7 +49,7 @@ async function remove(row: CachedWord) {
 
       <article v-if="selected">
         <header>
-          <div><h3>{{ selected.word }}</h3><small>OpenAI / {{ selected.model ?? '未知模型' }}</small></div>
+          <div><h3>{{ selected.word }}</h3><small>AI / {{ selected.model ?? '未知模型' }}</small></div>
           <button class="danger" @click="remove(selected)">清除快取</button>
         </header>
         <div class="answer" v-html="renderMarkdown(selected.payload)" />

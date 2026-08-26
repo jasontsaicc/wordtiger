@@ -108,4 +108,17 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES.grammar).toContain('白話英文｜');
     expect(SYSTEM_RULES.grammar).toContain('帶走｜');
   });
+
+  it('可遷移句型必須用全英文槽位帶走', () => {
+    expect(SYSTEM_RULES.grammar).toContain('必須加一行「帶走｜');
+    expect(SYSTEM_RULES.grammar).toContain('英文欄不可含中文');
+    expect(SYSTEM_RULES.grammar).toContain('用法｜');
+    expect(SYSTEM_RULES.grammar).toContain('例句｜');
+  });
+
+  it('片語詞典要求使用場景與搭配限制', () => {
+    expect(SYSTEM_RULES.lookup).toContain('多字片語');
+    expect(SYSTEM_RULES.lookup).toContain('## 使用場景');
+    expect(SYSTEM_RULES.lookup).toContain('不適用情況');
+  });
 });

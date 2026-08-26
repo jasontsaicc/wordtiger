@@ -15,7 +15,11 @@ MV3 service worker 沒有 `localStorage`，而目前只需要 Supabase Auth 與 
 IndexedDB 永遠是 source of truth，Supabase 傳遞 `words`、`contexts` 與 `lookup_cache`；
 `words` 也承載「今晚打老虎」的 `reviewStep`、`reviewDueAt`，不另建同步表。
 AI 詞典回答在同一帳號的裝置間同步，避免重複消耗 token，也讓詞庫頁能直接顯示其他裝置查過的詞典。
+收藏 `D` 找出的片語時，沿用同一個 lookup 流程自動建立片語詞典；舊片語從詞庫頁按需補建，
+兩者都寫入既有 `lookup_cache`，不增加表或同步分支。
 AI Key、prompt、顏色與含頁面上下文的句子翻譯／拆句 cache 仍保持本機限定。
+產生 AI 詞典時使用的來源句只存在本機 lookup cache，讓複習能對回查詢語境；同步 payload 時不外傳該句，
+而且遠端合併與 push acknowledgement 都必須保留仍對應同一 payload 的本機句子。
 切換帳號時不把既有詞典 cache 標成待上傳，避免舊帳號內容被複製到新帳號。
 
 同步直接使用原生 `fetch` 呼叫 Supabase Auth 與 PostgREST。擴充功能只接受 publishable／legacy anon key，
@@ -45,3 +49,4 @@ Session 與同步游標存進 `browser.storage.local`，access token 到期前�
 資料表必須先執行 `supabase/schema.sql`，RLS 是安全邊界而非可選設定。
 三個可同步表都必須維持 `updatedAt`、`deletedAt` 與本機 `pending` 語意；新增同步表時也要沿用 cutoff、
 tombstone 與推送途中再修改的保護。偏好設定目前不跨裝置，真的出現需求時再為它定義可同步且不含憑證的白名單。
+開發版若 extension ID 改變，瀏覽器會給它新的本機儲存空間；固定 ID 與升級流程見 ADR-0014。

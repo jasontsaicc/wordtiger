@@ -10,7 +10,10 @@ const props = defineProps<{
   total: number;
   caught: number;
 }>();
-const emit = defineEmits<{ reviewed: [{ word: string; remembered: boolean }] }>();
+const emit = defineEmits<{
+  reviewed: [{ word: string; remembered: boolean }];
+  nextRound: [];
+}>();
 
 const revealed = ref(false);
 const busy = ref(false);
@@ -32,6 +35,21 @@ async function grade(remembered: boolean) {
     return;
   }
   emit('reviewed', { word: props.item.word, remembered });
+}
+
+async function master() {
+  if (!props.item || busy.value) return;
+  busy.value = true;
+  error.value = '';
+  const saved = await browser.runtime.sendMessage({
+    type: 'setWordStatus', word: props.item.word, status: 'known',
+  });
+  busy.value = false;
+  if (!saved) {
+    error.value = '這個字沒有存成功，請再試一次。';
+    return;
+  }
+  emit('reviewed', { word: props.item.word, remembered: true });
 }
 </script>
 
@@ -61,8 +79,9 @@ async function grade(remembered: boolean) {
 
     <div v-else-if="!item" class="finish" aria-live="polite">
       <img src="/icons/128.png" alt="" />
-      <h3>{{ caught === total ? 'Comment allez-vous？今晚無虎可擋。' : '今晚收工。' }}</h3>
-      <p>今晚戰績：抓到 {{ caught }}／{{ total }} 隻；溜走的明天再來。</p>
+      <h3>{{ caught === total ? '本輪全數抓到。' : '本輪收工。' }}</h3>
+      <p>本輪戰績：抓到 {{ caught }}／{{ total }} 隻；溜走的明天再來。</p>
+      <button class="next-round" @click="emit('nextRound')">再打 5 隻</button>
     </div>
 
     <article v-else class="review-card">
@@ -72,11 +91,15 @@ async function grade(remembered: boolean) {
       </div>
 
       <template v-if="item.isPhrase">
-        <p class="question">這裡原本是哪個片語？</p>
-        <blockquote>{{ maskedContext }}</blockquote>
+        <p class="question">
+          {{ item.isCloze ? '這裡原本是哪個片語？' : '這句可以抽成哪個句型？' }}
+        </p>
+        <blockquote>{{ item.isCloze ? maskedContext : item.context?.sentence }}</blockquote>
       </template>
       <template v-else>
-        <p class="question">這隻在這裡是什麼意思？</p>
+        <p class="question">
+          {{ item.context ? '這隻在這裡是什麼意思？' : '你記得這個字的核心意思嗎？' }}
+        </p>
         <h3 class="word">{{ item.word }}</h3>
         <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
       </template>
@@ -98,6 +121,9 @@ async function grade(remembered: boolean) {
         <div class="grade-actions">
           <button :disabled="busy" @click="grade(false)">又讓牠溜了</button>
           <button class="caught" :disabled="busy" @click="grade(true)">抓到了</button>
+          <button v-if="item.reviewStep === 5" class="mastered" :disabled="busy" @click="master">
+            已經馴服
+          </button>
         </div>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
@@ -132,13 +158,15 @@ button:active { transform: scale(.98); }
 .answer a { display: inline-block; margin-top: .7rem; color: #0e7490; }
 .answer-label { margin: 0; color: #64748b; font-size: 12px; font-weight: 800; text-transform: uppercase; }
 .self-check { margin: 1.2rem 0 .55rem; color: #334155; font-weight: 700; }
-.grade-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.grade-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .7rem; }
 .grade-actions button { min-height: 44px; }
 .grade-actions .caught { color: white; border-color: #ea580c; background: #ea580c; font-weight: 800; }
+.grade-actions .mastered { color: white; border-color: #15803d; background: #15803d; font-weight: 800; }
 .empty, .finish { padding: 3rem 1.5rem; text-align: center; }
 .empty h3, .finish h3 { margin: 0; color: #0f172a; font-size: 22px; letter-spacing: -.02em; }
 .empty p, .finish p { margin: .5rem 0 0; color: #64748b; }
 .finish img { width: 88px; height: 88px; margin-bottom: 1rem; border-radius: 20px; animation: caught 560ms ease-out; }
+.next-round { margin-top: 1rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
 .error { color: #b91c1c; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @keyframes arrive { from { opacity: 0; transform: translateY(5px); } }

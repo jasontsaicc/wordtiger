@@ -5,7 +5,8 @@ import { getSyncState, syncNow } from '@/src/lib/sync';
 const SYNC_ALARM = 'wordtiger-sync';
 const SYNC_SOON_ALARM = 'wordtiger-sync-soon';
 const LOCAL_CHANGES = new Set([
-  'toggleMark', 'saveContext', 'deleteWord', 'setWordStatus', 'deleteCachedWord',
+  'toggleMark', 'saveContext', 'lookup', 'reviewWord', 'deleteWord', 'setWordStatus',
+  'deleteCachedWord',
 ]);
 
 export default defineBackground(() => {

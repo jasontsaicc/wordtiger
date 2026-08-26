@@ -315,6 +315,13 @@ function remoteLookupCache(row: CacheRow, userId: string) {
   };
 }
 
+/** 查詞句子只有按 Space 收藏後才可進 contexts；同步 cache 時保留本機欄位但不外傳。 */
+function preserveLocalSentence(local: CacheRow | undefined, merged: CacheRow): CacheRow {
+  return local?.sentence && local.payload === merged.payload
+    ? { ...merged, sentence: local.sentence }
+    : merged;
+}
+
 async function pull<T>(
   stored: StoredSync,
   active: Session,
@@ -381,7 +388,8 @@ async function performSync(): Promise<SyncResult> {
       }
       for (const row of remoteLookupCaches) {
         const remote = localLookupCache(row);
-        await db.lookupCache.put(resolveRow(await db.lookupCache.get(remote.word), remote));
+        const local = await db.lookupCache.get(remote.word);
+        await db.lookupCache.put(preserveLocalSentence(local, resolveRow(local, remote)));
       }
     });
 
@@ -413,9 +421,10 @@ async function performSync(): Promise<SyncResult> {
         ));
       }
       for (const row of savedLookupCaches.map(localLookupCache)) {
-        await db.lookupCache.put(acknowledgeRow(
-          await db.lookupCache.get(row.word), sentLookupCaches.get(row.word), row,
-        ));
+        const current = await db.lookupCache.get(row.word);
+        await db.lookupCache.put(preserveLocalSentence(current, acknowledgeRow(
+          current, sentLookupCaches.get(row.word), row,
+        )));
       }
     });
 

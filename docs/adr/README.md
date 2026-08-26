@@ -17,3 +17,5 @@
 | [0011](0011-contextual-binary-spaced-review.md) | 用真實語境與二選一自評做最小間隔複習 | accepted | 2026-08-25 |
 | [0012](0012-open-openai-compatible-endpoint.md) | 服務端點開放自由輸入，不內建供應商清單 | accepted | 2026-08-26 |
 | [0013](0013-takeaway-is-not-a-highlight-key.md) | 「帶走」片語只服務教學，不作為高亮比對 key | accepted | 2026-08-26 |
+| [0014](0014-stable-development-extension-id.md) | 用固定公開 key 維持開發版 extension ID | accepted | 2026-08-26 |
+| [0015](0015-learning-activity-from-saved-data.md) | 學習足跡只由收藏資料推導 | accepted | 2026-08-26 |

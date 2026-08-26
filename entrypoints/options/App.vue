@@ -9,13 +9,16 @@ import PromptEditor from './PromptEditor.vue';
 import CachedAnswers from './CachedAnswers.vue';
 import SyncPanel from './SyncPanel.vue';
 import ReviewSession from './ReviewSession.vue';
+import LearningDashboard from './LearningDashboard.vue';
 import type { ReviewItem } from '@/src/lib/db';
 
 const settings = ref<Settings | null>(null);
 const granted = ref(false);
 const loadError = ref('');
-type Tab = 'review' | 'contexts' | 'cache' | 'settings';
-const tab = ref<Tab>(location.hash === '#review' ? 'review' : 'settings');
+type Tab = 'review' | 'activity' | 'contexts' | 'cache' | 'settings';
+const tab = ref<Tab>(location.hash === '#review' || location.hash === '#activity'
+  ? location.hash.slice(1) as Tab
+  : 'settings');
 const reviewItems = ref<ReviewItem[]>([]);
 const reviewTotal = ref(0);
 const reviewDone = ref(0);
@@ -49,7 +52,9 @@ async function loadReviewItems() {
 
 function selectTab(next: Tab) {
   tab.value = next;
-  history.replaceState(null, '', next === 'review' ? '#review' : location.pathname);
+  history.replaceState(null, '', next === 'review' || next === 'activity'
+    ? `#${next}`
+    : location.pathname);
 }
 
 function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
@@ -110,7 +115,7 @@ async function grantHost() {
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
   </main>
 
-  <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' }">
+  <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' || tab === 'activity' }">
     <header class="page-head">
       <img class="logo" src="/icons/48.png" alt="" />
       <div><h1>攔詞虎</h1><p>WordTiger by JasonDevOps</p></div>
@@ -120,6 +125,7 @@ async function grantHost() {
       <button :class="{ active: tab === 'review' }" @click="selectTab('review')">
         今晚打老虎 <span v-if="reviewItems.length" class="nav-count">{{ reviewItems.length }}</span>
       </button>
+      <button :class="{ active: tab === 'activity' }" @click="selectTab('activity')">學習足跡</button>
       <button :class="{ active: tab === 'contexts' }" @click="selectTab('contexts')">我的攔路虎</button>
       <button :class="{ active: tab === 'cache' }" @click="selectTab('cache')">AI 回答庫</button>
       <button :class="{ active: tab === 'settings' }" @click="selectTab('settings')">設定</button>
@@ -128,7 +134,9 @@ async function grantHost() {
     <ReviewSession v-if="tab === 'review'"
       :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
       :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
-      :caught="reviewCaught" @reviewed="reviewed" />
+      :caught="reviewCaught" @reviewed="reviewed" @next-round="loadReviewItems" />
+
+    <LearningDashboard v-else-if="tab === 'activity'" />
 
     <template v-else-if="tab === 'settings'">
     <SyncPanel />
@@ -154,6 +162,7 @@ async function grantHost() {
       <p class="note">
         任何 OpenAI 相容端點都可以，網址填到 <code>/v1</code> 為止。
         Model 欄位可直接輸入該服務的模型名稱。換服務之後要重新授權新的網域。
+        已快取的回答不會自動重查；測試新服務時可到「AI 回答庫」清除。
       </p>
       <p class="note">
         OpenAI 常用選項：

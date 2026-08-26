@@ -21,6 +21,7 @@ export interface WordRow {
 export interface ReviewItem {
   word: string;
   isPhrase: boolean;
+  isCloze: boolean;
   reviewStep: number;
   definition?: string;
   context?: Pick<ContextRow, 'sentence' | 'url' | 'title'>;
@@ -55,6 +56,8 @@ export interface SentenceRow {
 export interface CacheRow {
   word: string;
   payload: string;
+  /** 產生詞典時使用的句子；只留本機，舊快取或其他裝置沒有時改出一般字義題。 */
+  sentence?: string;
   /** 舊快取沒有這欄,顯示時退回「未知模型」 */
   model?: string;
   fetchedAt: number;
@@ -156,15 +159,13 @@ export async function listContexts(word: string): Promise<ContextRow[]> {
 }
 
 export async function listReviewItems(limit = 5, now = Date.now()): Promise<ReviewItem[]> {
-  // ponytail: 最多檢查題數的五倍；若大量孤兒資料真的讓題目補不滿，再改成分批查詢。
   const candidates = (await db.words
     .filter((row) => row.deletedAt === null
       && row.status === 'unknown'
       && (row.reviewDueAt ?? 0) <= now)
     .toArray())
     .sort((a, b) => (a.reviewDueAt ?? 0) - (b.reviewDueAt ?? 0)
-      || a.createdAt - b.createdAt)
-    .slice(0, limit * 5);
+      || a.createdAt - b.createdAt);
   if (!candidates.length) return [];
 
   const words = candidates.map((row) => row.word);
@@ -178,24 +179,34 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
   for (const row of contexts) {
     if ((latest.get(row.word)?.createdAt ?? -1) < row.createdAt) latest.set(row.word, row);
   }
-  const definitions = new Map(caches.map((row) => [row.word, row.payload]));
+  const definitions = new Map(caches.map((row) => [row.word, row]));
 
   const items: ReviewItem[] = [];
   for (const row of candidates) {
     const isPhrase = /\s/.test(row.word);
-    const context = latest.get(row.word);
     const definition = definitions.get(row.word);
-    if ((isPhrase && (!context
-      || !context.sentence.toLowerCase().includes(row.word.toLowerCase())))
-      || (!isPhrase && !definition)) continue;
+    if ((isPhrase && !latest.has(row.word)) || (!isPhrase && !definition)) continue;
+
+    let context = isPhrase ? latest.get(row.word) : undefined;
+    if (!isPhrase && definition?.sentence) {
+      // ponytail: 每題線性找同句語境；個人詞庫真的大到取五題變慢時再建複合索引。
+      context = contexts.find((item) =>
+        item.word === row.word && item.sentence === definition.sentence);
+    }
+    const reviewContext = context
+      ? { sentence: context.sentence, url: context.url, title: context.title }
+      : definition?.sentence
+        ? { sentence: definition.sentence, url: '', title: '' }
+        : undefined;
+    const isCloze = Boolean(isPhrase && reviewContext
+      && reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
     items.push({
       word: row.word,
       isPhrase,
+      isCloze,
       reviewStep: row.reviewStep ?? 0,
-      definition,
-      context: context && {
-        sentence: context.sentence, url: context.url, title: context.title,
-      },
+      definition: definition?.payload,
+      context: reviewContext,
     });
     if (items.length === limit) break;
   }
@@ -224,7 +235,7 @@ export async function getCached(words: string[]): Promise<Map<string, string>> {
 }
 
 export async function putCached(
-  entries: Array<{ word: string; payload: string; model?: string }>,
+  entries: Array<{ word: string; payload: string; sentence?: string; model?: string }>,
 ): Promise<void> {
   const now = Date.now();
   await db.lookupCache.bulkPut(entries.map((e) => ({

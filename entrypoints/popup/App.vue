@@ -142,8 +142,9 @@ async function openReview() {
     <p v-if="blocked" class="warn">目前網站在黑名單內。</p>
     <label class="switch">
       <input type="checkbox" :checked="auto" :disabled="!pagePattern || blocked" @change="toggleAuto" />
-      此網站自動標示
+      永遠在此網站自動標示
     </label>
+    <p class="note">關閉時只在手動開啟標示後存取；開啟後會記住目前網站。</p>
 
     <section>
       <h2>高亮樣式</h2>

@@ -2,6 +2,7 @@ import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContex
 import { lookupWord, explainSentence } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
+import { SYSTEM_RULES } from './prompt';
 import type { WordStatus } from './decide';
 
 export interface ExportBundle {
@@ -79,18 +80,18 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
 
     // 非串流版就是串流版把 onDelta 換成空函式,兩邊的快取與錯誤處理必須一致,
     // 所以直接借用,不要再寫一份會慢慢走鐘的複本。
+    case 'lookup':
     case 'explain':
       return handleStreamMessage(msg, () => {});
 
     case 'listWords': {
-      const marks = await loadMarks();
-      const rows = await Promise.all(
-        [...marks].map(async ([word, status]) => {
+      const words = await db.words.filter((row) => row.deletedAt === null).toArray();
+      return Promise.all(
+        words.map(async ({ word, status, createdAt }) => {
           const contexts = await listContexts(word);
-          return { word, status, contexts: contexts.reverse() };
+          return { word, status, createdAt, contexts: contexts.reverse() };
         }),
       );
-      return rows;
     }
 
     case 'listReviewItems':
@@ -106,7 +107,7 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     // markWord 會把 deletedAt 寫回 null,所以這個 case 同時是「救回誤刪的字」
     case 'setWordStatus':
       await markWord(msg.word, msg.status);
-      return null;
+      return true;
 
     case 'exportData': {
       const [words, contexts] = await Promise.all([
@@ -169,7 +170,9 @@ export async function handleStreamMessage(
     try {
       const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings, onDelta, signal);
       if (!text) return { ok: false, error: 'AI 回了空的結果' };
-      await putCached([{ word: msg.word, payload: text, model: settings.model }]);
+      await putCached([{
+        word: msg.word, payload: text, sentence: msg.sentence, model: settings.model,
+      }]);
       return { ok: true, text };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -199,7 +202,7 @@ function explainVariant(
   settings: Awaited<ReturnType<typeof loadSettings>>,
 ): string {
   return JSON.stringify([
-    settings.model, settings.profile, settings.templates[msg.kind],
+    settings.model, settings.profile, SYSTEM_RULES[msg.kind], settings.templates[msg.kind],
     msg.focus ?? '', msg.previous ?? '', msg.title ?? '',
   ]);
 }

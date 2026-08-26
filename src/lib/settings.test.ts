@@ -21,6 +21,10 @@ describe('originPattern', () => {
   it('不是合法網址時回傳 null,不丟例外', () => {
     expect(originPattern('api.openai.com')).toBe(null);
   });
+
+  it('拒絕不能用於 AI fetch 權限的協定', () => {
+    expect(originPattern('ftp://api.example.com/v1')).toBe(null);
+  });
 });
 
 describe('pageOrigin', () => {

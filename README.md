@@ -38,11 +38,22 @@ pnpm build:safari
 
 每個人要自備一把 API Key。
 
+### 升級開發版
+
+1. 固定使用同一個解壓縮資料夾，新版 ZIP 直接覆蓋該資料夾內容。
+2. 到 `edge://extensions` 找到攔詞虎並按「重新載入」；不要先移除擴充功能，移除會清掉本機設定與登入 session。
+3. 首次換到含固定 ID 的版本時需最後登入一次；此後原地升級會保留 AI、Supabase 與學習資料。
+
+開發版固定 ID：`hpimiefbpenmngcfkjcfkakndphhofio`。manifest 內的公開 `key` 不可重新產生或替換。
+
 ## 多裝置同步
 
 1. 建立 Supabase 專案，並在 SQL Editor 執行 [`supabase/schema.sql`](supabase/schema.sql)。
 2. 在 Authentication 建立 email/password 使用者。
 3. 到擴充功能設定頁填入 Project URL、anon key 與帳密後登入，再按「立即同步」。
+
+從舊版升級且尚未同步過複習進度時，也要把目前的 `schema.sql` 再執行一次以加入
+`review_step`、`review_due_at`；腳本使用 `IF NOT EXISTS`，可安全重跑。學習足跡與片語 AI 詞典沿用既有資料表，不需要額外 SQL。
 
 同步採 local-first：單字、語境、複習進度與 AI 詞典 cache 永遠先寫 IndexedDB，離線不影響使用；登入後每 5 分鐘、
 本機變更後 30 秒與手動按鈕都會做增量同步。刪除以 tombstone 傳遞，衝突採最後寫入者勝出。
@@ -54,6 +65,7 @@ pnpm build:safari
 |---|---|
 | 工具列圖示 | 開啟目前網站控制、高亮樣式與設定入口 |
 | popup「今晚打老虎」 | 開啟本次 5 題的間隔複習 |
+| options「學習足跡」 | 用月曆查看每天的新收藏與有收藏內容的來源文章 |
 | `Alt+U` | 開關目前頁面的生詞標示 |
 | `A` | 查詢滑鼠所在單字 |
 | `S` | 快速看懂所在句子 |
@@ -69,10 +81,12 @@ pnpm build:safari
   `2.5 倍`分成三層。詞頻表外的網址、品牌與領域術語不自動標示；手動收藏的生詞使用獨立顏色，且優先於詞頻判定。
 - 每層可分別設定背景、字體與下劃線顏色；連詞標記以點線區分並列連詞、雙線區分從句連詞。
 - 按 `A` 只查詞，不儲存語境。按 `Space` 加入生詞時才儲存所在句子；相同頁面的相同句子不重複，語境數量不設上限；少於 26 字元不存。
-- `S` 用「意思／關鍵」快速消除誤讀；`D` 用「意思／拆法／卡點」幫助學習同類句型。兩者都會參考游標詞、同段落前一句和頁面標題。
-- `D` 回覆有「帶走」片語時，按 `Space` 可連同來源句、頁面標題與網址收藏；片語直接沿用現有詞庫與裝置同步。
-- 「今晚打老虎」每次最多取 5 個到期收藏：單字回想語境義，片語從來源句回想被挖空的內容；
+- `S` 在卡片頂端保留原文，再用「意思／關鍵」快速消除誤讀；`D` 用「意思／拆法／卡點」幫助學習同類句型。兩者都會參考游標詞、同段落前一句和頁面標題。
+- `D` 遇到可遷移結構時會輸出全英文「帶走」句型、自然使用場景與例句；按 `Space` 可連同來源語境收藏，並自動建立可同步的片語 AI 詞典快取。舊片語可在「我的攔路虎」按「AI 詞典」補建。
+- 「今晚打老虎」每輪最多取 5 個到期收藏：單字使用產生 AI 詞典時的句子回想語境義；
+  字面片語做挖空題，泛化句型則由完整來源句回想句型。可繼續下一輪；第 5 階可標成已馴服。
   自評「抓到了」依 1、3、7、14、30 天延長間隔，「又讓牠溜了」則隔天再來。
+- 「學習足跡」只用既有收藏與語境建立月曆，不記錄沒有收藏內容的一般瀏覽歷史。
 - content script 不直接連外或操作 IndexedDB。AI 與資料操作由 background 負責；
   AI 文字透過 `runtime.Port` 串流回卡片，成功完成後才寫入快取。
 - 高亮使用 CSS Custom Highlight API，不包裹或修改網頁正文節點。
@@ -84,6 +98,7 @@ pnpm build:safari
 - `entrypoints/popup/`：工具列控制中心。
 - `entrypoints/options/`：AI 設定、生詞語境與快取回答。
 - `entrypoints/options/ReviewSession.vue`：「今晚打老虎」五題複習介面。
+- `entrypoints/options/LearningDashboard.vue`：新收藏與來源文章月曆。
 - `src/lib/decide.ts`：詞頻、手動標記與色階判定。
 - `src/lib/ai.ts`：OpenAI 相容的 Chat Completions 與 SSE 解析，端點可在設定頁自訂。
 - `src/lib/messages.ts`：content、options 與 background 的共用訊息入口。

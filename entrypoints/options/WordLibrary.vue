@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
+import type { ExplainResult } from '@/src/lib/messages';
 
 interface ContextItem {
   id: string;
@@ -13,6 +14,7 @@ interface ContextItem {
 interface WordItem {
   word: string;
   status: 'unknown' | 'known';
+  createdAt: number;
   /** 由新到舊 */
   contexts: ContextItem[];
 }
@@ -26,6 +28,8 @@ interface CachedWord {
 
 const words = ref<WordItem[]>([]);
 const dictionaries = ref<Record<string, CachedWord | null>>({});
+const dictionaryLoading = ref<Record<string, boolean>>({});
+const dictionaryErrors = ref<Record<string, string>>({});
 const selected = ref<string | null>(null);
 const translations = ref<Record<string, string>>({});
 const keyword = ref('');
@@ -54,7 +58,7 @@ const filtered = computed(() => {
   return words.value
     .filter((w) =>
       (statusFilter.value === 'all' || w.status === statusFilter.value)
-      && w.word.includes(query),
+      && w.word.toLowerCase().includes(query),
     )
     .sort((a, b) => sortBy.value === 'word'
       ? a.word.localeCompare(b.word)
@@ -62,16 +66,35 @@ const filtered = computed(() => {
         || a.word.localeCompare(b.word));
 });
 
-async function toggleDictionary(word: string) {
+async function toggleDictionary(item: WordItem) {
+  const { word } = item;
   if (selected.value === word) {
     selected.value = null;
     return;
   }
   selected.value = word;
-  if (!(word in dictionaries.value)) {
+  if (dictionaryLoading.value[word] || dictionaries.value[word]) return;
+
+  dictionaryLoading.value[word] = true;
+  dictionaryErrors.value[word] = '';
+  try {
+    const result = await browser.runtime.sendMessage({
+      type: 'lookup', word, sentence: item.contexts[0]?.sentence ?? '',
+    }) as ExplainResult | undefined;
+    if (!result?.ok) {
+      dictionaries.value[word] = null;
+      dictionaryErrors.value[word] = result?.error ?? '背景程式沒有回應';
+      return;
+    }
     dictionaries.value[word] = await browser.runtime.sendMessage({
       type: 'getCachedWord', word,
     }) ?? null;
+    if (!dictionaries.value[word]) dictionaryErrors.value[word] = 'AI 回答沒有寫進快取，請再試一次。';
+  } catch (err) {
+    dictionaries.value[word] = null;
+    dictionaryErrors.value[word] = err instanceof Error ? err.message : String(err);
+  } finally {
+    dictionaryLoading.value[word] = false;
   }
 }
 
@@ -149,8 +172,8 @@ async function exportJson() {
             <span class="count">{{ w.contexts.length }} 條語境</span>
           </div>
           <div class="actions">
-            <button v-if="!isPhrase(w.word)" @click="toggleDictionary(w.word)">
-              {{ selected === w.word ? '收起詞典' : 'AI 詞典' }}
+            <button @click="toggleDictionary(w)">
+              {{ dictionaryLoading[w.word] ? '建立詞典中…' : selected === w.word ? '收起詞典' : 'AI 詞典' }}
             </button>
             <button v-if="!isPhrase(w.word)" @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
               {{ w.status === 'unknown' ? '標成已馴服' : '改回生詞' }}
@@ -160,14 +183,15 @@ async function exportJson() {
         </header>
 
         <div v-if="selected === w.word" class="dictionary">
-          <template v-if="dictionaries[w.word]">
+          <p v-if="dictionaryLoading[w.word]" class="note">英文老師正在整理這個{{ isPhrase(w.word) ? '片語' : '單字' }}…</p>
+          <template v-else-if="dictionaries[w.word]">
             <small>
-              AI 詞典 · OpenAI / {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
+              AI 詞典 · {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
               {{ new Date(dictionaries[w.word]!.fetchedAt).toLocaleString() }}
             </small>
             <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
           </template>
-          <p v-else class="note">尚無 AI 詞典；可先「立即同步」，若其他裝置也沒查過，再回網頁按 A。</p>
+          <p v-else class="note">AI 詞典建立失敗：{{ dictionaryErrors[w.word] || '請再試一次。' }}</p>
         </div>
 
         <p v-if="w.contexts.length === 0" class="no-context">尚未保存語境。</p>

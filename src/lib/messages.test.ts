@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { handleMessage, handleStreamMessage, type ExplainResult } from './messages';
-import { db, markWord } from './db';
+import { db, markWord, sentenceKey } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
 import { DEFAULT_TEMPLATES } from './prompt';
@@ -80,6 +80,19 @@ describe('handleMessage', () => {
     expect(spy.mock.calls[0]![0]).toEqual({ w: 'scale', s: 'We scale the deployment.' });
   });
 
+  it('options 可用非串流 lookup 建立片語詞典快取', async () => {
+    vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 使用場景\n- 用來對比替代方案');
+    const result = await handleMessage({
+      type: 'lookup', word: 'instead of + noun',
+      sentence: 'Use a managed service instead of a local database.',
+    });
+
+    expect(result).toEqual({ ok: true, text: '## 使用場景\n- 用來對比替代方案' });
+    expect(await db.lookupCache.get('instead of + noun')).toMatchObject({
+      payload: '## 使用場景\n- 用來對比替代方案', model: 'm',
+    });
+  });
+
   it('AI 失敗時回錯誤信封,而且不寫進快取', async () => {
     vi.spyOn(ai, 'lookupWord').mockRejectedValue(new Error('AI 請求失敗 401'));
 
@@ -138,6 +151,7 @@ describe('詞庫列表', () => {
     const rows = await handleMessage({ type: 'listWords' }) as any[];
     expect(rows).toHaveLength(1);
     expect(rows[0].word).toBe('deploy');
+    expect(rows[0].createdAt).toBeGreaterThan(0);
     expect(rows[0].contexts).toHaveLength(1);
   });
 
@@ -157,7 +171,9 @@ describe('單字快取管理', () => {
     );
 
     const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
-    expect(rows[0]).toMatchObject({ word: 'deploy', model: 'm' });
+    expect(rows[0]).toMatchObject({
+      word: 'deploy', model: 'm', sentence: 'We deploy on Friday.',
+    });
 
     await handleMessage({ type: 'deleteCachedWord', word: 'deploy' });
     expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' })).toBeUndefined();
@@ -185,6 +201,18 @@ describe('explain', () => {
     await handleMessage({ type: 'explain', kind: 'translate', sentence });
     await handleMessage({ type: 'explain', kind: 'grammar', sentence });
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('系統教學規則更新後不沿用舊格式拆句快取', async () => {
+    const oldVariant = JSON.stringify(['m', '', DEFAULT_TEMPLATES.grammar, '', '', '']);
+    await db.sentenceCache.put({
+      id: sentenceKey('grammar', sentence, oldVariant), result: '舊格式', fetchedAt: 1,
+    });
+    const spy = vi.spyOn(ai, 'explainSentence').mockResolvedValue('用法｜正式文件常用');
+
+    expect(await handleMessage({ type: 'explain', kind: 'grammar', sentence }))
+      .toEqual({ ok: true, text: '用法｜正式文件常用' });
+    expect(spy).toHaveBeenCalledOnce();
   });
 
   it('把焦點詞、前一句和頁面標題一起送給 AI', async () => {

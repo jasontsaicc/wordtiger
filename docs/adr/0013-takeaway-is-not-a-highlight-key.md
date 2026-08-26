@@ -13,6 +13,8 @@ Date: 2026-08-26 | Status: accepted
 ## Decision
 
 「帶走」定位為教學用的可套用句型，不作為高亮比對的 key。
+它仍可進入 `words`／`contexts` 做語境複習，並以既有 `lookup_cache` 保存片語 AI 詞典；
+「可收藏、可複習」不代表「適合逐字掃描網頁」。
 片語自動高亮要另外設計來源，不沿用這個欄位。
 
 ## Alternatives
