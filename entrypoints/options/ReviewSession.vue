@@ -105,9 +105,10 @@ async function master() {
       </template>
 
       <button class="listen" type="button"
-        @click="speak(item.isPattern ? item.context?.sentence ?? item.word : item.word)">
-        {{ item.isPattern ? '🔊 聽原句' : '🔊 發音' }}
+        @click="speak(item.isPhrase ? item.context?.sentence ?? item.word : item.word)">
+        {{ item.isPhrase && item.context ? '🔊 AI 原句' : '🔊 AI 發音' }}
       </button>
+      <p class="voice-note">AI 產生語音；若端點不支援，會改用裝置發音。</p>
       <button v-if="!revealed" class="reveal" @click="revealed = true">
         {{ item.isPhrase ? '看老師回饋' : '讓牠現形' }}
       </button>
@@ -162,6 +163,7 @@ blockquote { margin: .8rem 0 1.2rem; padding: .85rem 1rem; border-left: 3px soli
 button { transition: transform 100ms ease, background 140ms ease; }
 button:active { transform: scale(.98); }
 .listen { margin-bottom: .8rem; }
+.voice-note { display: inline; margin-left: .6rem; color: #64748b; font-size: 12px; }
 .reveal { width: 100%; padding: .7rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
 .answer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
 .answer :deep(.h) { margin-top: .8rem; color: #4f46e5; font-weight: 800; }

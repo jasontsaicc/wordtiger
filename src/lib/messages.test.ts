@@ -24,6 +24,17 @@ beforeEach(async () => {
 });
 
 describe('handleMessage', () => {
+  it('speak 把 AI 音訊轉成可跨 runtime message 傳送的 MP3 data URL', async () => {
+    const spy = vi.spyOn(ai, 'generateSpeech')
+      .mockResolvedValue(Uint8Array.from([1, 2, 3]).buffer);
+
+    expect(await handleMessage({ type: 'speak', text: ' We deploy. ' })).toEqual({
+      ok: true,
+      audio: 'data:audio/mpeg;base64,AQID',
+    });
+    expect(spy.mock.calls[0]![0]).toBe('We deploy.');
+  });
+
   it('getMarks 回傳標記,格式是可序列化的陣列', async () => {
     await markWord('deploy', 'unknown');
     const got = await handleMessage({ type: 'getMarks' });

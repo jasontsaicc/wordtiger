@@ -21,6 +21,39 @@ export interface LookupItem {
   s: string;
 }
 
+/** 用同一組 API 設定產生自然英文語音；TTS 模型不跟查詞模型綁在一起。 */
+export async function generateSpeech(
+  text: string,
+  settings: AiSettings,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  const input = text.trim();
+  if (!input) return new ArrayBuffer(0);
+
+  const res = await fetch(`${settings.baseUrl.replace(/\/+$/, '')}/audio/speech`, {
+    method: 'POST',
+    signal,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${settings.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini-tts',
+      voice: 'marin',
+      input,
+      instructions: 'Speak in natural American English with clear articulation, natural intonation, and a moderately slow pace for an English learner.',
+      response_format: 'mp3',
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`AI 語音請求失敗 ${res.status}: ${await res.text()}`);
+  }
+  const audio = await res.arrayBuffer();
+  if (!audio.byteLength) throw new Error('AI 語音回了空的結果');
+  return audio;
+}
+
 export function buildLookupPrompt(
   item: LookupItem,
   profile: string,

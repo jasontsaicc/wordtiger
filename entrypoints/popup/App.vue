@@ -168,7 +168,7 @@ async function openReview() {
     <section>
       <h2>快捷鍵</h2>
       <div class="keys"><kbd>Alt+U</kbd> 開關　<kbd>A</kbd> 查詞　<kbd>S</kbd> 快速看懂</div>
-      <div class="keys"><kbd>D</kbd> 拆懂這句　<kbd>F</kbd> 發音　<kbd>Space</kbd> 收藏　<kbd>X</kbd> 已認得　<kbd>Esc</kbd> 關閉</div>
+      <div class="keys"><kbd>D</kbd> 拆懂這句　<kbd>F</kbd> AI 發音　<kbd>Space</kbd> 收藏　<kbd>X</kbd> 已認得　<kbd>Esc</kbd> 關閉</div>
     </section>
 
     <p v-if="status" class="status">{{ status }}</p>

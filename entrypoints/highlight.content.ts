@@ -107,6 +107,7 @@ export default defineContentScript({
     let pointerY = 0;
     let current: Hover | null = null;
     let currentTakeaway: Takeaway | null = null;
+    let currentSpeech = '';
     // 每次查詢配一個序號。等回應的時候使用者可能已經按 Esc 或換一句了,
     // 那時候這次的結果就該丟掉,不能覆蓋畫面上比較新的東西。
     let explainSeq = 0;
@@ -123,6 +124,7 @@ export default defineContentScript({
     const closeAiCard = () => {
       current = null;
       currentTakeaway = null;
+      currentSpeech = '';
       dismissAi();
     };
     const requestAi = async (msg: StreamMsg, onText: (text: string) => void) => {
@@ -138,10 +140,11 @@ export default defineContentScript({
     const wordHint = (lemma: string) => {
       const space = marks.get(lemma) === 'unknown' ? 'Space 取消收藏' : 'Space 收藏';
       const known = marks.get(lemma) === 'known' ? 'X 恢復標示' : 'X 已認得';
-      return `${space} · ${known} · F 發音 · Esc 關閉`;
+      return `${space} · ${known} · F AI 發音 · Esc 關閉`;
     };
     const takeawayHint = (phrase: string) =>
-      `${marks.get(phrase) === 'unknown' ? 'Space 取消片語收藏' : 'Space 收藏片語'} · Esc 關閉`;
+      `${marks.get(phrase) === 'unknown' ? 'Space 取消片語收藏' : 'Space 收藏片語'} · F AI 原句 · Esc 關閉`;
+    const sentenceHint = 'F AI 原句 · Esc 關閉';
 
     // mousemove 只記座標。命中測試留到按鍵時才做,滑鼠移動每秒觸發幾十次,
     // 在這裡做 caretPositionFromPoint 加 getBoundingClientRect 會逼出重複的版面計算。
@@ -177,16 +180,17 @@ export default defineContentScript({
         hideCard();
         current = null;
         currentTakeaway = null;
+        currentSpeech = '';
         dismissAi();
         return;
       }
 
       if (e.key === 'f' || e.key === 'F') {
-        // 卡片開著就念卡片上那個字,不然念滑鼠底下的字
-        const word = current ? current.lemma : hoveredWord()?.word;
-        if (!word) return;
+        // 整句卡片念原句；單字卡片念 lemma；沒有卡片才念滑鼠底下的字。
+        const text = currentSpeech || current?.lemma || hoveredWord()?.word;
+        if (!text) return;
         e.preventDefault();
-        speak(word);
+        speak(text);
         return;
       }
 
@@ -198,6 +202,7 @@ export default defineContentScript({
         e.preventDefault();
         dismissAi();
         currentTakeaway = null;
+        currentSpeech = '';
         current = hover;
 
         const status = await browser.runtime.sendMessage({
@@ -224,6 +229,7 @@ export default defineContentScript({
         e.preventDefault();
         dismissAi();
         currentTakeaway = null;
+        currentSpeech = '';
         current = hover;
 
         const hint = wordHint(hover.lemma);
@@ -296,12 +302,13 @@ export default defineContentScript({
         // 卡片換成整句的內容了,Space 不該再標記剛才那個單字
         current = null;
         currentTakeaway = null;
+        currentSpeech = sentence;
 
         // 先畫「查詢中」。這一趟可能要好幾秒,沒有回饋會讓人以為按鍵沒進去
         showCard({
           title,
           body: cardBody(kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…'),
-          rect, hint: 'Esc 關閉',
+          rect, hint: sentenceHint,
           loading: true, onClose: closeAiCard,
         });
 
@@ -311,7 +318,7 @@ export default defineContentScript({
         }, (body) => {
           if (seq === explainSeq) showCard({
             title, body: cardBody(body), rect,
-            hint: 'Esc 關閉', loading: true, onClose: closeAiCard,
+            hint: sentenceHint, loading: true, onClose: closeAiCard,
           });
         });
         if (seq !== explainSeq) return;
@@ -326,7 +333,7 @@ export default defineContentScript({
           title,
           body: cardBody(result.ok ? result.text : `查詢失敗:${result.error}`),
           rect,
-          hint: phrase ? takeawayHint(phrase) : 'Esc 關閉',
+          hint: phrase ? takeawayHint(phrase) : sentenceHint,
           onClose: closeAiCard,
         });
         return;

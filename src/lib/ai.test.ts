@@ -1,5 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { lookupWord, buildLookupPrompt, readChatStream } from './ai';
+import { lookupWord, buildLookupPrompt, readChatStream, generateSpeech } from './ai';
+
+describe('generateSpeech', () => {
+  it('用固定 TTS 模型與自然英文聲線產生 MP3', async () => {
+    const bytes = Uint8Array.from([1, 2, 3]).buffer;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => bytes,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await generateSpeech('We deploy on Friday.', {
+      baseUrl: 'https://api.openai.com/v1/', apiKey: 'sk-test',
+      model: 'gpt-5.6-luna', profile: '',
+    })).toBe(bytes);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(init.body);
+    expect(url).toBe('https://api.openai.com/v1/audio/speech');
+    expect(init.headers.Authorization).toBe('Bearer sk-test');
+    expect(body).toMatchObject({
+      model: 'gpt-4o-mini-tts', voice: 'marin',
+      input: 'We deploy on Friday.', response_format: 'mp3',
+    });
+    expect(body.instructions).toContain('English learner');
+  });
+});
 
 describe('buildLookupPrompt', () => {
   it('把使用者的 profile 放進 prompt', () => {

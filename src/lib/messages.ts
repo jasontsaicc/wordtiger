@@ -1,5 +1,5 @@
 import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, recordReview, getCached, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow } from './db';
-import { lookupWord, explainSentence } from './ai';
+import { lookupWord, explainSentence, generateSpeech } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
 import { SYSTEM_RULES } from './prompt';
@@ -16,6 +16,10 @@ export type ExplainResult =
   | { ok: true; text: string }
   | { ok: false; error: string };
 
+export type SpeechResult =
+  | { ok: true; audio: string }
+  | { ok: false; error: string };
+
 const NOT_CONFIGURED = '還沒設定 AI,請到 options 頁填 base URL 和 API key';
 
 export type Msg =
@@ -23,6 +27,7 @@ export type Msg =
   | { type: 'getHighlightSettings' }
   | { type: 'toggleMark'; word: string; status?: WordStatus }
   | { type: 'lookup'; word: string; sentence: string }
+  | { type: 'speak'; text: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
   | { type: 'listReviewItems' }
@@ -77,6 +82,32 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'saveContext':
       await addContext(msg);
       return null;
+
+    case 'speak': {
+      const text = msg.text.trim().slice(0, 4096);
+      if (!text) return { ok: false, error: '沒有可朗讀的文字' } satisfies SpeechResult;
+      const settings = await loadSettings();
+      if (!settings.baseUrl || !settings.apiKey) {
+        return { ok: false, error: NOT_CONFIGURED } satisfies SpeechResult;
+      }
+      try {
+        const audio = await generateSpeech(text, settings);
+        const bytes = new Uint8Array(audio);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        }
+        return {
+          ok: true,
+          audio: `data:audio/mpeg;base64,${btoa(binary)}`,
+        } satisfies SpeechResult;
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        } satisfies SpeechResult;
+      }
+    }
 
     // 非串流版就是串流版把 onDelta 換成空函式,兩邊的快取與錯誤處理必須一致,
     // 所以直接借用,不要再寫一份會慢慢走鐘的複本。

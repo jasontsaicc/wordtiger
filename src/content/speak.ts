@@ -36,27 +36,60 @@ export function pickVoice(
 }
 
 /**
- * 朗讀一段文字。
- *
- * 先 cancel 再 speak。連按兩次 F 的時候,第二次應該蓋掉第一次,
- * 而不是排隊等它念完。語速調到 0.9,單字要聽清楚音節。
- */
-/**
  * 留一個模組層級的參考。utterance 只被區域變數持有的話,speak() 一 return
  * 就可能在還沒念完時被 GC 回收,Chromium 上的表現就是念到一半斷掉或斷斷續續。
  * 這是 Chromium 長年的已知行為,標準解法就是自己抓著它不放。
  */
 let current: SpeechSynthesisUtterance | null = null;
+let currentAudio: HTMLAudioElement | null = null;
+let requestSeq = 0;
 
 export function speak(text: string): void {
-  if (!text.trim()) return;
-  if (typeof speechSynthesis === 'undefined') return;
+  const input = text.trim();
+  if (!input) return;
 
-  // 只在真的有東西在念的時候才 cancel。沒在念卻呼叫 cancel,
-  // Chromium 有機率把語音引擎留在停止狀態,之後就再也不出聲。
-  if (speechSynthesis.speaking || speechSynthesis.pending) {
+  const seq = ++requestSeq;
+  stopCurrent();
+  void browser.runtime.sendMessage({ type: 'speak', text: input })
+    .then(async (result: import('@/src/lib/messages').SpeechResult | undefined) => {
+      if (seq !== requestSeq) return;
+      if (!result?.ok || typeof Audio === 'undefined') {
+        speakLocal(input);
+        return;
+      }
+
+      try {
+        const audio = new Audio(result.audio);
+        currentAudio = audio;
+        audio.onended = () => {
+          if (currentAudio === audio) currentAudio = null;
+        };
+        await audio.play();
+      } catch {
+        if (seq === requestSeq) speakLocal(input);
+      }
+    })
+    .catch(() => {
+      if (seq === requestSeq) speakLocal(input);
+    });
+}
+
+function stopCurrent(): void {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  if (typeof speechSynthesis !== 'undefined'
+    && (speechSynthesis.speaking || speechSynthesis.pending)) {
     speechSynthesis.cancel();
   }
+  current = null;
+}
+
+/** API 不可用或瀏覽器擋下遠端音訊時，沿用裝置內建英文語音。 */
+function speakLocal(text: string): void {
+  if (typeof speechSynthesis === 'undefined') return;
 
   const utterance = new SpeechSynthesisUtterance(text);
   current = utterance;
