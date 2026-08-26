@@ -7,7 +7,7 @@
 技術棧為 WXT、Vue 3、TypeScript、Dexie、Vitest。
 
 目前核心 MVP 已可日常使用。最新進度與下次待辦見
-[2026-08-25 作業紀錄](docs/worklogs/2026-08-25.md)。
+[2026-08-26 作業紀錄](docs/worklogs/2026-08-26.md)。
 
 ## 快速開始
 
@@ -85,7 +85,7 @@ pnpm build:safari
 - `entrypoints/options/`：AI 設定、生詞語境與快取回答。
 - `entrypoints/options/ReviewSession.vue`：「今晚打老虎」五題複習介面。
 - `src/lib/decide.ts`：詞頻、手動標記與色階判定。
-- `src/lib/ai.ts`：OpenAI Chat Completions 與 SSE 解析。
+- `src/lib/ai.ts`：OpenAI 相容的 Chat Completions 與 SSE 解析，端點可在設定頁自訂。
 - `src/lib/messages.ts`：content、options 與 background 的共用訊息入口。
 - `src/lib/db.ts`：Dexie 資料表與軟刪除規則。
 - `src/lib/sync.ts`：Supabase 登入、session 更新與增量拉推。
@@ -96,7 +96,7 @@ pnpm build:safari
 - [功能設計](docs/superpowers/specs/2026-08-23-wordtiger-design.md)
 - [P1 核心閉環計畫](docs/superpowers/plans/2026-08-23-p1-core-loop.md)
 - [P3 加值功能計畫](docs/superpowers/plans/2026-08-24-p3-features.md)
-- [最新作業紀錄與下次待辦](docs/worklogs/2026-08-25.md)
+- [最新作業紀錄與下次待辦](docs/worklogs/2026-08-26.md)
 
 ## 資料來源
 

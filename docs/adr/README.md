@@ -15,3 +15,5 @@
 | [0009](0009-local-first-supabase-sync.md) | Supabase 只作為 local-first 的同步傳遞層 | accepted | 2026-08-25 |
 | [0010](0010-wordtiger-brand-and-restrained-mascot.md) | 統一使用攔詞虎品牌並限制吉祥物的位置 | accepted | 2026-08-25 |
 | [0011](0011-contextual-binary-spaced-review.md) | 用真實語境與二選一自評做最小間隔複習 | accepted | 2026-08-25 |
+| [0012](0012-open-openai-compatible-endpoint.md) | 服務端點開放自由輸入，不內建供應商清單 | accepted | 2026-08-26 |
+| [0013](0013-takeaway-is-not-a-highlight-key.md) | 「帶走」片語只服務教學，不作為高亮比對 key | accepted | 2026-08-26 |
