@@ -348,13 +348,24 @@ function remoteLookupCache(row: CacheRow, userId: string) {
 }
 
 /**
- * collectedAt 只會從 null 變成有值。本機回填不改 updatedAt，所以兩邊時間相同時
- * resolveRow 會讓遠端的 null 勝出，把回填結果清掉。這裡擋下來並重新排入推送。
+ * 收藏日不能交給 resolveRow 決定：回填不更新 updatedAt，而按 X 會在保留舊值的同時
+ * 更新 updatedAt，兩種情況都會讓「贏的那一邊」帶著較差的收藏日。
+ * 改成取兩邊非空值中較晚的一個，跟 markWord 的「重新收藏取最新日期」一致，
+ * null 則永遠不會蓋掉有值的一邊。
  */
-function preserveCollectedAt(local: WordRow | undefined, merged: WordRow): WordRow {
-  return local?.collectedAt != null && merged.collectedAt == null
-    ? { ...merged, collectedAt: local.collectedAt, pending: 1 }
-    : merged;
+export function mergeCollectedAt(
+  local: Pick<WordRow, 'collectedAt'> | undefined,
+  remote: Pick<WordRow, 'collectedAt'>,
+  merged: WordRow,
+): WordRow {
+  // 0 代表沒有收藏日；collectedAt 來自 Date.now()，實務上不會是 0。
+  const collectedAt = Math.max(local?.collectedAt ?? 0, remote.collectedAt ?? 0) || null;
+  return {
+    ...merged,
+    collectedAt,
+    // 雲端還不是這個日期就要補推，否則本機贏了也只有自己知道。
+    pending: collectedAt === (remote.collectedAt ?? null) ? merged.pending : 1,
+  };
 }
 
 /** 保留本機詞典生成句，但不將該欄位同步至遠端。 */
@@ -424,7 +435,7 @@ async function performSync(): Promise<SyncResult> {
       for (const row of remoteWords) {
         const remote = localWord(row);
         const local = await db.words.get(remote.word);
-        await db.words.put(preserveCollectedAt(local, resolveRow(local, remote)));
+        await db.words.put(mergeCollectedAt(local, remote, resolveRow(local, remote)));
       }
       for (const row of remoteContexts) {
         const remote = localContext(row);

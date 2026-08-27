@@ -122,7 +122,7 @@ class WordTigerDb extends Dexie {
         ...row,
         collectedAt: inferCollectedAt(row, withContext.has(row.word), drilled.has(row.word)),
         // 只標待推送，不動 updatedAt：回填不是語意變更，改時間會讓過期的 status 贏過別台
-        // 裝置較新的改動。拉取時由 sync 的 preserveCollectedAt 擋下遠端的 null。
+        // 裝置較新的改動。拉取時由 sync 的 mergeCollectedAt 決定最終收藏日。
         pending: 1 as const,
       })));
     });

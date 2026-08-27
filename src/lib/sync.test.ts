@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import 'fake-indexeddb/auto';
-import { db, getCached, putCached } from './db';
-import { acknowledgeRow, signIn, syncNow, resolveRow } from './sync';
+import { db, getCached, putCached, type WordRow } from './db';
+import { acknowledgeRow, mergeCollectedAt, signIn, syncNow, resolveRow } from './sync';
+
+const wordRow = (over: Partial<WordRow> = {}): WordRow => ({
+  word: 'deploy', status: 'unknown', createdAt: 1, collectedAt: null,
+  updatedAt: 1, deletedAt: null, pending: 0, ...over,
+});
 
 beforeEach(async () => {
   fakeBrowser.reset();
@@ -33,6 +38,47 @@ describe('acknowledgeRow', () => {
     const current = { updatedAt: 20, value: 'new', pending: 1 as const };
     const remote = { updatedAt: 30, value: 'sent', pending: 0 as const };
     expect(acknowledgeRow(current, sent, remote)).toBe(current);
+  });
+});
+
+describe('mergeCollectedAt', () => {
+  it('遠端還沒回填時保留本機收藏日，並排入推送', () => {
+    const merged = mergeCollectedAt(
+      { collectedAt: 10 }, { collectedAt: null }, wordRow({ pending: 0 }),
+    );
+    expect(merged.collectedAt).toBe(10);
+    expect(merged.pending).toBe(1);
+  });
+
+  it('本機較新但沒有收藏日時，不會把遠端的收藏日推成 null', () => {
+    const merged = mergeCollectedAt(
+      { collectedAt: null }, { collectedAt: 500 }, wordRow({ collectedAt: null, pending: 1 }),
+    );
+    expect(merged.collectedAt).toBe(500);
+  });
+
+  it('兩邊都有收藏日時取較晚的，跟重新收藏取最新一致', () => {
+    expect(mergeCollectedAt(
+      { collectedAt: 100 }, { collectedAt: 500 }, wordRow({ collectedAt: 100 }),
+    ).collectedAt).toBe(500);
+    expect(mergeCollectedAt(
+      { collectedAt: 500 }, { collectedAt: 100 }, wordRow({ collectedAt: 500 }),
+    ).collectedAt).toBe(500);
+  });
+
+  it('只有本機收藏日較新才排入推送', () => {
+    expect(mergeCollectedAt(
+      { collectedAt: 500 }, { collectedAt: 100 }, wordRow({ pending: 0 }),
+    ).pending).toBe(1);
+    expect(mergeCollectedAt(
+      { collectedAt: 100 }, { collectedAt: 500 }, wordRow({ pending: 0 }),
+    ).pending).toBe(0);
+  });
+
+  it('兩邊都沒有收藏日時維持 null，也不改 pending', () => {
+    const merged = mergeCollectedAt(undefined, { collectedAt: null }, wordRow({ pending: 0 }));
+    expect(merged.collectedAt).toBeNull();
+    expect(merged.pending).toBe(0);
   });
 });
 
