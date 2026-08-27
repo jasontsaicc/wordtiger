@@ -1,7 +1,12 @@
+# Dependencies and generated files
 node_modules/
 .output/
 .wxt/
 dist/
-.env
-.superpowers/
 public/freq.json
+
+# Local configuration and notes
+.env
+.claude/
+.superpowers/
+docs/worklogs/

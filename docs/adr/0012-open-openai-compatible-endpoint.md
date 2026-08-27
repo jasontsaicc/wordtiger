@@ -6,8 +6,8 @@ Date: 2026-08-26 | Status: accepted
 
 options 的「服務」原本是只有一個 option 的 `<select>`，鎖死 OpenAI。但引擎層本來就是廠商中立的：
 `ai.ts` 用 `${baseUrl}/chat/completions` 加 `Bearer`，那是 OpenAI 相容協議不是 OpenAI 專屬，
-`loadSettings()` 也沒有白名單。同事測試在即，每個人都要自備 key，而 OpenAI 需要開帳號並儲值，
-有幾家相容供應商提供免費額度。被擋住的只有 UI。
+`loadSettings()` 也沒有白名單。使用者本來就要自備 key，不同相容供應商的模型、價格與額度也不同；
+被擋住的只有 UI。
 
 ## Decision
 
@@ -33,4 +33,4 @@ options 的「服務」原本是只有一個 option 的 `<select>`，鎖死 Open
 
 模型行為的差異也一併變成產品要面對的事。`reasoning_effort` 就必須依模型 family 分段送出，
 因為 `gpt-5.6` 系列吃 `'none'`，其餘 gpt-5 系列傳 `'none'` 會回 400，只吃到 `'minimal'`。
-實測數字見 2026-08-26 作業紀錄，實作見 `src/lib/ai.ts` 的 `reasoningEffort()`。
+這項相容處理與測試保留在 `src/lib/ai.ts` 的 `reasoningEffort()` 及其單元測試。
