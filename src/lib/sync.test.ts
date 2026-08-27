@@ -41,7 +41,7 @@ describe('syncNow', () => {
     await db.words.bulkPut([
       { word: 'old', status: 'unknown', createdAt: 10, updatedAt: 10, deletedAt: null, pending: 1 },
       {
-        word: 'local', status: 'unknown', createdAt: 30, updatedAt: 30,
+        word: 'local', status: 'unknown', createdAt: 30, collectedAt: 35, updatedAt: 30,
         deletedAt: null, reviewStep: 2, reviewDueAt: 50, pending: 1,
       },
     ]);
@@ -68,6 +68,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([{
         user_id: 'user-1', word: 'local', status: 'unknown',
         created_at: '1970-01-01T00:00:00.030Z',
+        collected_at: '1970-01-01T00:00:00.035Z',
         updated_at: '1970-01-01T00:00:00.040Z', deleted_at: null,
         review_step: 2, review_due_at: '1970-01-01T00:00:00.050Z',
       }]));
@@ -78,8 +79,12 @@ describe('syncNow', () => {
     expect(result).toMatchObject({ pulled: 1, pushed: 1 });
     expect((await db.words.get('old'))!.deletedAt).toBe(20);
     expect((await db.words.get('local'))!.pending).toBe(0);
+    // 收藏日要跟著上雲端，否則換裝置後學習足跡會少掉「新收藏」。
+    expect((await db.words.get('local'))!.collectedAt).toBe(35);
     expect(fetchMock.mock.calls[6]![1]?.body).toContain('"word":"local"');
     expect(fetchMock.mock.calls[6]![1]?.body).toContain('"review_step":2');
+    expect(fetchMock.mock.calls[6]![1]?.body)
+      .toContain('"collected_at":"1970-01-01T00:00:00.035Z"');
   });
 
   it('同一帳號會拉回別台裝置的詞典 cache 並推送本機 cache', async () => {

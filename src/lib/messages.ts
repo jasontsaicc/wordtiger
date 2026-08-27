@@ -128,10 +128,11 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       const drills = new Map<string, number>();
       for (const row of log) drills.set(row.word, (drills.get(row.word) ?? 0) + 1);
       return Promise.all(
-        words.map(async ({ word, status, createdAt }) => {
+        words.map(async ({ word, status, createdAt, collectedAt }) => {
           const contexts = await listContexts(word);
           return {
             word, status, createdAt,
+            collectedAt: collectedAt ?? null,
             reviewCount: drills.get(word) ?? 0,
             contexts: contexts.reverse(),
           };

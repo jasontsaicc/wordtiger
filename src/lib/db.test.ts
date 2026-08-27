@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, masterWord, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -45,6 +45,43 @@ describe('markWord / loadMarks', () => {
     await unmarkWord('deploy');
     const marks = await loadMarks();
     expect(marks.has('deploy')).toBe(false);
+  });
+});
+
+describe('collectedAt', () => {
+  it('收藏時記下收藏日，按 X 排除不算收藏', async () => {
+    await markWord('deploy', 'unknown');
+    expect((await db.words.get('deploy'))!.collectedAt).toBeTypeOf('number');
+
+    await markWord('the', 'known');
+    expect((await db.words.get('the'))!.collectedAt).toBeNull();
+  });
+
+  it('標成已馴服時保留原本的收藏日', async () => {
+    await markWord('deploy', 'unknown');
+    const collected = (await db.words.get('deploy'))!.collectedAt;
+    await markWord('deploy', 'known');
+    expect((await db.words.get('deploy'))!.collectedAt).toBe(collected);
+  });
+
+  it('先按 X 再收藏時，收藏日是收藏那天，不是按 X 那天', async () => {
+    await db.words.put({
+      word: 'deploy', status: 'known', createdAt: 1_000, collectedAt: null,
+      updatedAt: 1_000, deletedAt: null, pending: 0,
+    });
+    await markWord('deploy', 'unknown');
+
+    const row = (await db.words.get('deploy'))!;
+    expect(row.createdAt).toBe(1_000);
+    expect(row.collectedAt).toBeGreaterThan(1_000);
+  });
+
+  it('回填舊資料：生詞、有語境或練習過都算收藏過', () => {
+    const excluded = { status: 'known' as const, createdAt: 10 };
+    expect(inferCollectedAt({ status: 'unknown', createdAt: 10 }, false, false)).toBe(10);
+    expect(inferCollectedAt(excluded, true, false)).toBe(10);
+    expect(inferCollectedAt(excluded, false, true)).toBe(10);
+    expect(inferCollectedAt(excluded, false, false)).toBeNull();
   });
 });
 

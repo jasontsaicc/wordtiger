@@ -9,6 +9,11 @@ export interface WordRow {
   word: string;
   status: WordStatus;
   createdAt: number;
+  /**
+   * 真正收藏那天。按 X 排除不是收藏，維持 null。
+   * 不能用 status 反推：收藏後馴服仍算收藏過，先按 X 再收藏則 createdAt 停在按 X 那天。
+   */
+  collectedAt?: number | null;
   updatedAt: number;
   deletedAt: number | null;
   /** 0 是初始階段；5 是最長 30 天間隔。 */
@@ -104,10 +109,39 @@ class WordTigerDb extends Dexie {
     this.version(5).stores({
       reviewLog: 'id, at',
     });
+    // 舊資料沒有收藏事件，只能依現狀推斷一次，之後由 markWord 維護。
+    this.version(6).upgrade(async (tx) => {
+      const words = await tx.table('words').toArray() as WordRow[];
+      const withContext = new Set(
+        (await tx.table('contexts').toArray() as ContextRow[]).map((row) => row.word),
+      );
+      const drilled = new Set(
+        (await tx.table('reviewLog').toArray() as ReviewLogRow[]).map((row) => row.word),
+      );
+      await tx.table('words').bulkPut(words.map((row) => ({
+        ...row,
+        collectedAt: inferCollectedAt(row, withContext.has(row.word), drilled.has(row.word)),
+        // 回填值要推上雲端，否則下次全量拉取會用 null 蓋掉。
+        pending: 1 as const,
+      })));
+    });
   }
 }
 
 export const db = new WordTigerDb();
+
+/**
+ * 回填舊資料的收藏日。真正的收藏事件從來沒被記錄，只能推斷：
+ * 現在還是生詞、留過語境、或練習過，就當作收藏過；其餘視為按 X 排除。
+ * 「先按 X、日後才收藏」這種歷史救不回來，那個日期沒有任何地方存過。
+ */
+export function inferCollectedAt(
+  row: { status: WordStatus; createdAt: number },
+  hasContext: boolean,
+  hasDrill: boolean,
+): number | null {
+  return row.status === 'unknown' || hasContext || hasDrill ? row.createdAt : null;
+}
 
 export async function markWord(word: string, status: WordStatus): Promise<void> {
   const now = Date.now();
@@ -117,6 +151,8 @@ export async function markWord(word: string, status: WordStatus): Promise<void> 
     word,
     status,
     createdAt: existing?.createdAt ?? now,
+    // 轉成生詞就是一次收藏；標成已馴服或按 X 排除都保留原本的收藏日。
+    collectedAt: status === 'unknown' ? now : existing?.collectedAt ?? null,
     updatedAt: now,
     deletedAt: null,
     pending: 1,

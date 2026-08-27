@@ -1,8 +1,8 @@
 export interface ActivityWord {
   word: string;
-  /** known 是「我認得，別再標」的排除記號，不是收藏。 */
   status: 'unknown' | 'known';
-  createdAt: number;
+  /** 收藏那天；null 代表只是按 X 排除，從來沒收藏過。 */
+  collectedAt: number | null;
   contexts: Array<{ createdAt: number; url: string; title: string }>;
 }
 
@@ -43,8 +43,8 @@ export function groupActivity(
   };
 
   for (const item of words) {
-    // 標成已馴服的字不算收藏，否則按 X 排除生詞反而會多一筆「新收藏」。
-    if (item.status === 'unknown') day(localDay(item.createdAt)).newWords.add(item.word);
+    // 依收藏事件而不是現在的狀態：馴服後仍保留歷史，按 X 排除則從來不算收藏。
+    if (item.collectedAt !== null) day(localDay(item.collectedAt)).newWords.add(item.word);
     for (const context of item.contexts) {
       if (!context.url) continue;
       const current = day(localDay(context.createdAt));

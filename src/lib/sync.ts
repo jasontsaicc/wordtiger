@@ -44,6 +44,7 @@ type RemoteWord = {
   deleted_at: string | null;
   review_step?: number;
   review_due_at?: string | null;
+  collected_at?: string | null;
 };
 
 type RemoteContext = {
@@ -229,6 +230,7 @@ function localWord(row: RemoteWord): WordRow {
     word: row.word,
     status: row.status,
     createdAt: Date.parse(row.created_at),
+    collectedAt: stamp(row.collected_at ?? null),
     updatedAt: Date.parse(row.updated_at),
     deletedAt: stamp(row.deleted_at),
     reviewStep: row.review_step ?? 0,
@@ -304,6 +306,7 @@ function remoteWord(row: WordRow, userId: string) {
     word: row.word,
     status: row.status,
     created_at: iso(row.createdAt),
+    collected_at: iso(row.collectedAt ?? null),
     review_step: row.reviewStep ?? 0,
     review_due_at: iso(row.reviewDueAt ?? null),
     deleted_at: iso(row.deletedAt),
