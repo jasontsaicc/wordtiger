@@ -347,6 +347,16 @@ function remoteLookupCache(row: CacheRow, userId: string) {
   };
 }
 
+/**
+ * collectedAt 只會從 null 變成有值。本機回填不改 updatedAt，所以兩邊時間相同時
+ * resolveRow 會讓遠端的 null 勝出，把回填結果清掉。這裡擋下來並重新排入推送。
+ */
+function preserveCollectedAt(local: WordRow | undefined, merged: WordRow): WordRow {
+  return local?.collectedAt != null && merged.collectedAt == null
+    ? { ...merged, collectedAt: local.collectedAt, pending: 1 }
+    : merged;
+}
+
 /** 保留本機詞典生成句，但不將該欄位同步至遠端。 */
 function preserveLocalSentence(local: CacheRow | undefined, merged: CacheRow): CacheRow {
   return local?.sentence && local.payload === merged.payload
@@ -413,7 +423,8 @@ async function performSync(): Promise<SyncResult> {
     await db.transaction('rw', db.words, db.contexts, db.lookupCache, db.reviewLog, async () => {
       for (const row of remoteWords) {
         const remote = localWord(row);
-        await db.words.put(resolveRow(await db.words.get(remote.word), remote));
+        const local = await db.words.get(remote.word);
+        await db.words.put(preserveCollectedAt(local, resolveRow(local, remote)));
       }
       for (const row of remoteContexts) {
         const remote = localContext(row);

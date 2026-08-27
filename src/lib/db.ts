@@ -121,7 +121,8 @@ class WordTigerDb extends Dexie {
       await tx.table('words').bulkPut(words.map((row) => ({
         ...row,
         collectedAt: inferCollectedAt(row, withContext.has(row.word), drilled.has(row.word)),
-        // 回填值要推上雲端，否則下次全量拉取會用 null 蓋掉。
+        // 只標待推送，不動 updatedAt：回填不是語意變更，改時間會讓過期的 status 贏過別台
+        // 裝置較新的改動。拉取時由 sync 的 preserveCollectedAt 擋下遠端的 null。
         pending: 1 as const,
       })));
     });

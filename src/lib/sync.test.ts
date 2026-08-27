@@ -128,6 +128,47 @@ describe('syncNow', () => {
     expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"sentence"');
   });
 
+  it('遠端還沒回填時，不會用 null 蓋掉本機的 collectedAt', async () => {
+    // 本機剛跑完 v6 回填：collectedAt 有值、pending 1，但 updatedAt 沒動。
+    await db.words.put({
+      word: 'deploy', status: 'unknown', createdAt: 10, collectedAt: 10,
+      updatedAt: 20, deletedAt: null, pending: 1,
+    });
+    const response = (body: unknown) => ({
+      ok: true, status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response);
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({
+        access_token: 'access', refresh_token: 'refresh', expires_in: 3600,
+        user: { id: 'user-1', email: 'me@example.com' },
+      }))
+      .mockResolvedValueOnce(response('1970-01-01T00:00:01.000Z'))
+      // 舊版寫上去的列：updated_at 跟本機相同，而且沒有 collected_at。
+      .mockResolvedValueOnce(response([{
+        user_id: 'user-1', word: 'deploy', status: 'unknown',
+        created_at: '1970-01-01T00:00:00.010Z',
+        updated_at: '1970-01-01T00:00:00.020Z', deleted_at: null,
+      }]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([{
+        user_id: 'user-1', word: 'deploy', status: 'unknown',
+        created_at: '1970-01-01T00:00:00.010Z',
+        collected_at: '1970-01-01T00:00:00.010Z',
+        updated_at: '1970-01-01T00:00:00.030Z', deleted_at: null,
+      }]));
+
+    await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
+    await syncNow();
+
+    expect((await db.words.get('deploy'))!.collectedAt).toBe(10);
+    expect(fetchMock.mock.calls[6]![1]?.body)
+      .toContain('"collected_at":"1970-01-01T00:00:00.010Z"');
+  });
+
   it('切換不同帳號時不會把舊帳號 cache 標成待上傳', async () => {
     const response = (id: string) => ({
       ok: true,

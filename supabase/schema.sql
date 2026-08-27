@@ -78,6 +78,21 @@ drop trigger if exists lookup_cache_updated_at on public.lookup_cache;
 create trigger lookup_cache_updated_at before update on public.lookup_cache
 for each row execute function public.touch_updated_at();
 
+-- 舊雲端資料沒有收藏事件，用跟本機 inferCollectedAt 相同的規則回填一次，
+-- 否則全新裝置只會拉到 collected_at = null，學習足跡整段歷史都不見。
+-- 必須排在 words_updated_at trigger 之後：靠它更新 updated_at，別台裝置才拉得到。
+-- 只填 null 且判定為收藏過的列，不會把任何列寫成 null，因此可重複執行。
+update public.words w
+set collected_at = w.created_at
+where w.collected_at is null
+  and (
+    w.status = 'unknown'
+    or exists (select 1 from public.contexts c
+               where c.user_id = w.user_id and c.word = w.word)
+    or exists (select 1 from public.review_log r
+               where r.user_id = w.user_id and r.word = w.word)
+  );
+
 alter table public.words enable row level security;
 alter table public.contexts enable row level security;
 alter table public.lookup_cache enable row level security;
