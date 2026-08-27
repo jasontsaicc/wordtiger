@@ -53,6 +53,16 @@ export interface SentenceRow {
   fetchedAt: number;
 }
 
+/** 打老虎的逐次成績。只新增不修改，因此用 uuid 主鍵就能跨裝置合併。 */
+export interface ReviewLogRow {
+  id: string;
+  word: string;
+  remembered: boolean;
+  at: number;
+  /** 本機改動尚未被雲端確認；舊資料缺少此欄時也視為待同步。 */
+  pending?: 0 | 1;
+}
+
 export interface CacheRow {
   word: string;
   payload: string;
@@ -71,6 +81,7 @@ class WordTigerDb extends Dexie {
   contexts!: Table<ContextRow, string>;
   lookupCache!: Table<CacheRow, string>;
   sentenceCache!: Table<SentenceRow, string>;
+  reviewLog!: Table<ReviewLogRow, string>;
 
   constructor() {
     super('wordtiger');
@@ -82,6 +93,16 @@ class WordTigerDb extends Dexie {
     // 每版只宣告 schema delta；Dexie 依序套用 migration chain。
     this.version(2).stores({
       sentenceCache: 'id, fetchedAt',
+    });
+    // v3 的 ++id 只在本機唯一，跨裝置會撞號。Dexie 不支援直接換主鍵，只能丟掉重建。
+    this.version(3).stores({
+      reviewLog: '++id, at',
+    });
+    this.version(4).stores({
+      reviewLog: null,
+    });
+    this.version(5).stores({
+      reviewLog: 'id, at',
     });
   }
 }
@@ -217,15 +238,40 @@ export async function recordReview(
   remembered: boolean,
   now = Date.now(),
 ): Promise<boolean> {
-  const row = await db.words.get(word);
-  if (!row || row.deletedAt !== null || row.status !== 'unknown') return false;
-  await db.words.put({
-    ...row,
-    ...nextReview(row.reviewStep ?? 0, remembered, now),
-    updatedAt: now,
-    pending: 1,
+  // 排程與紀錄同進同退；只推進排程卻沒留下紀錄，重試會讓間隔多跳一階。
+  return db.transaction('rw', db.words, db.reviewLog, async () => {
+    const row = await db.words.get(word);
+    if (!row || row.deletedAt !== null || row.status !== 'unknown') return false;
+    await db.words.put({
+      ...row,
+      ...nextReview(row.reviewStep ?? 0, remembered, now),
+      updatedAt: now,
+      pending: 1,
+    });
+    await db.reviewLog.add({
+      id: crypto.randomUUID(), word, remembered, at: now, pending: 1,
+    });
+    return true;
   });
-  return true;
+}
+
+/** 「已經馴服」：記下最後一次成功練習並改成 known，兩筆寫入同進同退。 */
+export function masterWord(word: string, now = Date.now()): Promise<boolean> {
+  return db.transaction('rw', db.words, db.reviewLog, async () => {
+    const row = await db.words.get(word);
+    if (!row || row.deletedAt !== null || row.status !== 'unknown') return false;
+    await db.reviewLog.add({
+      id: crypto.randomUUID(), word, remembered: true, at: now, pending: 1,
+    });
+    await db.words.put({ ...row, status: 'known', updatedAt: now, pending: 1 });
+    return true;
+  });
+}
+
+/** 由舊到新；月曆與次數統計都在記憶體分組。 */
+export function listReviewLog(): Promise<ReviewLogRow[]> {
+  // ponytail: 全表掃描；筆數大到有感時再改用 at 索引取區間。
+  return db.reviewLog.orderBy('at').toArray();
 }
 
 export async function getCached(words: string[]): Promise<Map<string, string>> {

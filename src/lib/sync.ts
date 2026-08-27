@@ -1,4 +1,4 @@
-import { db, type CacheRow, type ContextRow, type WordRow } from './db';
+import { db, type CacheRow, type ContextRow, type ReviewLogRow, type WordRow } from './db';
 
 const KEY = 'sync';
 
@@ -56,6 +56,14 @@ type RemoteContext = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+};
+
+type RemoteReviewLog = {
+  id: string;
+  user_id: string;
+  word: string;
+  remembered: boolean;
+  at: string;
 };
 
 type RemoteLookupCache = {
@@ -133,6 +141,7 @@ export async function signIn(
     await Promise.all([
       db.words.toCollection().modify({ pending: 1 }),
       db.contexts.toCollection().modify({ pending: 1 }),
+      db.reviewLog.toCollection().modify({ pending: 1 }),
       // 切換帳號時不將原帳號 cache 上傳至新帳號。
       db.lookupCache.toCollection().modify({ pending: 0 }),
     ]);
@@ -242,6 +251,16 @@ function localContext(row: RemoteContext): ContextRow {
   };
 }
 
+function localReviewLog(row: RemoteReviewLog): ReviewLogRow {
+  return {
+    id: row.id,
+    word: row.word,
+    remembered: row.remembered,
+    at: Date.parse(row.at),
+    pending: 0,
+  };
+}
+
 function localLookupCache(row: RemoteLookupCache): CacheRow {
   return {
     word: row.word,
@@ -301,6 +320,16 @@ function remoteContext(row: ContextRow, userId: string) {
     title: row.title,
     created_at: iso(row.createdAt),
     deleted_at: iso(row.deletedAt),
+  };
+}
+
+function remoteReviewLog(row: ReviewLogRow, userId: string) {
+  return {
+    id: row.id,
+    user_id: userId,
+    word: row.word,
+    remembered: row.remembered,
+    at: iso(row.at),
   };
 }
 
@@ -371,13 +400,14 @@ async function performSync(): Promise<SyncResult> {
     const cutoff = await request<string>(stored, active, 'rpc/sync_clock', {
       method: 'POST', body: '{}',
     });
-    const [remoteWords, remoteContexts, remoteLookupCaches] = await Promise.all([
+    const [remoteWords, remoteContexts, remoteLookupCaches, remoteReviewLogs] = await Promise.all([
       pull<RemoteWord>(stored, active, 'words', cutoff),
       pull<RemoteContext>(stored, active, 'contexts', cutoff),
       pull<RemoteLookupCache>(stored, active, 'lookup_cache', cutoff),
+      pull<RemoteReviewLog>(stored, active, 'review_log', cutoff),
     ]);
 
-    await db.transaction('rw', db.words, db.contexts, db.lookupCache, async () => {
+    await db.transaction('rw', db.words, db.contexts, db.lookupCache, db.reviewLog, async () => {
       for (const row of remoteWords) {
         const remote = localWord(row);
         await db.words.put(resolveRow(await db.words.get(remote.word), remote));
@@ -391,25 +421,31 @@ async function performSync(): Promise<SyncResult> {
         const local = await db.lookupCache.get(remote.word);
         await db.lookupCache.put(preserveLocalSentence(local, resolveRow(local, remote)));
       }
+      // 成績只新增不修改，同一個 id 兩邊內容一定相同，不需要衝突解析。
+      for (const row of remoteReviewLogs) await db.reviewLog.put(localReviewLog(row));
     });
 
-    const [pendingWords, pendingContexts, pendingLookupCaches] = await Promise.all([
-      db.words.filter((row) => row.pending !== 0).toArray(),
-      db.contexts.filter((row) => row.pending !== 0).toArray(),
-      db.lookupCache.filter((row) => row.pending !== 0).toArray(),
-    ]);
-    const [savedWords, savedContexts, savedLookupCaches] = await Promise.all([
+    const [pendingWords, pendingContexts, pendingLookupCaches, pendingReviewLogs] =
+      await Promise.all([
+        db.words.filter((row) => row.pending !== 0).toArray(),
+        db.contexts.filter((row) => row.pending !== 0).toArray(),
+        db.lookupCache.filter((row) => row.pending !== 0).toArray(),
+        db.reviewLog.filter((row) => row.pending !== 0).toArray(),
+      ]);
+    const [savedWords, savedContexts, savedLookupCaches, savedReviewLogs] = await Promise.all([
       push<RemoteWord>(stored, active, 'words', 'user_id,word',
         pendingWords.map((row) => remoteWord(row, active.userId))),
-      push<RemoteContext>(stored, active, 'contexts', 'id',
+      push<RemoteContext>(stored, active, 'contexts', 'user_id,id',
         pendingContexts.map((row) => remoteContext(row, active.userId))),
       push<RemoteLookupCache>(stored, active, 'lookup_cache', 'user_id,word',
         pendingLookupCaches.map((row) => remoteLookupCache(row, active.userId))),
+      push<RemoteReviewLog>(stored, active, 'review_log', 'user_id,id',
+        pendingReviewLogs.map((row) => remoteReviewLog(row, active.userId))),
     ]);
     const sentWords = new Map(pendingWords.map((row) => [row.word, row]));
     const sentContexts = new Map(pendingContexts.map((row) => [row.id, row]));
     const sentLookupCaches = new Map(pendingLookupCaches.map((row) => [row.word, row]));
-    await db.transaction('rw', db.words, db.contexts, db.lookupCache, async () => {
+    await db.transaction('rw', db.words, db.contexts, db.lookupCache, db.reviewLog, async () => {
       for (const row of savedWords.map(localWord)) {
         await db.words.put(acknowledgeRow(
           await db.words.get(row.word), sentWords.get(row.word), row,
@@ -426,14 +462,17 @@ async function performSync(): Promise<SyncResult> {
           current, sentLookupCaches.get(row.word), row,
         )));
       }
+      for (const row of savedReviewLogs.map(localReviewLog)) await db.reviewLog.put(row);
     });
 
     const finishedAt = Date.now();
     delete stored.lastError;
     await save({ ...stored, session: active, cursor: Date.parse(cutoff), lastSuccessAt: finishedAt });
     return {
-      pulled: remoteWords.length + remoteContexts.length + remoteLookupCaches.length,
-      pushed: savedWords.length + savedContexts.length + savedLookupCaches.length,
+      pulled: remoteWords.length + remoteContexts.length
+        + remoteLookupCaches.length + remoteReviewLogs.length,
+      pushed: savedWords.length + savedContexts.length
+        + savedLookupCaches.length + savedReviewLogs.length,
       finishedAt,
     };
   } catch (error) {

@@ -15,6 +15,8 @@ interface WordItem {
   word: string;
   status: 'unknown' | 'known';
   createdAt: number;
+  /** 打老虎的累計次數。 */
+  reviewCount: number;
   /** 由新到舊。 */
   contexts: ContextItem[];
 }
@@ -169,6 +171,7 @@ async function exportJson() {
               {{ isPhrase(w.word) ? '片語' : (w.status === 'unknown' ? '生詞' : '已馴服') }}
             </span>
             <span class="count">{{ w.contexts.length }} 條語境</span>
+            <span v-if="w.reviewCount" class="count">練過 {{ w.reviewCount }} 次</span>
           </div>
           <div class="actions">
             <button @click="toggleDictionary(w)">

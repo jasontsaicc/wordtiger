@@ -13,7 +13,7 @@ alter table public.words
   add column if not exists review_due_at timestamptz;
 
 create table if not exists public.contexts (
-  id uuid primary key,
+  id uuid not null,
   user_id uuid references auth.users on delete cascade not null,
   word text not null,
   sentence text not null,
@@ -21,7 +21,8 @@ create table if not exists public.contexts (
   title text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  deleted_at timestamptz
+  deleted_at timestamptz,
+  primary key (user_id, id)
 );
 
 create table if not exists public.lookup_cache (
@@ -34,6 +35,26 @@ create table if not exists public.lookup_cache (
   deleted_at timestamptz,
   primary key (user_id, word)
 );
+
+-- 打老虎逐次成績。只新增不修改，所以沒有 deleted_at，也不掛 updated_at trigger：
+-- updated_at 停在寫入時間，重送同一列時不會被重新 pull 回來。
+create table if not exists public.review_log (
+  id uuid not null,
+  user_id uuid references auth.users on delete cascade not null,
+  word text not null,
+  remembered boolean not null,
+  at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
+-- 主鍵只有 id 時，換帳號重傳同一個 uuid 會撞到別的帳號的列，RLS 擋下來會讓整輪同步失敗。
+-- create table if not exists 不會回頭改既有資料表，所以舊部署要靠這段換成複合主鍵。
+-- id 原本全域唯一，(user_id, id) 不可能有重複值，drop 後 add 一定成功。
+alter table public.contexts drop constraint if exists contexts_pkey;
+alter table public.contexts add primary key (user_id, id);
+alter table public.review_log drop constraint if exists review_log_pkey;
+alter table public.review_log add primary key (user_id, id);
 
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -58,6 +79,7 @@ for each row execute function public.touch_updated_at();
 alter table public.words enable row level security;
 alter table public.contexts enable row level security;
 alter table public.lookup_cache enable row level security;
+alter table public.review_log enable row level security;
 
 drop policy if exists "own words" on public.words;
 create policy "own words" on public.words for all to authenticated
@@ -69,6 +91,10 @@ using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 drop policy if exists "own lookup cache" on public.lookup_cache;
 create policy "own lookup cache" on public.lookup_cache for all to authenticated
+using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "own review log" on public.review_log;
+create policy "own review log" on public.review_log for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create or replace function public.sync_clock()

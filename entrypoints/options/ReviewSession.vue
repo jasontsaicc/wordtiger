@@ -38,8 +38,9 @@ async function master() {
   if (!props.item || busy.value) return;
   busy.value = true;
   error.value = '';
+  // 記練習與改狀態由 background 一次完成，避免只成功一半還顯示成功。
   const saved = await browser.runtime.sendMessage({
-    type: 'setWordStatus', word: props.item.word, status: 'known',
+    type: 'masterWord', word: props.item.word,
   });
   busy.value = false;
   if (!saved) {

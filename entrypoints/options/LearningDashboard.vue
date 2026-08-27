@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { groupActivity, localDay, monthCells, type ActivityWord } from '@/src/lib/activity';
+import {
+  groupActivity, localDay, monthCells, type ActivityWord, type ReviewEvent,
+} from '@/src/lib/activity';
 
-interface WordItem extends ActivityWord {
-  status: 'unknown' | 'known';
-}
-
-const words = ref<WordItem[]>([]);
+const words = ref<ActivityWord[]>([]);
+const reviews = ref<ReviewEvent[]>([]);
 const error = ref('');
 const today = localDay(Date.now());
 const month = ref(today.slice(0, 7));
 const selectedDate = ref(today);
 
-const days = computed(() => groupActivity(words.value));
+const days = computed(() => groupActivity(words.value, reviews.value));
 const byDate = computed(() => new Map(days.value.map((day) => [day.date, day])));
 const cells = computed(() => monthCells(month.value));
 const monthDays = computed(() => days.value.filter((day) => day.date.startsWith(month.value)));
@@ -24,10 +23,18 @@ const monthPages = computed(() => new Set(
 ).size);
 const learning = computed(() => words.value.filter((word) => word.status === 'unknown').length);
 const known = computed(() => words.value.filter((word) => word.status === 'known').length);
+const monthScore = computed(() => monthDays.value
+  .flatMap((day) => day.reviews)
+  .reduce((score, item) => ({
+    total: score.total + item.total, caught: score.caught + item.caught,
+  }), { total: 0, caught: 0 }));
 
 onMounted(async () => {
   try {
-    words.value = (await browser.runtime.sendMessage({ type: 'listWords' })) ?? [];
+    [words.value, reviews.value] = await Promise.all([
+      browser.runtime.sendMessage({ type: 'listWords' }).then((r) => r ?? []),
+      browser.runtime.sendMessage({ type: 'listReviewLog' }).then((r) => r ?? []),
+    ]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -35,6 +42,18 @@ onMounted(async () => {
 
 function activity(date: string) {
   return byDate.value.get(date);
+}
+
+/** 月曆格只放得下一行摘要，沒有的項目就不佔位。 */
+function summary(date: string): string {
+  const day = byDate.value.get(date);
+  if (!day) return '';
+  const drills = day.reviews.reduce((total, item) => total + item.total, 0);
+  return [
+    day.newWords.length && `${day.newWords.length} 詞`,
+    day.pages.length && `${day.pages.length} 文`,
+    drills && `${drills} 練`,
+  ].filter(Boolean).join(' · ');
 }
 
 function changeMonth() {
@@ -48,7 +67,7 @@ function changeMonth() {
       <div>
         <p class="eyebrow">LEARNING ACTIVITY</p>
         <h2>學習足跡</h2>
-        <p>只記錄你收藏過內容的日期與來源，不追蹤一般瀏覽紀錄。</p>
+        <p>只記錄你收藏與打老虎的日期、來源，不追蹤一般瀏覽紀錄。</p>
       </div>
       <input v-model="month" type="month" aria-label="選擇月份" @change="changeMonth" />
     </header>
@@ -58,6 +77,8 @@ function changeMonth() {
     <div class="stats">
       <article><b>{{ monthNewWords }}</b><span>本月新收藏</span></article>
       <article><b>{{ monthPages }}</b><span>本月來源文章</span></article>
+      <article><b>{{ monthScore.total }}</b><span>本月練習次數</span></article>
+      <article><b>{{ monthScore.caught }}</b><span>本月抓到</span></article>
       <article><b>{{ learning }}</b><span>仍在學習</span></article>
       <article><b>{{ known }}</b><span>已馴服</span></article>
     </div>
@@ -71,9 +92,7 @@ function changeMonth() {
         <button v-else :class="{ selected: selectedDate === cell.date, active: activity(cell.date) }"
           :aria-label="cell.date" @click="selectedDate = cell.date">
           <b>{{ cell.day }}</b>
-          <small v-if="activity(cell.date)">
-            {{ activity(cell.date)!.newWords.length }} 詞 · {{ activity(cell.date)!.pages.length }} 文
-          </small>
+          <small>{{ summary(cell.date) }}</small>
         </button>
       </template>
     </div>
@@ -85,6 +104,14 @@ function changeMonth() {
           <h4>新收藏</h4>
           <div class="chips"><span v-for="word in selected.newWords" :key="word">{{ word }}</span></div>
         </div>
+        <div v-if="selected.reviews.length">
+          <h4>今晚打老虎</h4>
+          <div class="chips">
+            <span v-for="item in selected.reviews" :key="item.word" class="drill">
+              {{ item.word }} <b>{{ item.caught }}/{{ item.total }}</b>
+            </span>
+          </div>
+        </div>
         <div v-if="selected.pages.length">
           <h4>來源文章</h4>
           <ul>
@@ -95,7 +122,7 @@ function changeMonth() {
           </ul>
         </div>
       </template>
-      <p v-else class="empty">這天沒有收藏活動。</p>
+      <p v-else class="empty">這天沒有收藏，也沒有打老虎。</p>
     </article>
   </section>
 </template>
@@ -107,7 +134,7 @@ function changeMonth() {
 .heading > div > p:last-child { color: #64748b; font-size: 13px; }
 .heading input { width: auto; }
 .eyebrow { color: #0e7490; font-size: 11px; font-weight: 800; letter-spacing: .13em; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; margin: 1.2rem 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .7rem; margin: 1.2rem 0; }
 .stats article { padding: .9rem; border-radius: 12px; background: #f8fafc; text-align: center; }
 .stats b, .stats span { display: block; }
 .stats b { color: #0f172a; font-size: 24px; }
@@ -124,6 +151,7 @@ function changeMonth() {
 .detail h4 { margin-top: .8rem; color: #475569; font-size: 13px; }
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
 .chips span { padding: .2rem .55rem; border-radius: 999px; color: #3730a3; background: #e0e7ff; }
+.chips span.drill { color: #9a3412; background: #ffedd5; }
 .detail ul { margin: .4rem 0 0; padding-left: 1.2rem; }
 .detail li + li { margin-top: .5rem; }
 .detail li small { display: block; color: #64748b; }
@@ -131,7 +159,6 @@ function changeMonth() {
 .empty { color: #64748b; }
 .error { color: #b91c1c; }
 @media (max-width: 700px) {
-  .stats { grid-template-columns: 1fr 1fr; }
   .calendar button, .blank { min-height: 58px; }
   .calendar button small { font-size: 9px; }
 }

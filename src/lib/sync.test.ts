@@ -9,6 +9,7 @@ beforeEach(async () => {
   await db.words.clear();
   await db.contexts.clear();
   await db.lookupCache.clear();
+  await db.reviewLog.clear();
   vi.restoreAllMocks();
 });
 
@@ -63,6 +64,7 @@ describe('syncNow', () => {
       }]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([{
         user_id: 'user-1', word: 'local', status: 'unknown',
         created_at: '1970-01-01T00:00:00.030Z',
@@ -76,8 +78,8 @@ describe('syncNow', () => {
     expect(result).toMatchObject({ pulled: 1, pushed: 1 });
     expect((await db.words.get('old'))!.deletedAt).toBe(20);
     expect((await db.words.get('local'))!.pending).toBe(0);
-    expect(fetchMock.mock.calls[5]![1]?.body).toContain('"word":"local"');
-    expect(fetchMock.mock.calls[5]![1]?.body).toContain('"review_step":2');
+    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"word":"local"');
+    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"review_step":2');
   });
 
   it('同一帳號會拉回別台裝置的詞典 cache 並推送本機 cache', async () => {
@@ -108,6 +110,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([remote]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([saved]));
 
     await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
@@ -116,8 +119,8 @@ describe('syncNow', () => {
     expect((await db.lookupCache.get('remote'))!.sentence).toBeUndefined();
     expect((await db.lookupCache.get('local'))!.pending).toBe(0);
     expect((await db.lookupCache.get('local'))!.sentence).toBe('Local sentence.');
-    expect(fetchMock.mock.calls[5]![1]?.body).toContain('"payload":"本機詞典"');
-    expect(fetchMock.mock.calls[5]![1]?.body).not.toContain('"sentence"');
+    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"payload":"本機詞典"');
+    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"sentence"');
   });
 
   it('切換不同帳號時不會把舊帳號 cache 標成待上傳', async () => {
@@ -134,7 +137,64 @@ describe('syncNow', () => {
 
     await signIn('https://project.supabase.co', 'anon', 'one@example.com', 'password');
     await putCached([{ word: 'private', payload: '舊帳號內容' }]);
+    await db.reviewLog.add({ id: 'log-1', word: 'deploy', remembered: true, at: 10, pending: 0 });
     await signIn('https://project.supabase.co', 'anon', 'two@example.com', 'password');
     expect((await db.lookupCache.get('private'))!.pending).toBe(0);
+    // 打老虎成績屬於學習歷程，跟著人走，切換帳號要重新上傳。
+    expect((await db.reviewLog.get('log-1'))!.pending).toBe(1);
+  });
+
+  it('打老虎成績會拉回別台裝置的紀錄，並用複合主鍵推送本機紀錄', async () => {
+    await db.reviewLog.add({
+      id: 'local-1', word: 'deploy', remembered: true, at: 30, pending: 1,
+    });
+    // contexts 跟 review_log 一樣是 uuid 主鍵，換帳號時同樣要靠複合主鍵避開別人的列。
+    await db.contexts.put({
+      id: 'ctx-1', word: 'deploy', sentence: 'We deploy to production on Fridays.',
+      url: 'https://example.com/a', title: 'Guide',
+      createdAt: 20, updatedAt: 20, deletedAt: null, pending: 1,
+    });
+    const response = (body: unknown) => ({
+      ok: true, status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response);
+    const remote = {
+      id: 'remote-1', user_id: 'user-1', word: 'roll back',
+      remembered: false, at: '1970-01-01T00:00:00.010Z',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({
+        access_token: 'access', refresh_token: 'refresh', expires_in: 3600,
+        user: { id: 'user-1', email: 'me@example.com' },
+      }))
+      .mockResolvedValueOnce(response('1970-01-01T00:00:01.000Z'))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([remote]))
+      .mockResolvedValueOnce(response([{
+        id: 'ctx-1', user_id: 'user-1', word: 'deploy',
+        sentence: 'We deploy to production on Fridays.',
+        url: 'https://example.com/a', title: 'Guide',
+        created_at: '1970-01-01T00:00:00.020Z',
+        updated_at: '1970-01-01T00:00:00.040Z', deleted_at: null,
+      }]))
+      .mockResolvedValueOnce(response([{
+        id: 'local-1', user_id: 'user-1', word: 'deploy',
+        remembered: true, at: '1970-01-01T00:00:00.030Z',
+      }]));
+
+    await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
+    expect(await syncNow()).toMatchObject({ pulled: 1, pushed: 2 });
+    expect(await db.reviewLog.get('remote-1')).toEqual({
+      id: 'remote-1', word: 'roll back', remembered: false, at: 10, pending: 0,
+    });
+    expect((await db.reviewLog.get('local-1'))!.pending).toBe(0);
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"remembered":true');
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"id":"local-1"');
+    // 主鍵只有 id 時，換帳號重傳會撞到別的帳號的列而被 RLS 擋下。
+    expect(fetchMock.mock.calls[6]![0]).toContain('contexts?on_conflict=user_id%2Cid');
+    expect(fetchMock.mock.calls[7]![0]).toContain('review_log?on_conflict=user_id%2Cid');
   });
 });

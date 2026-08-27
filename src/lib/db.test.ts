@@ -1,12 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, masterWord, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
   await db.contexts.clear();
   await db.lookupCache.clear();
   await db.sentenceCache.clear();
+  await db.reviewLog.clear();
+  vi.restoreAllMocks();
 });
 
 describe('markWord / loadMarks', () => {
@@ -268,6 +270,64 @@ describe('今晚打老虎', () => {
     await markWord('deploy', 'known');
     expect(await recordReview('deploy', true)).toBe(false);
     expect(await recordReview('missing', true)).toBe(false);
+  });
+
+  it('只有成功的自評會留下打老虎紀錄', async () => {
+    await markWord('deploy', 'unknown');
+    await recordReview('deploy', true, 100);
+    await recordReview('deploy', false, 200);
+    await recordReview('missing', true, 300);
+
+    expect(await listReviewLog()).toMatchObject([
+      { word: 'deploy', remembered: true, at: 100, pending: 1 },
+      { word: 'deploy', remembered: false, at: 200, pending: 1 },
+    ]);
+  });
+
+  it('紀錄寫入失敗時排程一起回滾，不會只前進間隔', async () => {
+    await db.words.put({
+      word: 'deploy', status: 'unknown', createdAt: 1, updatedAt: 1,
+      deletedAt: null, reviewStep: 1, pending: 0,
+    });
+    // 固定 uuid 讓第二次的 reviewLog.add 撞主鍵失敗。
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValue('11111111-1111-1111-1111-111111111111');
+
+    expect(await recordReview('deploy', true, 100)).toBe(true);
+    const afterFirst = await db.words.get('deploy');
+
+    await expect(recordReview('deploy', true, 200)).rejects.toThrow();
+    expect(await db.words.get('deploy')).toEqual(afterFirst);
+    expect(await listReviewLog()).toHaveLength(1);
+  });
+
+  it('已經馴服會同時留下成功紀錄並改成 known', async () => {
+    await markWord('deploy', 'unknown');
+    expect(await masterWord('deploy', 300)).toBe(true);
+    expect(await db.words.get('deploy')).toMatchObject({
+      status: 'known', updatedAt: 300, pending: 1,
+    });
+    expect(await listReviewLog()).toMatchObject([
+      { word: 'deploy', remembered: true, at: 300, pending: 1 },
+    ]);
+  });
+
+  it('不是生詞的字不能馴服，也不會留下紀錄', async () => {
+    await markWord('deploy', 'known');
+    expect(await masterWord('deploy')).toBe(false);
+    expect(await masterWord('missing')).toBe(false);
+    expect(await listReviewLog()).toEqual([]);
+  });
+
+  it('每筆成績用 uuid 當主鍵，跨裝置才不會撞號', async () => {
+    await markWord('deploy', 'unknown');
+    await recordReview('deploy', true, 100);
+    await recordReview('deploy', true, 200);
+
+    const ids = (await listReviewLog()).map((row) => row.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 
