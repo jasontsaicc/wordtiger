@@ -22,3 +22,6 @@
 | [0016](0016-global-mascot-and-host-access.md) | 小虎預設出現並使用全站 host permission | accepted | 2026-08-26 |
 | [0017](0017-save-context-when-looking-up-saved-word.md) | 已收藏單字按 A 時累積目前語境 | accepted | 2026-08-26 |
 | [0018](0018-ai-tts-in-background-with-local-fallback.md) | AI 語音由 background 產生並保留裝置 fallback | accepted | 2026-08-26 |
+| [0019](0019-collected-at-records-the-collection-event.md) | 用 collectedAt 記錄收藏事件，不由狀態反推 | accepted | 2026-08-27 |
+| [0020](0020-append-only-review-log.md) | 打老虎成績存成 append-only 事件表 | accepted | 2026-08-27 |
+| [0021](0021-composite-primary-key-for-synced-tables.md) | 可同步資料表用 (user_id, id) 複合主鍵 | accepted | 2026-08-27 |

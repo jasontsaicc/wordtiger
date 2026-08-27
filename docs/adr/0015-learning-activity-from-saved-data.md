@@ -1,6 +1,10 @@
 # ADR-0015: 學習足跡只由收藏資料推導
 
-Date: 2026-08-26 | Status: accepted
+Date: 2026-08-26 | Status: accepted（部分被取代）
+
+> 2026-08-27：「新收藏」改依 `collectedAt` 而非 `words.createdAt`，見 ADR-0019；
+> 複習成績改用事件表，見 ADR-0020。本文其餘決策仍然有效：
+> 不記錄一般瀏覽、不申請 tabs／history 權限、月曆只呈現使用者實際保存過的內容。
 
 ## Context
 
