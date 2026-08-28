@@ -36,10 +36,14 @@ Date: 2026-08-24 | Amended: 2026-08-28 | Status: accepted
 **成本**:每個字一次請求、輸出約 500-800 token,但只有真的按 A 才付錢。
 舊的預取是掃完頁面就打 30 個字的請求,絕大多數根本用不到,實際上新做法可能更省。
 
-**快取**:主鍵仍是單字原形,每個原形只保留最新回答；但命中時必須同時符合
-實際字形、來源句子及 lookup variant（model、profile、system rules、template）。
-舊列或同步下來的列缺少 metadata 時視同命中,不重查。這避免跨語境教錯意思,也讓 prompt 更新自然失效。
-實際字形、來源句子與 variant 只留在本機,不擴大 Supabase 的同步資料。
+**快取**:主鍵仍是 lemma,每個 lemma 只保留最新回答。有 metadata 的本機列必須同時符合
+實際字形、來源句子及 lookup variant（model、profile、system rules、template）才命中，
+因此新產生的回答不會跨語境沿用，prompt 改版也會自然失效。
+
+舊列或同步下來的列沒有這些 metadata，仍視同相容命中而不付費重查。這是刻意放寬的保證：
+本機新回答能精確到語境，但舊資料與跨裝置同步仍可能顯示先前語境的答案；換來的是詞庫面板不會逐字重查，
+兩台裝置也不會互相覆寫後反覆觸發 AI。實際字形、來源句子與 variant 只留在本機，
+不擴大 Supabase 的同步資料。只有量到這個取捨造成問題時，才改同步 metadata 或複合 cache key。
 
 **新的安全邊界**:`src/content/markdown.ts` 是 AI 內容進入 `innerHTML` 的唯一通道,
 而卡片會被插進任何網頁。它靠一條不變式擋 XSS:**先跳脫整行,再在已跳脫的字串上
