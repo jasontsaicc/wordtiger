@@ -1,6 +1,11 @@
 import Dexie, { type Table } from 'dexie';
 import type { WordStatus } from './decide';
-import { nextReview } from './review';
+import { nextReview, type StoredFsrsCard } from './review';
+
+/** 排到 30 天以上就算穩定，複習畫面才給「已經馴服」。 */
+const MASTER_INTERVAL_DAYS = 30;
+/** 舊固定階梯的最後一階；沒有 FSRS 間隔的既有卡片靠它保留按鈕。 */
+const LEGACY_MASTER_STEP = 5;
 
 /** 單字語境的最短長度。 */
 const MIN_SENTENCE_LENGTH = 26;
@@ -16,7 +21,9 @@ export interface WordRow {
   collectedAt?: number | null;
   updatedAt: number;
   deletedAt: number | null;
-  /** 0 是初始階段；5 是最長 30 天間隔。 */
+  /** FSRS 的完整卡片狀態。缺少代表尚未打過，是合法新卡。 */
+  fsrsCard?: StoredFsrsCard;
+  /** 舊固定階梯遺留欄位。新版不再寫入也不用於排程，只有馴服條件會讀 reviewStep。 */
   reviewStep?: number;
   reviewDueAt?: number;
   /** 本機改動尚未被雲端確認；舊資料缺少此欄時也視為待同步。 */
@@ -28,7 +35,7 @@ export interface ReviewItem {
   surface?: string;
   isPhrase: boolean;
   isPattern: boolean;
-  reviewStep: number;
+  canMaster: boolean;
   definition: string;
   context?: Pick<ContextRow, 'sentence' | 'url' | 'title'>;
 }
@@ -220,14 +227,20 @@ export async function listContexts(word: string): Promise<ContextRow[]> {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
+/** 已到期的卡在前，依 due 由早到晚；其後是尚未打過的新卡，依收藏日由早到晚。 */
+function byReviewOrder(a: WordRow, b: WordRow): number {
+  if (a.fsrsCard && b.fsrsCard) return a.fsrsCard.due - b.fsrsCard.due || a.createdAt - b.createdAt;
+  if (a.fsrsCard || b.fsrsCard) return a.fsrsCard ? -1 : 1;
+  return (a.collectedAt ?? a.createdAt) - (b.collectedAt ?? b.createdAt);
+}
+
 export async function listReviewItems(limit = 5, now = Date.now()): Promise<ReviewItem[]> {
   const candidates = (await db.words
     .filter((row) => row.deletedAt === null
       && row.status === 'unknown'
-      && (row.reviewDueAt ?? 0) <= now)
+      && (row.fsrsCard === undefined || row.fsrsCard.due <= now))
     .toArray())
-    .sort((a, b) => (a.reviewDueAt ?? 0) - (b.reviewDueAt ?? 0)
-      || a.createdAt - b.createdAt);
+    .sort(byReviewOrder);
   if (!candidates.length) return [];
 
   const words = candidates.map((row) => row.word);
@@ -267,7 +280,8 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
       surface: definition.surface,
       isPhrase,
       isPattern,
-      reviewStep: row.reviewStep ?? 0,
+      canMaster: (row.fsrsCard?.scheduled_days ?? 0) >= MASTER_INTERVAL_DAYS
+        || (row.reviewStep ?? 0) >= LEGACY_MASTER_STEP,
       definition: definition.payload,
       context: reviewContext,
     });
@@ -276,25 +290,23 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
   return items;
 }
 
+/** 回傳下次複習時間；卡片已失效或損壞時回傳 null，不寫入任何一邊。 */
 export async function recordReview(
   word: string,
   remembered: boolean,
   now = Date.now(),
-): Promise<boolean> {
+): Promise<number | null> {
   // 排程與紀錄同進同退；只推進排程卻沒留下紀錄，重試會讓間隔多跳一階。
   return db.transaction('rw', db.words, db.reviewLog, async () => {
     const row = await db.words.get(word);
-    if (!row || row.deletedAt !== null || row.status !== 'unknown') return false;
-    await db.words.put({
-      ...row,
-      ...nextReview(row.reviewStep ?? 0, remembered, now),
-      updatedAt: now,
-      pending: 1,
-    });
+    if (!row || row.deletedAt !== null || row.status !== 'unknown') return null;
+    const fsrsCard = nextReview(row.fsrsCard, remembered, now);
+    if (!fsrsCard) return null;
+    await db.words.put({ ...row, fsrsCard, updatedAt: now, pending: 1 });
     await db.reviewLog.add({
       id: crypto.randomUUID(), word, remembered, at: now, pending: 1,
     });
-    return true;
+    return fsrsCard.due;
   });
 }
 

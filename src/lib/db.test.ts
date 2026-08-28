@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
+import { State } from 'ts-fsrs';
+import type { StoredFsrsCard } from './review';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, putCached, deleteCached, sentenceKey, getSentence, putSentence, type WordRow } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -185,6 +187,24 @@ describe('lookupCache', () => {
 });
 
 describe('今晚打老虎', () => {
+  /** 只有 due 與傳入的欄位重要，其餘是能通過驗證的合理值。 */
+  const card = (due: number, extra: Partial<StoredFsrsCard> = {}): StoredFsrsCard => ({
+    due,
+    stability: 2,
+    difficulty: 5,
+    elapsed_days: 1,
+    scheduled_days: 3,
+    learning_steps: 0,
+    reps: 1,
+    lapses: 0,
+    state: State.Review,
+    last_review: due - 86_400_000,
+    ...extra,
+  });
+  const seed = (word: string, row: Partial<WordRow> = {}): WordRow => ({
+    word, status: 'unknown', createdAt: 1, collectedAt: 1, updatedAt: 1, deletedAt: null, ...row,
+  });
+
   it('只列出到期且有答案材料的生詞與片語，最多五題', async () => {
     for (let i = 0; i < 6; i++) {
       const word = `word${i}`;
@@ -195,7 +215,7 @@ describe('今晚打老虎', () => {
     await putCached([{ word: 'already-known', payload: '不該出現' }]);
     await markWord('not-ready', 'unknown');
     await putCached([{ word: 'not-ready', payload: '尚未到期' }]);
-    await db.words.update('not-ready', { reviewDueAt: Date.now() + 86_400_000 });
+    await db.words.update('not-ready', { fsrsCard: card(Date.now() + 86_400_000) });
     await markWord('roll back', 'unknown');
     await addContext({
       word: 'roll back', sentence: 'We should roll back this release now.',
@@ -206,6 +226,56 @@ describe('今晚打老虎', () => {
     const items = await listReviewItems(5);
     expect(items).toHaveLength(5);
     expect(items.every((item) => item.word !== 'already-known' && item.word !== 'not-ready')).toBe(true);
+  });
+
+  it('先出到期卡並依 due 由早到晚，再用尚未打過的新卡依收藏日補足', async () => {
+    const now = new Date(2026, 7, 28, 21, 0).getTime();
+    const DAY = 86_400_000;
+    await db.words.bulkPut([
+      seed('due-late', { fsrsCard: card(now - DAY) }),
+      seed('due-early', { fsrsCard: card(now - 3 * DAY) }),
+      seed('future', { fsrsCard: card(now + DAY) }),
+      // createdAt 較晚但收藏得早，收藏日要贏過建立日。
+      seed('new-recent', { createdAt: 4, collectedAt: 900 }),
+      seed('new-old', { createdAt: 5, collectedAt: 100 }),
+      seed('tamed', { status: 'known' }),
+    ]);
+    for (const word of ['due-late', 'due-early', 'future', 'new-recent', 'new-old', 'tamed']) {
+      await putCached([{ word, payload: `${word} 的答案` }]);
+    }
+
+    expect((await listReviewItems(5, now)).map((item) => item.word))
+      .toEqual(['due-early', 'due-late', 'new-old', 'new-recent']);
+  });
+
+  it('到期卡缺詞典時不佔名額，新卡照樣補上來', async () => {
+    const now = 1_000_000;
+    await db.words.bulkPut([
+      seed('no-answer', { fsrsCard: card(now - 86_400_000) }),
+      seed('fresh', { createdAt: 2, collectedAt: 2 }),
+    ]);
+    await putCached([{ word: 'fresh', payload: '答案' }]);
+
+    expect((await listReviewItems(1, now)).map((item) => item.word)).toEqual(['fresh']);
+  });
+
+  it('間隔排到 30 天以上才顯示已經馴服', async () => {
+    const now = 1_000_000;
+    await db.words.bulkPut([
+      seed('young', { fsrsCard: card(now, { scheduled_days: 14 }) }),
+      seed('stable', { createdAt: 2, fsrsCard: card(now, { scheduled_days: 30 }) }),
+    ]);
+    for (const word of ['young', 'stable']) await putCached([{ word, payload: '答案' }]);
+
+    expect((await listReviewItems(5, now)).map((item) => [item.word, item.canMaster]))
+      .toEqual([['young', false], ['stable', true]]);
+  });
+
+  it('停在舊固定階梯第 5 階的卡片，改用 FSRS 後仍保留已經馴服', async () => {
+    await db.words.put(seed('legacy', { reviewStep: 5 }));
+    await putCached([{ word: 'legacy', payload: '答案' }]);
+
+    expect((await listReviewItems())[0]).toMatchObject({ word: 'legacy', canMaster: true });
   });
 
   it('片語使用來源語境，單字使用既有 AI 詞典', async () => {
@@ -283,24 +353,42 @@ describe('今晚打老虎', () => {
     ]);
   });
 
-  it('自評後更新排程並留下待同步標記', async () => {
-    await db.words.put({
-      word: 'deploy', status: 'unknown', createdAt: 1, updatedAt: 1,
-      deletedAt: null, reviewStep: 1, pending: 0,
-    });
-    expect(await recordReview('deploy', true, 100)).toBe(true);
+  it('自評後寫入 FSRS 卡片、回傳下次日期並留下待同步標記', async () => {
+    await db.words.put(seed('deploy', { pending: 0 }));
+    const at = new Date(2026, 7, 28, 22, 40).getTime();
+
+    const nextReviewAt = await recordReview('deploy', true, at);
+
+    expect(nextReviewAt).toBeGreaterThan(at);
     expect(await db.words.get('deploy')).toMatchObject({
-      reviewStep: 2,
-      reviewDueAt: 100 + 3 * 86_400_000,
-      updatedAt: 100,
+      fsrsCard: expect.objectContaining({ due: nextReviewAt, reps: 1, last_review: at }),
+      updatedAt: at,
       pending: 1,
     });
   });
 
+  it('不再寫入舊的固定階梯欄位，也不拿它排程', async () => {
+    await db.words.put(seed('deploy', { reviewStep: 3, reviewDueAt: 50, pending: 0 }));
+
+    await recordReview('deploy', true, 100);
+
+    expect(await db.words.get('deploy')).toMatchObject({ reviewStep: 3, reviewDueAt: 50 });
+  });
+
+  it('卡片損壞時拒絕寫入並保留原資料，不偷偷重設', async () => {
+    const broken = { ...card(50), stability: Number.NaN };
+    await db.words.put(seed('deploy', { fsrsCard: broken, pending: 0 }));
+
+    expect(await recordReview('deploy', true, 100)).toBeNull();
+
+    expect(await db.words.get('deploy')).toMatchObject({ updatedAt: 1, pending: 0 });
+    expect(await listReviewLog()).toEqual([]);
+  });
+
   it('已認得或不存在的字不接受複習結果', async () => {
     await markWord('deploy', 'known');
-    expect(await recordReview('deploy', true)).toBe(false);
-    expect(await recordReview('missing', true)).toBe(false);
+    expect(await recordReview('deploy', true)).toBeNull();
+    expect(await recordReview('missing', true)).toBeNull();
   });
 
   it('只有成功的自評會留下打老虎紀錄', async () => {
@@ -316,15 +404,12 @@ describe('今晚打老虎', () => {
   });
 
   it('紀錄寫入失敗時排程一起回滾，不會只前進間隔', async () => {
-    await db.words.put({
-      word: 'deploy', status: 'unknown', createdAt: 1, updatedAt: 1,
-      deletedAt: null, reviewStep: 1, pending: 0,
-    });
+    await db.words.put(seed('deploy', { pending: 0 }));
     // 固定 uuid 讓第二次的 reviewLog.add 撞主鍵失敗。
     vi.spyOn(crypto, 'randomUUID')
       .mockReturnValue('11111111-1111-1111-1111-111111111111');
 
-    expect(await recordReview('deploy', true, 100)).toBe(true);
+    expect(await recordReview('deploy', true, 100)).not.toBeNull();
     const afterFirst = await db.words.get('deploy');
 
     await expect(recordReview('deploy', true, 200)).rejects.toThrow();

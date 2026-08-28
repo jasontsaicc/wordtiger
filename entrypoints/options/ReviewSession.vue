@@ -138,7 +138,7 @@ function wordLabel(item: ReviewItem): string {
           <button class="caught" :disabled="busy" @click="grade(true)">
             {{ item.isPattern ? '能自然造句' : item.isPhrase ? '意思和用法都對' : '抓到了' }}
           </button>
-          <button v-if="item.reviewStep === 5" class="mastered" :disabled="busy" @click="master">
+          <button v-if="item.canMaster" class="mastered" :disabled="busy" @click="master">
             已經馴服
           </button>
         </div>

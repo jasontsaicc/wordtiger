@@ -11,6 +11,8 @@ create table if not exists public.words (
 alter table public.words
   add column if not exists review_step integer not null default 0 check (review_step between 0 and 5),
   add column if not exists review_due_at timestamptz,
+  -- FSRS 卡片整組狀態。欄位名對應 ts-fsrs 的 Card，Date 存成毫秒整數。
+  add column if not exists fsrs_card jsonb,
   -- 收藏那天。null 代表按 X 排除，不是收藏，學習足跡不會算進「新收藏」。
   add column if not exists collected_at timestamptz;
 

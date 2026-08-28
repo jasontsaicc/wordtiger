@@ -26,3 +26,4 @@
 | [0020](0020-append-only-review-log.md) | 打老虎成績存成 append-only 事件表 | accepted | 2026-08-27 |
 | [0021](0021-composite-primary-key-for-synced-tables.md) | 可同步資料表用 (user_id, id) 複合主鍵 | accepted | 2026-08-27 |
 | [0022](0022-surface-form-is-learning-unit-lemma-remains-identity.md) | 實際字形是學習呈現單位，lemma 保留為內部身分 | accepted | 2026-08-28 |
+| [0023](0023-fsrs-replaces-fixed-interval-ladder.md) | 用 ts-fsrs 取代固定間隔階梯，卡片狀態整組存在 words | accepted | 2026-08-28 |

@@ -1,4 +1,5 @@
 import { db, type CacheRow, type ContextRow, type ReviewLogRow, type WordRow } from './db';
+import type { StoredFsrsCard } from './review';
 
 const KEY = 'sync';
 
@@ -44,6 +45,8 @@ type RemoteWord = {
   deleted_at: string | null;
   review_step?: number;
   review_due_at?: string | null;
+  /** 一組不可分割的記憶狀態，沿用整列 last-write-wins，不做欄位級 merge。 */
+  fsrs_card?: StoredFsrsCard | null;
   collected_at?: string | null;
 };
 
@@ -233,6 +236,7 @@ function localWord(row: RemoteWord): WordRow {
     collectedAt: stamp(row.collected_at ?? null),
     updatedAt: Date.parse(row.updated_at),
     deletedAt: stamp(row.deleted_at),
+    fsrsCard: row.fsrs_card ?? undefined,
     reviewStep: row.review_step ?? 0,
     reviewDueAt: stamp(row.review_due_at ?? null) ?? undefined,
     pending: 0,
@@ -307,6 +311,8 @@ function remoteWord(row: WordRow, userId: string) {
     status: row.status,
     created_at: iso(row.createdAt),
     collected_at: iso(row.collectedAt ?? null),
+    // 一律輸出這個 key：push 一次送最多 500 列，bulk insert 要求同批的 key 集合一致。
+    fsrs_card: row.fsrsCard ?? null,
     review_step: row.reviewStep ?? 0,
     review_due_at: iso(row.reviewDueAt ?? null),
     deleted_at: iso(row.deletedAt),

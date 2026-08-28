@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { State } from 'ts-fsrs';
 import 'fake-indexeddb/auto';
 import { db, putCached, type WordRow } from './db';
 import { acknowledgeRow, mergeCollectedAt, signIn, syncNow, resolveRow } from './sync';
@@ -131,6 +132,62 @@ describe('syncNow', () => {
     expect(fetchMock.mock.calls[6]![1]?.body).toContain('"review_step":2');
     expect(fetchMock.mock.calls[6]![1]?.body)
       .toContain('"collected_at":"1970-01-01T00:00:00.035Z"');
+  });
+
+  it('FSRS 卡片整組往返 Supabase，沒有卡片的列明確送出 null', async () => {
+    const fsrsCard = {
+      due: 90_000, stability: 2.5, difficulty: 5.1, elapsed_days: 1, scheduled_days: 3,
+      learning_steps: 0, reps: 2, lapses: 1, state: State.Review, last_review: 50_000,
+    };
+    await db.words.bulkPut([
+      wordRow({ word: 'local', fsrsCard, updatedAt: 30, pending: 1 }),
+      wordRow({ word: 'blank', updatedAt: 30, pending: 1 }),
+    ]);
+    const response = (body: unknown) => ({
+      ok: true, status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response);
+    const savedAt = '1970-01-01T00:00:00.030Z';
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({
+        access_token: 'access', refresh_token: 'refresh', expires_in: 3600,
+        user: { id: 'user-1', email: 'me@example.com' },
+      }))
+      .mockResolvedValueOnce(response('1970-01-01T00:00:01.000Z'))
+      .mockResolvedValueOnce(response([{
+        user_id: 'user-1', word: 'remote', status: 'unknown',
+        created_at: '1970-01-01T00:00:00.010Z',
+        updated_at: '1970-01-01T00:00:00.020Z', deleted_at: null,
+        fsrs_card: fsrsCard,
+      }]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([
+        {
+          user_id: 'user-1', word: 'local', status: 'unknown',
+          created_at: '1970-01-01T00:00:00.001Z', updated_at: savedAt, deleted_at: null,
+          fsrs_card: fsrsCard,
+        },
+        {
+          user_id: 'user-1', word: 'blank', status: 'unknown',
+          created_at: '1970-01-01T00:00:00.001Z', updated_at: savedAt, deleted_at: null,
+          fsrs_card: null,
+        },
+      ]));
+
+    await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
+    expect(await syncNow()).toMatchObject({ pulled: 1, pushed: 2 });
+
+    expect((await db.words.get('remote'))!.fsrsCard).toEqual(fsrsCard);
+    expect((await db.words.get('local'))!.fsrsCard).toEqual(fsrsCard);
+    expect((await db.words.get('blank'))!.fsrsCard).toBeUndefined();
+    // bulk insert 要求同批物件的 key 集合一致，沒有卡片的列也要帶 fsrs_card。
+    expect(JSON.parse(fetchMock.mock.calls[6]![1]?.body as string)).toEqual([
+      expect.objectContaining({ word: 'blank', fsrs_card: null }),
+      expect.objectContaining({ word: 'local', fsrs_card: fsrsCard }),
+    ]);
   });
 
   it('同一帳號會拉回別台裝置的詞典 cache 並推送本機 cache', async () => {

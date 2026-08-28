@@ -488,9 +488,11 @@ describe('今晚打老虎訊息', () => {
     expect(await handleMessage({ type: 'listReviewItems' })).toEqual([
       expect.objectContaining({ word: 'deploy', definition: '部署' }),
     ]);
-    expect(await handleMessage({
+    // 完成畫面要立刻說「下次某日」，所以自評回傳的是下次複習時間而不是 boolean。
+    const nextReviewAt = await handleMessage({
       type: 'reviewWord', word: 'deploy', remembered: true,
-    })).toBe(true);
-    expect((await db.words.get('deploy'))!.reviewStep).toBe(1);
+    });
+    expect(nextReviewAt).toBeGreaterThan(Date.now());
+    expect((await db.words.get('deploy'))!.fsrsCard!.due).toBe(nextReviewAt);
   });
 });
