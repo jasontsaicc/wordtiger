@@ -7,6 +7,7 @@ public/freq.json
 
 # Local configuration and notes
 .env
+.env.local
 .claude/
 .superpowers/
 docs/worklogs/

@@ -41,8 +41,14 @@ describe('renderMarkdown 的安全性', () => {
     const html = renderMarkdown('## 標題\n- **項目** `code`\n段落');
     const tags = [...html.matchAll(/<(\/?\w+)/g)].map((m) => m[1]!.replace('/', ''));
     for (const tag of tags) {
-      expect(['div', 'ul', 'li', 'p', 'strong', 'code']).toContain(tag);
+      expect(['div', 'ul', 'li', 'p', 'span', 'strong', 'code']).toContain(tag);
     }
+  });
+
+  it('教學行裡的 HTML 也只當文字', () => {
+    const html = renderMarkdown('卡點｜<img src=x onerror=alert(1)>');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
   });
 });
 
@@ -69,6 +75,26 @@ describe('renderMarkdown 的排版', () => {
 
   it('段落內的換行保留成 br,文法分析是多行的', () => {
     expect(renderMarkdown('・第一點\n・第二點')).toBe('<p>・第一點<br>・第二點</p>');
+  });
+
+  it('固定教學標籤形成可掃讀的語意行', () => {
+    const html = renderMarkdown([
+      '意思｜只有操作具備冪等性時，才能重試請求。',
+      '卡點｜only if 表示必要條件。',
+    ].join('\n'));
+    expect(html).toContain('class="coach coach-meaning"');
+    expect(html).toContain('<span class="coach-label">意思</span>');
+    expect(html).toContain('class="coach coach-stumble"');
+  });
+
+  it('拆法顯示意義區塊,帶走內容分出英文句型與中文提示', () => {
+    const html = renderMarkdown([
+      '拆法｜A request / can be retried / only if the operation is idempotent',
+      '帶走｜only if + condition｜只有在某條件成立時',
+    ].join('\n'));
+    expect(html).toContain('<span class="coach-separator" aria-hidden="true">›</span>');
+    expect(html).toContain('<span class="coach-pattern">only if + condition</span>');
+    expect(html).toContain('<span class="coach-note">只有在某條件成立時</span>');
   });
 
   it('模型自作主張包的 code fence 直接丟掉', () => {

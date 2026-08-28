@@ -49,6 +49,11 @@ async function master() {
   }
   emit('reviewed', { word: props.item.word, remembered: true });
 }
+
+function wordLabel(item: ReviewItem): string {
+  return item.surface && item.surface.toLowerCase() !== item.word.toLowerCase()
+    ? `${item.surface} → ${item.word}` : item.word;
+}
 </script>
 
 <template>
@@ -94,19 +99,19 @@ async function master() {
             ? '把句型換成你的工作情境，口頭造一句。'
             : '先用自己的話說：這個片語在原句裡是什麼意思？什麼情況會用？' }}
         </p>
-        <h3 class="word">{{ item.word }}</h3>
+        <h3 class="word">{{ wordLabel(item) }}</h3>
         <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
       </template>
       <template v-else>
         <p class="question">
           {{ item.context ? '這隻在這裡是什麼意思？' : '你記得這個字的核心意思嗎？' }}
         </p>
-        <h3 class="word">{{ item.word }}</h3>
+        <h3 class="word">{{ wordLabel(item) }}</h3>
         <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
       </template>
 
       <button class="listen" type="button"
-        @click="speak(item.isPhrase ? item.context?.sentence ?? item.word : item.word)">
+        @click="speak(item.isPhrase ? item.context?.sentence ?? item.word : item.surface ?? item.word)">
         {{ item.isPhrase && item.context ? '🔊 AI 原句' : '🔊 AI 發音' }}
       </button>
       <p class="voice-note">AI 產生語音；若端點不支援，會改用裝置發音。</p>

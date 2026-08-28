@@ -100,12 +100,118 @@ describe('handleMessage', () => {
     expect(got.ok && got.text).toContain('部署');
   });
 
+  it('同步下來沒有查詢條件的列仍要命中快取', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('不該被呼叫');
+    const now = Date.now();
+    await db.lookupCache.put({
+      word: 'deploy', payload: '部署到正式環境',
+      fetchedAt: now, updatedAt: now, deletedAt: null, pending: 0,
+    });
+
+    const got = await handleStreamMessage({
+      type: 'lookup', word: 'deploy', surface: 'deploying',
+      sentence: 'We deploy on Friday.',
+    }, () => {}) as ExplainResult;
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(got).toEqual({ ok: true, text: '部署到正式環境' });
+  });
+
+  it('已軟刪除的相符列不能命中 lookup 快取', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValueOnce('舊回答')
+      .mockResolvedValueOnce('新回答');
+    const msg = { type: 'lookup' as const, word: 'deploy', sentence: 'We deploy on Friday.' };
+
+    await handleStreamMessage(msg, () => {});
+    await db.lookupCache.update('deploy', { deletedAt: Date.now() });
+    const got = await handleStreamMessage(msg, () => {}) as ExplainResult;
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(got).toEqual({ ok: true, text: '新回答' });
+  });
+
+  it('同一原形換句子時重新查詢', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValueOnce('對照比較')
+      .mockResolvedValueOnce('對 branch 發出 call');
+
+    await handleStreamMessage({
+      type: 'lookup', word: 'against', surface: 'against',
+      sentence: 'Compare the value against the baseline.',
+    }, () => {});
+    const got = await handleStreamMessage({
+      type: 'lookup', word: 'against', surface: 'against',
+      sentence: 'Open a pull request against the branch.',
+    }, () => {}) as ExplainResult;
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(got).toEqual({ ok: true, text: '對 branch 發出 call' });
+  });
+
+  it('同一句的實際字形不同時重新查詢', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('內容');
+    const sentence = 'After being slammed, alerts kept slamming the team.';
+
+    await handleStreamMessage({
+      type: 'lookup', word: 'slam', surface: 'slammed', sentence,
+    }, () => {});
+    await handleStreamMessage({
+      type: 'lookup', word: 'slam', surface: 'slamming', sentence,
+    }, () => {});
+
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('未提供 surface 時不借用同一句快取的舊字形', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValueOnce('忙翻')
+      .mockResolvedValueOnce('猛撞');
+    const sentence = 'We got slammed with alerts.';
+    await handleStreamMessage({
+      type: 'lookup', word: 'slam', surface: 'slammed', sentence,
+    }, () => {});
+
+    const got = await handleStreamMessage({
+      type: 'lookup', word: 'slam', sentence,
+    }, () => {}) as ExplainResult;
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(got).toEqual({ ok: true, text: '猛撞' });
+  });
+
+  it.each([
+    ['model', { model: 'm2' }],
+    ['profile', { profile: '我是 SRE' }],
+    ['lookup template', {
+      templates: { ...DEFAULT_TEMPLATES, lookup: '解釋 {{surface}} / {{word}}' },
+    }],
+  ])('%s 改變時重新查詢', async (_label, patch) => {
+    const base = await settings.loadSettings();
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('內容');
+    const msg = {
+      type: 'lookup' as const, word: 'slam', surface: 'slammed',
+      sentence: 'We got slammed with alerts.',
+    };
+
+    await handleStreamMessage(msg, () => {});
+    vi.mocked(settings.loadSettings).mockResolvedValue({ ...base, ...patch });
+    await handleStreamMessage(msg, () => {});
+
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('lookup 把出處句子一起送給 AI 做消歧義', async () => {
     const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('內容');
     await handleStreamMessage(
-      { type: 'lookup', word: 'scale', sentence: 'We scale the deployment.' }, () => {},
+      {
+        type: 'lookup', word: 'slam', surface: 'slammed',
+        sentence: 'We got slammed with alerts.',
+      }, () => {},
     );
-    expect(spy.mock.calls[0]![0]).toEqual({ w: 'scale', s: 'We scale the deployment.' });
+    expect(spy.mock.calls[0]![0]).toEqual({
+      w: 'slam', surface: 'slammed', s: 'We got slammed with alerts.',
+    });
   });
 
   it('options 可用非串流 lookup 建立片語詞典快取', async () => {

@@ -25,6 +25,7 @@ export interface WordRow {
 
 export interface ReviewItem {
   word: string;
+  surface?: string;
   isPhrase: boolean;
   isPattern: boolean;
   reviewStep: number;
@@ -71,8 +72,12 @@ export interface ReviewLogRow {
 export interface CacheRow {
   word: string;
   payload: string;
+  /** 文章中的實際字形；同步下來的列沒有這個欄位，缺少時不擋快取命中。 */
+  surface?: string;
   /** 詞典生成句；僅保存在本機，缺少時退回一般字義題。 */
   sentence?: string;
+  /** model、profile 與 prompt 組合；同步下來的列沒有這個欄位，缺少時不擋快取命中。 */
+  variant?: string;
   /** 缺少時顯示「未知模型」。 */
   model?: string;
   fetchedAt: number;
@@ -259,6 +264,7 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
       && !reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
     items.push({
       word: row.word,
+      surface: definition.surface,
       isPhrase,
       isPattern,
       reviewStep: row.reviewStep ?? 0,
@@ -311,13 +317,11 @@ export function listReviewLog(): Promise<ReviewLogRow[]> {
   return db.reviewLog.orderBy('at').toArray();
 }
 
-export async function getCached(words: string[]): Promise<Map<string, string>> {
-  const rows = await db.lookupCache.where('word').anyOf(words).toArray();
-  return new Map(rows.filter((r) => r.deletedAt == null).map((r) => [r.word, r.payload]));
-}
-
 export async function putCached(
-  entries: Array<{ word: string; payload: string; sentence?: string; model?: string }>,
+  entries: Array<{
+    word: string; payload: string; surface?: string; sentence?: string;
+    variant?: string; model?: string;
+  }>,
 ): Promise<void> {
   const now = Date.now();
   await db.lookupCache.bulkPut(entries.map((e) => ({

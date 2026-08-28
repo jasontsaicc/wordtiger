@@ -24,6 +24,8 @@ interface WordItem {
 interface CachedWord {
   word: string;
   payload: string;
+  surface?: string;
+  sentence?: string;
   model?: string;
   fetchedAt: number;
 }
@@ -79,12 +81,17 @@ async function toggleDictionary(item: WordItem) {
   dictionaryLoading.value[word] = true;
   dictionaryErrors.value[word] = '';
   try {
+    const cached = await browser.runtime.sendMessage({
+      type: 'getCachedWord', word,
+    }) as CachedWord | undefined;
     const result = await browser.runtime.sendMessage({
-      type: 'lookup', word, sentence: item.contexts[0]?.sentence ?? '',
+      type: 'lookup', word, surface: cached?.surface ?? word,
+      sentence: cached?.sentence ?? item.contexts[0]?.sentence ?? '',
     }) as ExplainResult | undefined;
     if (!result?.ok) {
-      dictionaries.value[word] = null;
-      dictionaryErrors.value[word] = result?.error ?? '背景程式沒有回應';
+      // 同步下來的定義已在手上，查詢失敗就沿用，不要退回錯誤畫面。
+      dictionaries.value[word] = cached ?? null;
+      if (!cached) dictionaryErrors.value[word] = result?.error ?? '背景程式沒有回應';
       return;
     }
     dictionaries.value[word] = await browser.runtime.sendMessage({

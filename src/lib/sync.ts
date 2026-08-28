@@ -368,10 +368,15 @@ export function mergeCollectedAt(
   };
 }
 
-/** 保留本機詞典生成句，但不將該欄位同步至遠端。 */
-function preserveLocalSentence(local: CacheRow | undefined, merged: CacheRow): CacheRow {
-  return local?.sentence && local.payload === merged.payload
-    ? { ...merged, sentence: local.sentence }
+/** 保留本機查詞條件，但不將這些欄位同步至遠端。 */
+function preserveLocalLookupMetadata(local: CacheRow | undefined, merged: CacheRow): CacheRow {
+  return local && local.payload === merged.payload
+    ? {
+        ...merged,
+        surface: local.surface,
+        sentence: local.sentence,
+        variant: local.variant,
+      }
     : merged;
 }
 
@@ -444,7 +449,7 @@ async function performSync(): Promise<SyncResult> {
       for (const row of remoteLookupCaches) {
         const remote = localLookupCache(row);
         const local = await db.lookupCache.get(remote.word);
-        await db.lookupCache.put(preserveLocalSentence(local, resolveRow(local, remote)));
+        await db.lookupCache.put(preserveLocalLookupMetadata(local, resolveRow(local, remote)));
       }
       // 成績只新增不修改，同一個 id 兩邊內容一定相同，不需要衝突解析。
       for (const row of remoteReviewLogs) await db.reviewLog.put(localReviewLog(row));
@@ -483,7 +488,7 @@ async function performSync(): Promise<SyncResult> {
       }
       for (const row of savedLookupCaches.map(localLookupCache)) {
         const current = await db.lookupCache.get(row.word);
-        await db.lookupCache.put(preserveLocalSentence(current, acknowledgeRow(
+        await db.lookupCache.put(preserveLocalLookupMetadata(current, acknowledgeRow(
           current, sentLookupCaches.get(row.word), row,
         )));
       }

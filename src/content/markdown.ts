@@ -22,6 +22,34 @@ function inline(escaped: string): string {
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
+const COACH_CLASSES: Record<string, string> = {
+  原文: 'source', 意思: 'meaning', 拆法: 'breakdown',
+  關鍵: 'stumble', 卡點: 'stumble', 白話英文: 'plain',
+  帶走: 'takeaway', 用法: 'usage', 例句: 'example',
+};
+
+function renderCoachLine(line: string): string | null {
+  const match = /^(原文|意思|拆法|關鍵|卡點|白話英文|帶走|用法|例句)｜(.*)$/.exec(line);
+  if (!match) return null;
+
+  const label = match[1]!;
+  const raw = match[2]!;
+  let content = inline(escapeHtml(raw));
+
+  if (label === '拆法') {
+    content = content.replace(/\s+\/\s+/g, ' <span class="coach-separator" aria-hidden="true">›</span> ');
+  } else if (label === '帶走') {
+    const separator = raw.indexOf('｜');
+    if (separator > 0) {
+      const pattern = raw.slice(0, separator).trim();
+      const note = raw.slice(separator + 1).trim();
+      content = `<span class="coach-pattern">${inline(escapeHtml(pattern))}</span><span class="coach-note">${inline(escapeHtml(note))}</span>`;
+    }
+  }
+
+  return `<div class="coach coach-${COACH_CLASSES[label]}"><span class="coach-label">${label}</span><span class="coach-content">${content}</span></div>`;
+}
+
 export function renderMarkdown(src: string): string {
   const out: string[] = [];
   let list: string[] = [];
@@ -48,6 +76,14 @@ export function renderMarkdown(src: string): string {
     if (!line) {
       flushList();
       flushPara();
+      continue;
+    }
+
+    const coach = renderCoachLine(line);
+    if (coach) {
+      flushList();
+      flushPara();
+      out.push(coach);
       continue;
     }
 

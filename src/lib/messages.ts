@@ -1,4 +1,4 @@
-import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, listReviewLog, masterWord, recordReview, getCached, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow, type ReviewLogRow } from './db';
+import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, listReviewLog, masterWord, recordReview, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow, type ReviewLogRow } from './db';
 import { lookupWord, explainSentence, generateSpeech } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
@@ -28,7 +28,7 @@ export type Msg =
   | { type: 'getMarks' }
   | { type: 'getHighlightSettings' }
   | { type: 'toggleMark'; word: string; status?: WordStatus }
-  | { type: 'lookup'; word: string; sentence: string }
+  | { type: 'lookup'; word: string; surface?: string; sentence: string }
   | { type: 'speak'; text: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
@@ -212,19 +212,29 @@ export async function handleStreamMessage(
   signal?: AbortSignal,
 ): Promise<ExplainResult> {
   if (msg.type === 'lookup') {
-    const hit = (await getCached([msg.word])).get(msg.word);
-    if (hit !== undefined) {
-      onDelta(hit);
-      return { ok: true, text: hit };
+    const settings = await loadSettings();
+    const sentence = msg.sentence.trim();
+    const variant = lookupVariant(settings);
+    const row = await db.lookupCache.get(msg.word);
+    const surface = msg.surface?.trim() || msg.word;
+    // ponytail: 同步不搬 surface/sentence/variant，缺欄位視同命中；要精準到句子再改複合主鍵。
+    if (row && row.deletedAt == null
+      && (row.surface === undefined || row.surface === surface)
+      && (row.sentence === undefined || row.sentence === sentence)
+      && (row.variant === undefined || row.variant === variant)) {
+      onDelta(row.payload);
+      return { ok: true, text: row.payload };
     }
 
-    const settings = await loadSettings();
     if (!settings.baseUrl || !settings.apiKey) return { ok: false, error: NOT_CONFIGURED };
     try {
-      const text = await lookupWord({ w: msg.word, s: msg.sentence }, settings, onDelta, signal);
+      const text = await lookupWord({
+        w: msg.word, surface, s: sentence,
+      }, settings, onDelta, signal);
       if (!text) return { ok: false, error: 'AI 回了空的結果' };
       await putCached([{
-        word: msg.word, payload: text, sentence: msg.sentence, model: settings.model,
+        word: msg.word, payload: text, surface, sentence,
+        variant, model: settings.model,
       }]);
       return { ok: true, text };
     } catch (err) {
@@ -248,6 +258,12 @@ export async function handleStreamMessage(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+function lookupVariant(settings: Awaited<ReturnType<typeof loadSettings>>): string {
+  return JSON.stringify([
+    settings.model, settings.profile, SYSTEM_RULES.lookup, settings.templates.lookup,
+  ]);
 }
 
 function explainVariant(

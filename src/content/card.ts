@@ -64,6 +64,16 @@ function ensureRoot(): ShadowRoot {
         margin: 10px 0 3px; font-size: 13px;
       }
       .body .h:first-child { margin-top: 0; }
+      .coach { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: 8px; margin: 0 0 7px; }
+      .coach-label { padding-top: 2px; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+      .coach-content { min-width: 0; }
+      .coach-meaning .coach-content { color: #111827; font-size: 15px; font-weight: 650; line-height: 1.55; }
+      .coach-breakdown, .coach-plain { padding: 8px 10px; border-radius: 9px; background: #f8fafc; }
+      .coach-separator { margin: 0 .3em; color: #94a3b8; }
+      .coach-stumble { padding: 8px 10px; border-left: 3px solid #f59e0b; border-radius: 7px; background: #fff7ed; }
+      .coach-takeaway { padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 9px; background: #f5f3ff; }
+      .coach-pattern { display: block; color: #4338ca; font-weight: 700; }
+      .coach-note { display: block; margin-top: 1px; color: #64748b; font-size: 12px; }
       .hint { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: #64748b; font-size: 11px; }
       .hint span { padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 999px; background: #f8fafc; }
       .marked { color: #e11d48; }
@@ -94,13 +104,19 @@ function ensureRoot(): ShadowRoot {
       @keyframes stripe { to { background-position: -200% 0; } }
       @media (prefers-reduced-motion: reduce) { .card, .brand, .card::before { animation: none !important; } }
       @media (prefers-reduced-transparency: reduce) { .card { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+      @media (prefers-contrast: more) { .coach-breakdown, .coach-plain, .coach-stumble, .coach-takeaway { border: 1px solid currentColor; } }
       @media (prefers-color-scheme: dark) {
         .card { color: #dbe4f0; background: rgba(15,23,42,.96); border-color: rgba(148,163,184,.25); }
-        .title, .body strong { color: #f8fafc; }
+        .title, .body strong, .coach-meaning .coach-content { color: #f8fafc; }
         .body .h, .body code { color: #c7d2fe; }
         .body code, .close, .hint span { background: #1e293b; }
         .close { color: #cbd5e1; }
         .hint span { border-color: #334155; }
+        .coach-breakdown, .coach-plain { background: #1e293b; }
+        .coach-stumble { background: #422006; }
+        .coach-takeaway { border-color: #4c1d95; background: #2e1065; }
+        .coach-pattern { color: #ddd6fe; }
+        .coach-note { color: #cbd5e1; }
       }
     </style>
     <div class="card" role="dialog" aria-live="polite"></div>

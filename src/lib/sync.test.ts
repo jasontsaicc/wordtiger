@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import 'fake-indexeddb/auto';
-import { db, getCached, putCached, type WordRow } from './db';
+import { db, putCached, type WordRow } from './db';
 import { acknowledgeRow, mergeCollectedAt, signIn, syncNow, resolveRow } from './sync';
 
 const wordRow = (over: Partial<WordRow> = {}): WordRow => ({
@@ -135,7 +135,8 @@ describe('syncNow', () => {
 
   it('同一帳號會拉回別台裝置的詞典 cache 並推送本機 cache', async () => {
     await putCached([{
-      word: 'local', payload: '本機詞典', sentence: 'Local sentence.', model: 'm1',
+      word: 'local', payload: '本機詞典', surface: 'locals',
+      sentence: 'Local sentence.', variant: 'local-variant', model: 'm1',
     }]);
     const response = (body: unknown) => ({
       ok: true, status: 200,
@@ -166,12 +167,16 @@ describe('syncNow', () => {
 
     await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
     expect(await syncNow()).toMatchObject({ pulled: 1, pushed: 1 });
-    expect((await getCached(['remote'])).get('remote')).toBe('遠端詞典');
+    expect((await db.lookupCache.get('remote'))!.payload).toBe('遠端詞典');
     expect((await db.lookupCache.get('remote'))!.sentence).toBeUndefined();
     expect((await db.lookupCache.get('local'))!.pending).toBe(0);
+    expect((await db.lookupCache.get('local'))!.surface).toBe('locals');
     expect((await db.lookupCache.get('local'))!.sentence).toBe('Local sentence.');
+    expect((await db.lookupCache.get('local'))!.variant).toBe('local-variant');
     expect(fetchMock.mock.calls[6]![1]?.body).toContain('"payload":"本機詞典"');
+    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"surface"');
     expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"sentence"');
+    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"variant"');
   });
 
   it('遠端還沒回填時，不會用 null 蓋掉本機的 collectedAt', async () => {

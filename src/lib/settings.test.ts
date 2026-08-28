@@ -143,6 +143,19 @@ const PREVIOUS_SURFACE_LOOKUP = [
   '出處句子：{{sentence}}',
 ].join('\n');
 
+const PREVIOUS_TEACHING_GRAMMAR = [
+  '你是專業英文閱讀教練,擅長幫非母語的 DevOps 工程師拆解 AWS、Google Cloud 等公開技術文件。',
+  '使用頁面標題和同段落前一句消除歧義,但只分析目標句。',
+  '優先處理游標所在詞的修飾範圍、指涉、否定、語態或技術義。',
+  '白話英文只用於明顯複雜的句子；帶走句型必須能套用到其他情境。',
+  '',
+  '讀者背景：{{profile}}',
+  '頁面標題：{{title}}',
+  '同段落前一句：{{previous}}',
+  '游標所在詞：{{focus}}',
+  '目標句：{{sentence}}',
+].join('\n');
+
 describe('loadSettings 的 template 合併', () => {
   beforeEach(() => fakeBrowser.reset());
 
@@ -239,6 +252,16 @@ describe('loadSettings 的 template 合併', () => {
       lookup: PREVIOUS_SURFACE_LOOKUP,
     } } });
     expect((await loadSettings()).templates.lookup).toContain('## 字族與構詞');
+  });
+
+  it('新版拆句教學發布前的 grammar 預設自動升級', async () => {
+    await fakeBrowser.storage.local.set({ settings: { templates: {
+      ...DEFAULT_TEMPLATES,
+      grammar: PREVIOUS_TEACHING_GRAMMAR,
+    } } });
+    const grammar = (await loadSettings()).templates.grammar;
+    expect(grammar).not.toBe(PREVIOUS_TEACHING_GRAMMAR);
+    expect(grammar).toContain('真正阻礙理解的結構');
   });
 
   it('含舊預設片段的自訂 translate 和 grammar 不會被覆蓋', async () => {

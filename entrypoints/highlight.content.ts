@@ -95,12 +95,12 @@ export default defineContentScript({
     }, { once: true });
 
     // 按 A 才查詞，避免未使用的整頁批次 API request。
-    const defs = new Map<string, string>();
     let pointerX = 0;
     let pointerY = 0;
     let current: Hover | null = null;
     let currentTakeaway: Takeaway | null = null;
     let currentSpeech = '';
+    let currentDefinition = '';
     // 序號阻止舊 request 覆蓋較新的卡片狀態。
     let explainSeq = 0;
     let activeAi: AbortController | undefined;
@@ -117,6 +117,7 @@ export default defineContentScript({
       current = null;
       currentTakeaway = null;
       currentSpeech = '';
+      currentDefinition = '';
       dismissAi();
     };
     const requestAi = async (msg: StreamMsg, onText: (text: string) => void) => {
@@ -137,6 +138,8 @@ export default defineContentScript({
     const takeawayHint = (phrase: string) =>
       `${marks.get(phrase) === 'unknown' ? 'Space 取消片語收藏' : 'Space 收藏片語'} · F AI 原句 · Esc 關閉`;
     const sentenceHint = 'F AI 原句 · Esc 關閉';
+    const wordTitle = (hover: Hover) => hover.word.toLowerCase() === hover.lemma
+      ? hover.word : `${hover.word} → ${hover.lemma}`;
 
     // mousemove 僅記錄座標，命中測試延後到按鍵事件。
     document.addEventListener('mousemove', (e) => {
@@ -172,13 +175,14 @@ export default defineContentScript({
         current = null;
         currentTakeaway = null;
         currentSpeech = '';
+        currentDefinition = '';
         dismissAi();
         return;
       }
 
       if (e.key === 'f' || e.key === 'F') {
-        // 整句卡念原句；單字卡念 lemma；無卡片時念游標詞。
-        const text = currentSpeech || current?.lemma || hoveredWord()?.word;
+        // 整句卡念原句；單字卡念實際字形；無卡片時念游標詞。
+        const text = currentSpeech || current?.word || hoveredWord()?.word;
         if (!text) return;
         e.preventDefault();
         speak(text);
@@ -203,7 +207,7 @@ export default defineContentScript({
         paintHighlights();
 
         showCard({
-          title: hover.lemma,
+          title: wordTitle(hover),
           body: status === 'known' ? '這隻已經馴服了，不再標示。' : '已恢復由詞頻判定。',
           rect: hover.rect,
           hint: wordHint(hover.lemma),
@@ -220,11 +224,11 @@ export default defineContentScript({
         dismissAi();
         currentTakeaway = null;
         currentSpeech = '';
+        currentDefinition = '';
         current = hover;
 
         const hint = wordHint(hover.lemma);
         const marked = marks.get(hover.lemma) === 'unknown';
-        const cached = defs.get(hover.lemma);
 
         // 已收藏單字再次查詢時累積語境；addContext 負責去重。
         if (marked) void browser.runtime.sendMessage({
@@ -232,35 +236,30 @@ export default defineContentScript({
           url: location.href, title: document.title,
         });
 
-        if (cached !== undefined) {
-          showCard({
-            title: hover.lemma, body: cached, rect: hover.rect,
-            hint, marked, onClose: closeAiCard,
-          });
-          return;
-        }
-
         // 網路查詢期間先提供載入狀態。
         showCard({
-          title: hover.lemma, body: '老虎正在抓這個字…', rect: hover.rect,
+          title: wordTitle(hover), body: '老虎正在抓這個字…', rect: hover.rect,
           hint: '', marked, loading: true, onClose: closeAiCard,
         });
 
         const seq = ++explainSeq;
         const result = await requestAi({
-          type: 'lookup', word: hover.lemma, sentence: hover.sentence,
+          type: 'lookup', word: hover.lemma, surface: hover.word, sentence: hover.sentence,
         }, (body) => {
-          if (seq === explainSeq) showCard({
-            title: hover.lemma, body, rect: hover.rect,
-            hint, marked, loading: true, onClose: closeAiCard,
-          });
+          if (seq === explainSeq) {
+            currentDefinition = body;
+            showCard({
+              title: wordTitle(hover), body, rect: hover.rect,
+              hint, marked, loading: true, onClose: closeAiCard,
+            });
+          }
         });
         if (seq !== explainSeq) return;
 
-        if (result?.ok) defs.set(hover.lemma, result.text);
+        currentDefinition = result?.ok ? result.text : '';
 
         showCard({
-          title: hover.lemma,
+          title: wordTitle(hover),
           body: result?.ok ? result.text : `查詢失敗:${result?.error ?? '背景程式沒有回應'}`,
           rect: hover.rect,
           hint,
@@ -292,6 +291,7 @@ export default defineContentScript({
         current = null;
         currentTakeaway = null;
         currentSpeech = sentence;
+        currentDefinition = '';
 
         // 網路查詢期間先提供載入狀態。
         showCard({
@@ -343,7 +343,8 @@ export default defineContentScript({
           });
           // 收藏後沿用查詞流程建立片語詞典快取。
           void browser.runtime.sendMessage({
-            type: 'lookup', word: takeaway.phrase, sentence: takeaway.sentence,
+            type: 'lookup', word: takeaway.phrase, surface: takeaway.phrase,
+            sentence: takeaway.sentence,
           }).catch((err) => console.error('[wordtiger] 建立片語詞典失敗', err));
         } else {
           marks.delete(takeaway.phrase);
@@ -381,8 +382,8 @@ export default defineContentScript({
         paintHighlights();
 
         showCard({
-          title: hover.lemma,
-          body: defs.get(hover.lemma) ?? '',
+          title: wordTitle(hover),
+          body: currentDefinition,
           rect: hover.rect,
           hint: wordHint(hover.lemma),
           marked: status === 'unknown',

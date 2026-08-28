@@ -1,6 +1,6 @@
 # ADR-0004: 查詞從批次 JSON 改成單字 Markdown
 
-Date: 2026-08-24 | Status: accepted
+Date: 2026-08-24 | Amended: 2026-08-28 | Status: accepted
 
 ## Context
 
@@ -36,8 +36,10 @@ Date: 2026-08-24 | Status: accepted
 **成本**:每個字一次請求、輸出約 500-800 token,但只有真的按 A 才付錢。
 舊的預取是掃完頁面就打 30 個字的請求,絕大多數根本用不到,實際上新做法可能更省。
 
-**快取**:鍵仍然是單字原形,同一個字換一個句子會共用第一次的結果。
-這是刻意的取捨,一個字換句就重查太貴,多數情況語意也一樣。
+**快取**:主鍵仍是單字原形,每個原形只保留最新回答；但命中時必須同時符合
+實際字形、來源句子及 lookup variant（model、profile、system rules、template）。
+舊列或同步下來的列缺少 metadata 時視同命中,不重查。這避免跨語境教錯意思,也讓 prompt 更新自然失效。
+實際字形、來源句子與 variant 只留在本機,不擴大 Supabase 的同步資料。
 
 **新的安全邊界**:`src/content/markdown.ts` 是 AI 內容進入 `innerHTML` 的唯一通道,
 而卡片會被插進任何網頁。它靠一條不變式擋 XSS:**先跳脫整行,再在已跳脫的字串上

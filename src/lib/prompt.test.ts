@@ -107,10 +107,18 @@ describe('SYSTEM_RULES', () => {
   });
 
   it('可遷移句型必須用全英文槽位帶走', () => {
-    expect(SYSTEM_RULES.grammar).toContain('必須加一行「帶走｜');
+    expect(SYSTEM_RULES.grammar).toContain('帶走｜英文片語或句型｜極短中文提示');
     expect(SYSTEM_RULES.grammar).toContain('英文欄不可含中文');
     expect(SYSTEM_RULES.grammar).toContain('用法｜');
     expect(SYSTEM_RULES.grammar).toContain('例句｜');
+  });
+
+  it('拆句保留原句意義區塊,並只教真正影響理解的卡點', () => {
+    expect(SYSTEM_RULES.grammar).toContain('2–4 個英文意義區塊');
+    expect(SYSTEM_RULES.grammar).toContain('不要逐字切');
+    expect(SYSTEM_RULES.grammar).toContain('否定或條件範圍');
+    expect(SYSTEM_RULES.grammar).toContain('不得改變原句意思');
+    expect(SYSTEM_RULES.grammar).toContain('不同情境的自然英文例句');
   });
 
   it('片語詞典要求使用場景與搭配限制', () => {

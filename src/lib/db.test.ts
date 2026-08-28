@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, getCached, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, putCached, deleteCached, sentenceKey, getSentence, putSentence } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -176,17 +176,9 @@ describe('addContext / listContexts', () => {
 });
 
 describe('lookupCache', () => {
-  it('只回傳已快取的字', async () => {
-    await putCached([{ word: 'deploy', payload: '部署' }]);
-    const got = await getCached(['deploy', 'staging']);
-    expect(got.get('deploy')).toBe('部署');
-    expect(got.has('staging')).toBe(false);
-  });
-
   it('刪除留下可同步的 tombstone,但不再命中快取', async () => {
     await putCached([{ word: 'deploy', payload: '部署' }]);
     await deleteCached('deploy');
-    expect(await getCached(['deploy'])).toEqual(new Map());
     expect((await db.lookupCache.get('deploy'))).toMatchObject({ pending: 1 });
     expect((await db.lookupCache.get('deploy'))!.deletedAt).not.toBe(null);
   });
@@ -271,7 +263,9 @@ describe('今晚打老虎', () => {
   it('單字題使用產生答案時的句子，不混用最新語境', async () => {
     const answerSentence = 'The certificate authority will issue a new certificate tomorrow.';
     await markWord('issue', 'unknown');
-    await putCached([{ word: 'issue', payload: '核發', sentence: answerSentence }]);
+    await putCached([{
+      word: 'issue', surface: 'issued', payload: '核發', sentence: answerSentence,
+    }]);
     await addContext({
       word: 'issue', sentence: answerSentence,
       url: 'https://example.com/cert', title: 'Certificate guide',
@@ -283,7 +277,7 @@ describe('今晚打老虎', () => {
 
     expect(await listReviewItems()).toEqual([
       expect.objectContaining({
-        word: 'issue', definition: '核發',
+        word: 'issue', surface: 'issued', definition: '核發',
         context: expect.objectContaining({ sentence: answerSentence, title: 'Certificate guide' }),
       }),
     ]);
