@@ -176,8 +176,10 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     }
 
     case 'listCachedWords':
-      return db.lookupCache.orderBy('fetchedAt').reverse()
-        .filter((row) => row.deletedAt == null).toArray();
+      // variant 是 2.7KB 的 prompt 全文，快取頁用不到，別跟著 runtime message 走。
+      return (await db.lookupCache.orderBy('fetchedAt').reverse()
+        .filter((row) => row.deletedAt == null).toArray())
+        .map(({ variant, ...row }) => row);
 
     case 'deleteCachedWord':
       await deleteCached(msg.word);

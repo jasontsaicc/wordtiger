@@ -312,6 +312,17 @@ describe('單字快取管理', () => {
     await handleMessage({ type: 'deleteCachedWord', word: 'deploy' });
     expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' })).toBeUndefined();
   });
+
+  it('列出時不送出 options 頁用不到的 variant', async () => {
+    vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
+    await handleStreamMessage(
+      { type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' }, () => {},
+    );
+
+    const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
+    expect((await db.lookupCache.get('deploy'))!.variant).toBeTypeOf('string');
+    expect(rows[0]).not.toHaveProperty('variant');
+  });
 });
 
 describe('explain', () => {
