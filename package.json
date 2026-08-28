@@ -1,6 +1,6 @@
 {
   "name": "wordtiger",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "攔詞虎：標出生詞、AI 查詞與拆句的英文閱讀助手",
   "main": "index.js",
   "scripts": {
