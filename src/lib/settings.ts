@@ -1,4 +1,7 @@
-import { DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_TEMPLATES, type Templates } from './prompt';
+import {
+  DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_GRAMMARS, PREVIOUS_DEFAULT_LOOKUPS,
+  PREVIOUS_DEFAULT_TRANSLATES, type Templates,
+} from './prompt';
 
 export interface Settings {
   baseUrl: string;
@@ -109,17 +112,12 @@ export async function loadSettings(): Promise<Settings> {
     templates: {
       ...DEFAULT_TEMPLATES,
       ...(stored.templates ?? {}),
-      // 舊預設非常長；只遷移可辨認的舊預設，不動使用者自行編寫的 prompt。
-      ...(stored.templates?.lookup?.includes('13. 不要輸出總結')
-        ? { lookup: DEFAULT_TEMPLATES.lookup }
-        : {}),
-      ...(stored.templates?.lookup === PREVIOUS_DEFAULT_TEMPLATES.lookup
+      // 只遷移完全相同的舊預設，不動使用者自行編寫的 prompt。
+      ...(PREVIOUS_DEFAULT_LOOKUPS.includes(stored.templates?.lookup ?? '')
         ? { lookup: DEFAULT_TEMPLATES.lookup } : {}),
-      ...(stored.templates?.translate === PREVIOUS_DEFAULT_TEMPLATES.translate
-        || stored.templates?.translate?.includes('目標:翻成自然、專業且一眼能懂')
+      ...(PREVIOUS_DEFAULT_TRANSLATES.includes(stored.templates?.translate ?? '')
         ? { translate: DEFAULT_TEMPLATES.translate } : {}),
-      ...(stored.templates?.grammar === PREVIOUS_DEFAULT_TEMPLATES.grammar
-        || stored.templates?.grammar?.includes('目標:讓讀者看懂句子如何組成')
+      ...(PREVIOUS_DEFAULT_GRAMMARS.includes(stored.templates?.grammar ?? '')
         ? { grammar: DEFAULT_TEMPLATES.grammar } : {}),
     },
   };

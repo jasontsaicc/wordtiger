@@ -17,6 +17,8 @@ export interface AiSettings {
 export interface LookupItem {
   /** 單字原形。 */
   w: string;
+  /** 文章中的實際字形；片語或舊呼叫可省略。 */
+  surface?: string;
   /** 用於消歧義的來源句。 */
   s: string;
 }
@@ -62,6 +64,7 @@ export function buildLookupPrompt(
   return renderTemplate(template, {
     profile: profile.trim(),
     word: item.w,
+    surface: item.surface?.trim() || item.w,
     sentence: item.s.trim(),
   });
 }

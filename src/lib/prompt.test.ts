@@ -59,9 +59,10 @@ describe('DEFAULT_TEMPLATES', () => {
     expect(DEFAULT_TEMPLATES.grammar.length).toBeGreaterThan(0);
   });
 
-  it('查詞 template 必須有 profile、word、sentence 三個 placeholder', () => {
+  it('查詞 template 必須帶實際字形、原形與語境', () => {
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{profile}}');
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{word}}');
+    expect(DEFAULT_TEMPLATES.lookup).toContain('{{surface}}');
     // 來源句提供一詞多義的消歧義依據。
     expect(DEFAULT_TEMPLATES.lookup).toContain('{{sentence}}');
   });

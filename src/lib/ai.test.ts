@@ -43,6 +43,39 @@ describe('buildLookupPrompt', () => {
     expect(prompt).toContain('We deploy on Friday.');
   });
 
+  it('實際字形與原形分開放進 prompt', () => {
+    const prompt = buildLookupPrompt(
+      { w: 'slam', surface: 'slammed', s: 'We got slammed with alerts.' },
+      '',
+      '實際：{{surface}}\n原形：{{word}}\n句子：{{sentence}}',
+    );
+    expect(prompt).toBe('實際：slammed\n原形：slam\n句子：We got slammed with alerts.');
+  });
+
+  it('預設 prompt 以實際字形、固定搭配與美式 KK 教學', () => {
+    const prompt = buildLookupPrompt({
+      w: 'slam', surface: 'slammed', s: 'We got slammed with alerts.',
+    }, '');
+    expect(prompt).toContain('實際字形：slammed');
+    expect(prompt).toContain('原形：slam');
+    expect(prompt).toContain('get/be slammed');
+    expect(prompt).toContain('美式 KK 音標');
+    expect(prompt).toContain('[ ]');
+    expect(prompt).toContain('不可輸出 IPA');
+    expect(prompt).toContain('最多再補 1 個真正容易混淆的義項');
+    expect(prompt).toContain('不能只是重述釋義');
+  });
+
+  it('預設 prompt 只在有幫助時教字族與構詞', () => {
+    const prompt = buildLookupPrompt({
+      w: 'reliability', s: 'The service offers high reliability.',
+    }, '');
+    expect(prompt).toContain('## 字族與構詞');
+    expect(prompt).toContain('基礎字 → 衍生字');
+    expect(prompt).toContain('不要重複 `-s`、`-ed`、`-ing`');
+    expect(prompt).toContain('不確定或只涉及冷門詞源時省略');
+  });
+
   it('輸出契約在鎖定的系統層,不在使用者可編輯的 template', () => {
     // 可編輯 template 不負責渲染契約。
     const prompt = buildLookupPrompt({ w: 'a', s: 'b' }, '');

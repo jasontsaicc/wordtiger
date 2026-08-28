@@ -5,7 +5,7 @@ const props = defineProps<{ modelValue: Templates }>();
 const emit = defineEmits<{ 'update:modelValue': [Templates] }>();
 
 const FIELDS: Array<{ key: keyof Templates; label: string; vars: string }> = [
-  { key: 'lookup', label: '查詞(按 A)', vars: '{{profile}}、{{word}}、{{sentence}}' },
+  { key: 'lookup', label: '查詞(按 A)', vars: '{{profile}}、{{surface}}、{{word}}、{{sentence}}' },
   { key: 'translate', label: '快速看懂(按 S)', vars: '{{profile}}、{{title}}、{{previous}}、{{focus}}、{{sentence}}' },
   { key: 'grammar', label: '拆懂這句(按 D)', vars: '{{profile}}、{{title}}、{{previous}}、{{focus}}、{{sentence}}' },
 ];
