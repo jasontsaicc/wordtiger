@@ -61,6 +61,20 @@ describe('nextReview', () => {
       .toBeNull();
   });
 
+  it('超出 Date 範圍的時間戳不是有效卡片，finite 不等於有效時間', () => {
+    // 1e20 是 finite number，但 new Date(1e20) 是 Invalid Date，算出來整張卡都是 NaN。
+    expect(nextReview({ ...stored, last_review: 1e20 }, true, NIGHT)).toBeNull();
+    expect(nextReview({ ...stored, due: 1e20 }, true, NIGHT)).toBeNull();
+  });
+
+  it('套件自己擋下的記憶狀態不會往外拋，改成可重試的 null', () => {
+    // stability/difficulty 為 0 或負數，以及 last_review 比現在晚，ts-fsrs 會丟
+    // FSRSValidationError。讓它冒出去會讓複習畫面卡在 busy，連錯誤訊息都沒有。
+    expect(nextReview({ ...stored, stability: 0 }, true, NIGHT)).toBeNull();
+    expect(nextReview({ ...stored, difficulty: -1 }, true, NIGHT)).toBeNull();
+    expect(nextReview({ ...stored, last_review: NIGHT + DAY }, true, NIGHT)).toBeNull();
+  });
+
   it('elapsed_days 缺少時仍是有效卡片，6.0 移除該欄不會讓既有卡片全壞掉', () => {
     const { elapsed_days: _drop, ...withoutElapsed } = stored;
     expect(nextReview(withoutElapsed, true, NIGHT)).not.toBeNull();

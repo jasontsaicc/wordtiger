@@ -259,6 +259,21 @@ describe('今晚打老虎', () => {
     expect((await listReviewItems(1, now)).map((item) => item.word)).toEqual(['fresh']);
   });
 
+  it('卡片損壞的字仍會出題，作答時才給可重試錯誤，不會靜靜消失', async () => {
+    const now = 1_000_000;
+    await db.words.bulkPut([
+      seed('due', { collectedAt: 300, fsrsCard: card(now - 86_400_000) }),
+      seed('broken', { collectedAt: 100, fsrsCard: { ...card(now), due: Number.NaN } }),
+      seed('fresh', { collectedAt: 200 }),
+    ]);
+    for (const word of ['due', 'broken', 'fresh']) await putCached([{ word, payload: '答案' }]);
+
+    // 損壞卡片沒有可信的 due，跟新卡一起依收藏日排，順序才穩定。
+    expect((await listReviewItems(5, now)).map((item) => item.word))
+      .toEqual(['due', 'broken', 'fresh']);
+    expect(await recordReview('broken', true, now)).toBeNull();
+  });
+
   it('間隔排到 30 天以上才顯示已經馴服', async () => {
     const now = 1_000_000;
     await db.words.bulkPut([

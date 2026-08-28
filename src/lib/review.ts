@@ -31,16 +31,21 @@ const scheduler = fsrs({
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
+/** JS Date 能表示的毫秒上限。1e20 是 finite 卻是 Invalid Date，整張卡會算成 NaN。 */
+const MAX_TIMESTAMP = 8.64e15;
+const timestamp = (value: unknown): value is number =>
+  finite(value) && Math.abs(value) <= MAX_TIMESTAMP;
+
 /** 從 IndexedDB 或 Supabase 讀出的卡片先驗證，損壞的不能餵給套件。 */
 export function isStoredFsrsCard(value: unknown): value is StoredFsrsCard {
   if (typeof value !== 'object' || value === null) return false;
   const card = value as Record<string, unknown>;
-  return finite(card.due)
+  return timestamp(card.due)
     && finite(card.stability)
     && finite(card.difficulty)
     && finite(card.scheduled_days)
     && (card.elapsed_days == null || finite(card.elapsed_days))
-    && (card.last_review == null || finite(card.last_review))
+    && (card.last_review == null || timestamp(card.last_review))
     && [card.reps, card.lapses, card.learning_steps].every((n) => finite(n) && n >= 0)
     && typeof card.state === 'number' && State[card.state] !== undefined;
 }
@@ -70,6 +75,10 @@ export function storeCard(card: Card): StoredFsrsCard {
 /**
  * 缺少卡片是合法新卡；卡片存在但損壞則回傳 null，由呼叫端停止寫入。
  * 偷偷重設會蓋掉同步或版本問題的證據。
+ *
+ * 型別驗證擋不掉全部：stability 或 difficulty 為 0、負數，或 last_review 比現在晚
+ * （多裝置時鐘不同步就會發生），ts-fsrs 會丟 FSRSValidationError。讓它冒到 UI 只會
+ * 讓畫面卡在 busy，連錯誤訊息都沒有，所以一律收斂成同一個可重試的 null。
  */
 export function nextReview(
   stored: StoredFsrsCard | undefined,
@@ -79,5 +88,9 @@ export function nextReview(
   if (stored !== undefined && !isStoredFsrsCard(stored)) return null;
   const card = stored ? restoreCard(stored) : createEmptyCard(new Date(now));
   const rating = remembered ? Rating.Good : Rating.Again;
-  return storeCard(scheduler.next(card, new Date(now), rating).card);
+  try {
+    return storeCard(scheduler.next(card, new Date(now), rating).card);
+  } catch {
+    return null;
+  }
 }

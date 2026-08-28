@@ -83,7 +83,7 @@ function wordLabel(item: ReviewItem): string {
     <div v-else-if="!item" class="finish" aria-live="polite">
       <img src="/icons/128.png" alt="" />
       <h3>{{ caught === total ? '本輪全數抓到。' : '本輪收工。' }}</h3>
-      <p>本輪戰績：抓到 {{ caught }}／{{ total }} 隻；溜走的明天再來。</p>
+      <p>本輪戰績：抓到 {{ caught }}／{{ total }} 隻；溜走的會再排回來。</p>
       <button class="next-round" @click="emit('nextRound')">再打 5 隻</button>
     </div>
 

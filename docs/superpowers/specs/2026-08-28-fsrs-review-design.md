@@ -71,7 +71,7 @@ interface StoredFsrsCard {
   due: number;
   stability: number;
   difficulty: number;
-  elapsed_days: number;
+  elapsed_days?: number;
   scheduled_days: number;
   learning_steps: number;
   reps: number;
