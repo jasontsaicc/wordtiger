@@ -26,6 +26,12 @@ describe('shouldHighlight', () => {
     expect(shouldHighlight('github', ctx())).toMatchObject({ hit: false, tier: null });
   });
 
+  it('詞頻查詢不能把 Object prototype 當成詞表項目', () => {
+    expect(shouldHighlight('constructors', ctx({ freq: {} }))).toEqual({
+      hit: false, lemma: 'constructors', tier: null,
+    });
+  });
+
   it('標記成 known 的字一律不高亮,即使排名落後', () => {
     const marks = new Map([['perplexing', 'known' as const]]);
     expect(shouldHighlight('perplexing', ctx({ marks })).hit).toBe(false);

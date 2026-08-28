@@ -29,13 +29,17 @@ const IRREGULAR: Record<string, string> = {
   better: 'good', best: 'good', worse: 'bad', worst: 'bad',
 };
 
+// ponytail: 3 倍頻率比是小型規則法的誤判護欄；案例不足前不引入 POS/NLP。
+const MAX_INFLECTION_RANK_RATIO = 3;
+
 function candidates(word: string): string[] {
   const out: string[] = [];
 
   if (word.endsWith('ies') && word.length > 4) {
     out.push(word.slice(0, -3) + 'y');
   }
-  if (word.endsWith('es') && word.length > 3) {
+  // 只有嘶音字尾的複數才是補 e，notes、codes 的 e 屬於字幹本身。
+  if (/(?:s|x|z|ch|sh)es$/.test(word) && word.length > 3) {
     out.push(word.slice(0, -2));
   }
   if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) {
@@ -44,18 +48,24 @@ function candidates(word: string): string[] {
   // 避免將 thing、bring 誤判為 -ing 變化。
   if (word.endsWith('ing') && word.length > 4 && /[aeiou]/.test(word.slice(0, -3))) {
     const stem = word.slice(0, -3);
-    out.push(stem + 'e');      // using -> use、hoping -> hope
-    out.push(stem);            // deploying -> deploy
     if (stem.length > 2 && stem.at(-1) === stem.at(-2)) {
-      out.push(stem.slice(0, -1)); // stopping -> stop
+      out.push(stem);              // calling -> call
+      out.push(stem.slice(0, -1)); // stopping -> stop、programming -> program
+      out.push(stem + 'e');        // programming 需晚於 program 才不會變 programme
+    } else {
+      out.push(stem + 'e');        // using -> use、hoping -> hope
+      out.push(stem);              // deploying -> deploy
     }
   }
   if (word.endsWith('ed') && word.length > 4) {
     const stem = word.slice(0, -2);
-    out.push(stem + 'e');      // used -> use、hoped -> hope
-    out.push(stem);            // deployed -> deploy
     if (stem.length > 2 && stem.at(-1) === stem.at(-2)) {
-      out.push(stem.slice(0, -1)); // stopped -> stop
+      out.push(stem);              // added -> add
+      out.push(stem.slice(0, -1)); // stopped -> stop、slammed -> slam
+      out.push(stem + 'e');
+    } else {
+      out.push(stem + 'e');        // used -> use、hoped -> hope
+      out.push(stem);              // deployed -> deploy
     }
   }
   if (word.endsWith('ied') && word.length > 4) {
@@ -68,18 +78,21 @@ function candidates(word: string): string[] {
 /** 不規則表優先，再以詞典驗證後綴候選；無有效候選時保留原字。 */
 export function lemmatize(
   token: string,
-  isKnownWord: (w: string) => boolean,
+  rankOf: (w: string) => number | undefined,
 ): string {
   const word = token.toLowerCase();
 
   // 短字也可能是不規則變化，必須先於長度檢查。
-  const irregular = IRREGULAR[word];
+  const irregular = Object.hasOwn(IRREGULAR, word) ? IRREGULAR[word] : undefined;
   if (irregular) return irregular;
 
   if (word.length < 3) return word;
 
+  const wordRank = rankOf(word);
   for (const candidate of candidates(word)) {
-    if (candidate.length >= 2 && isKnownWord(candidate)) return candidate;
+    const rank = rankOf(candidate);
+    if (candidate.length >= 2 && rank !== undefined
+      && (wordRank === undefined || rank < wordRank * MAX_INFLECTION_RANK_RATIO)) return candidate;
   }
 
   return word;

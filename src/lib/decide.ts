@@ -22,7 +22,8 @@ export interface Decision {
 
 /** 優先序：使用者標記、專有名詞排除、詞頻門檻。 */
 export function shouldHighlight(token: string, ctx: DecideContext): Decision {
-  const lemma = lemmatize(token, (w) => w in ctx.freq);
+  const rankOf = (word: string) => Object.hasOwn(ctx.freq, word) ? ctx.freq[word] : undefined;
+  const lemma = lemmatize(token, rankOf);
 
   if (lemma.length < 3) return { hit: false, lemma, tier: null };
 
@@ -35,7 +36,7 @@ export function shouldHighlight(token: string, ctx: DecideContext): Decision {
     && token[0] !== token[0]?.toLowerCase();
   if (isCapitalized && !ctx.isSentenceStart) return { hit: false, lemma, tier: null };
 
-  const rank = ctx.freq[lemma];
+  const rank = rankOf(lemma);
   // 詞表外多為網址、品牌或領域術語，不自動視為生詞。
   if (rank === undefined || rank <= ctx.threshold) return { hit: false, lemma, tier: null };
   // 色階相對於使用者門檻分為 1.5 倍與 2.5 倍。
