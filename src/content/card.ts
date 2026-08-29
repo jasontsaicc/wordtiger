@@ -32,52 +32,73 @@ function ensureRoot(): ShadowRoot {
   root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `
     <style>
+      /**
+       * 一張卡只有一個重點色。區塊分兩層：參考資料給安靜的灰線，
+       * 要你帶走的（卡點、帶走、用法、例句）才點亮琥珀。
+       */
       .card {
+        --ink: #0f172a; --body: #334155; --muted: #64748b;
+        --surface: rgba(255,255,255,.96); --border: rgba(148,163,184,.35);
+        --chip: #f1f5f9; --chip-border: #e2e8f0; --chip-hover: #e2e8f0;
+        --rail: #e2e8f0; --sep: #94a3b8;
+        --accent: #f59e0b; --accent-ink: #b45309; --wash: #fffbeb;
+        --danger: #b91c1c;
+
         box-sizing: border-box; width: min(420px, calc(100vw - 24px));
         position: relative; overflow: hidden; padding: 14px 16px 12px; pointer-events: auto;
         font: 14px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif;
-        color: #172033; background: rgba(255,255,255,.96);
-        border: 1px solid rgba(148,163,184,.35); border-radius: 14px;
+        color: var(--body); background: var(--surface);
+        border: 1px solid var(--border); border-radius: 14px;
         box-shadow: 0 18px 50px rgba(15,23,42,.22), 0 2px 8px rgba(15,23,42,.08);
         backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
         animation: enter 120ms ease-out;
       }
-      .card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, #f59e0b 0%, #fb7185 25%, #22d3ee 50%, #f59e0b 75%, #22d3ee 100%); background-size: 200% 100%; opacity: .7; }
+      /* 單色琥珀，但保留 200% 寬度讓 stripe 動畫在載入時還跑得動。 */
+      .card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, #f59e0b 0%, #fcd34d 25%, #f59e0b 50%, #fcd34d 75%, #f59e0b 100%); background-size: 200% 100%; }
       .header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; cursor: grab; touch-action: none; user-select: none; }
       .dragging { transform: scale(1.01); box-shadow: 0 24px 64px rgba(15,23,42,.28), 0 4px 12px rgba(15,23,42,.12); }
       .dragging .header { cursor: grabbing; }
       .brand { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px; opacity: .92; transform-origin: 50% 85%; filter: drop-shadow(0 3px 4px rgba(245,158,11,.18)); will-change: transform, filter; }
-      .title { min-width: 0; flex: 1; color: #111827; font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
-      .close { width: 26px; height: 26px; padding: 0; color: #64748b; background: #f1f5f9; border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
-      .close:hover { color: #111827; background: #e2e8f0; }
+      .title { min-width: 0; flex: 1; color: var(--ink); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
+      .close { width: 26px; height: 26px; padding: 0; color: var(--muted); background: var(--chip); border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
+      .close:hover { color: var(--ink); background: var(--chip-hover); }
       .body { max-height: min(60vh, 520px); overflow-y: auto; scrollbar-width: thin; }
       .body p { margin: 0 0 6px; }
       .body ul { margin: 0 0 6px; padding-left: 18px; }
       .body li { margin: 1px 0; }
-      .body strong { color: #111827; }
+      .body strong { color: var(--ink); }
       .body code {
-        color: #4338ca; background: #eef2ff; border-radius: 4px;
+        color: var(--accent-ink); background: var(--wash); border-radius: 4px;
         padding: 0 3px; font-family: ui-monospace, monospace; font-size: 13px;
       }
+      /* 查詞卡的 ## 標題；延伸細線讓它跟拆句卡的區塊讀起來是同一套。 */
       .body .h {
-        font-weight: 700; color: #4f46e5;
+        display: flex; align-items: center; gap: 7px;
+        font-weight: 700; color: var(--accent-ink);
         margin: 10px 0 3px; font-size: 13px;
       }
+      .body .h::after { content: ''; flex: 1; height: 1px; background: var(--rail); }
       .body .h:first-child { margin-top: 0; }
       .coach { display: grid; grid-template-columns: 3.5em minmax(0, 1fr); gap: 8px; margin: 0 0 7px; }
-      .coach-label { padding-top: 2px; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+      .coach-label { padding-top: 2px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
       .coach-content { min-width: 0; }
-      .coach-meaning .coach-content { color: #111827; font-size: 15px; font-weight: 650; line-height: 1.55; }
-      .coach-breakdown, .coach-plain { padding: 8px 10px; border-radius: 9px; background: #f8fafc; }
-      .coach-separator { margin: 0 .3em; color: #94a3b8; }
-      .coach-stumble { padding: 8px 10px; border-left: 3px solid #f59e0b; border-radius: 7px; background: #fff7ed; }
-      .coach-takeaway { padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 9px; background: #f5f3ff; }
-      .coach-pattern { display: block; color: #4338ca; font-weight: 700; }
-      .coach-note { display: block; margin-top: 1px; color: #64748b; font-size: 12px; }
-      .hint { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: #64748b; font-size: 11px; }
-      .hint span { padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 999px; background: #f8fafc; }
-      .marked { color: #e11d48; }
-      .loading .body { color: #64748b; }
+      .coach-meaning .coach-content { color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.55; }
+      .coach-source, .coach-breakdown, .coach-plain, .coach-usage, .coach-example {
+        padding-left: 10px; border-left: 2px solid var(--rail);
+      }
+      .coach-separator { margin: 0 .3em; color: var(--sep); }
+      .coach-stumble, .coach-takeaway {
+        padding: 7px 10px; border-left: 2px solid var(--accent);
+        border-radius: 0 8px 8px 0; background: var(--wash);
+      }
+      .coach-stumble .coach-label, .coach-takeaway .coach-label,
+      .coach-usage .coach-label, .coach-example .coach-label { color: var(--accent-ink); }
+      .coach-pattern { display: block; color: var(--ink); font-weight: 700; }
+      .coach-note { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
+      .hint { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+      .hint span { padding: 2px 7px; border: 1px solid var(--chip-border); border-radius: 999px; background: var(--chip); }
+      .marked { color: var(--accent-ink); }
+      .loading .body { color: var(--muted); }
       .card:not(.loading):not(.complete):not(.celebrate) .header:hover .brand { animation: hello 520ms cubic-bezier(.2,.8,.2,1); }
       .loading::before { animation: stripe 1.1s linear infinite; }
       .loading .brand { animation: hunt 880ms ease-in-out infinite; }
@@ -85,7 +106,7 @@ function ensureRoot(): ShadowRoot {
       .complete::before, .celebrate::before { animation: stripe 480ms linear 2; }
       .complete .brand, .celebrate .brand { animation: caught 620ms cubic-bezier(.2,.8,.2,1); }
       .dragging .brand { animation: none; transform: scale(.88) rotate(-5deg); filter: drop-shadow(0 6px 8px rgba(245,158,11,.38)); }
-      .error .body { color: #b91c1c; }
+      .error .body { color: var(--danger); }
       @keyframes enter { from { opacity: 0; transform: translateY(-4px) scale(.99); } }
       @keyframes hello { 30% { transform: translateY(-4px) rotate(-7deg) scale(1.1); } 60% { transform: translateY(1px) rotate(5deg) scale(1.04,.92); } }
       @keyframes hunt {
@@ -103,20 +124,22 @@ function ensureRoot(): ShadowRoot {
       @keyframes card-pop { 35% { transform: translateY(-2px) scale(1.012); } 65% { transform: translateY(1px) scale(.997); } }
       @keyframes stripe { to { background-position: -200% 0; } }
       @media (prefers-reduced-motion: reduce) { .card, .brand, .card::before { animation: none !important; } }
-      @media (prefers-reduced-transparency: reduce) { .card { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; } }
-      @media (prefers-contrast: more) { .coach-breakdown, .coach-plain, .coach-stumble, .coach-takeaway { border: 1px solid currentColor; } }
+      @media (prefers-reduced-transparency: reduce) { .card { --surface: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+      @media (prefers-contrast: more) {
+        .coach-source, .coach-breakdown, .coach-plain, .coach-usage, .coach-example,
+        .coach-stumble, .coach-takeaway { border: 1px solid currentColor; }
+      }
+      /* 只換 token，規則本身共用；深色少一套選擇器就少一個漏改的地方。 */
       @media (prefers-color-scheme: dark) {
-        .card { color: #dbe4f0; background: rgba(15,23,42,.96); border-color: rgba(148,163,184,.25); }
-        .title, .body strong, .coach-meaning .coach-content { color: #f8fafc; }
-        .body .h, .body code { color: #c7d2fe; }
-        .body code, .close, .hint span { background: #1e293b; }
-        .close { color: #cbd5e1; }
-        .hint span { border-color: #334155; }
-        .coach-breakdown, .coach-plain { background: #1e293b; }
-        .coach-stumble { background: #422006; }
-        .coach-takeaway { border-color: #4c1d95; background: #2e1065; }
-        .coach-pattern { color: #ddd6fe; }
-        .coach-note { color: #cbd5e1; }
+        .card {
+          --ink: #f8fafc; --body: #cbd5e1; --muted: #94a3b8;
+          --surface: rgba(15,23,42,.96); --border: rgba(148,163,184,.25);
+          --chip: #1e293b; --chip-border: #334155; --chip-hover: #334155;
+          --rail: #334155; --sep: #64748b;
+          --accent: #f59e0b; --accent-ink: #fbbf24; --wash: #211d16;
+          --danger: #fca5a5;
+        }
+        @media (prefers-reduced-transparency: reduce) { .card { --surface: #0f172a; } }
       }
     </style>
     <div class="card" role="dialog" aria-live="polite"></div>
