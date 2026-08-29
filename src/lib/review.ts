@@ -1,4 +1,10 @@
 import { createEmptyCard, fsrs, Rating, State, type Card } from 'ts-fsrs';
+import type { WordStatus } from './decide';
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** 排到 30 天以上就算穩定：複習畫面給「已經馴服」，總表顯示「漸漸穩定」。 */
+export const MASTER_INTERVAL_DAYS = 30;
 
 /**
  * ts-fsrs `Card` 的可儲存形式：欄位同名，`Date` 換成毫秒整數。
@@ -93,4 +99,56 @@ export function nextReview(
   } catch {
     return null;
   }
+}
+
+/**
+ * 可信的到期時間；缺少或損壞時沒有。
+ * 直接讀 `fsrsCard.due` 會讓 due 是 NaN 的卡片永遠落選，等於靜靜消失，
+ * 使用者也就永遠看不到規格要求的可重試錯誤。損壞的卡片一律當作可出題。
+ */
+export function dueAt(card: StoredFsrsCard | undefined): number | undefined {
+  return isStoredFsrsCard(card) ? card.due : undefined;
+}
+
+/** 出題需要可核對的答案材料：一律要 AI 詞典，片語另外要來源語境。 */
+export function canAnswer(word: string, hasDefinition: boolean, hasContext: boolean): boolean {
+  return hasDefinition && (hasContext || !/\s/.test(word));
+}
+
+export type WordProgress =
+  | 'excluded' | 'mastered' | 'needsLookup' | 'fresh' | 'due' | 'stable' | 'scheduled';
+
+/**
+ * 總表的學習狀態。規則會重疊，取第一個成立的，順序是規格的一部分。
+ * 選題與總表共用這裡的判斷，總表的數字才會跟實際題數一致。
+ */
+export function wordProgress(
+  row: {
+    word: string;
+    status: WordStatus;
+    collectedAt?: number | null;
+    fsrsCard?: StoredFsrsCard;
+  },
+  material: { hasDefinition: boolean; hasContext: boolean },
+  now = Date.now(),
+): WordProgress {
+  // 按 X 排除的字從來不是卡片，不能灌進「已馴服」的數字。
+  if (row.status === 'known') return row.collectedAt == null ? 'excluded' : 'mastered';
+  if (!canAnswer(row.word, material.hasDefinition, material.hasContext)) return 'needsLookup';
+  if (row.fsrsCard === undefined) return 'fresh';
+  const due = dueAt(row.fsrsCard);
+  if (due === undefined || due <= now) return 'due';
+  return row.fsrsCard.scheduled_days >= MASTER_INTERVAL_DAYS ? 'stable' : 'scheduled';
+}
+
+/**
+ * 下次複習日的說法。逾期的卡一律說「今天」：低壓介面不算逾期天數，也不喊紅字。
+ */
+export function dayLabel(at: number, now = Date.now()): string {
+  const days = Math.round(
+    (new Date(at).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / DAY,
+  );
+  if (days <= 0) return '今天';
+  if (days === 1) return '明天';
+  return new Date(at).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 }

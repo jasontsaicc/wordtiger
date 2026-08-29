@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { State } from 'ts-fsrs';
-import { nextReview, restoreCard, storeCard, type StoredFsrsCard } from './review';
+import {
+  dayLabel, nextReview, restoreCard, storeCard, wordProgress, type StoredFsrsCard,
+} from './review';
 
 const DAY = 24 * 60 * 60 * 1000;
 /** 2026-08-28 星期五 22:40，用來檢查跨日與午夜取整。 */
@@ -90,5 +92,63 @@ describe('storeCard / restoreCard', () => {
     const { last_review: _drop, ...fresh } = stored;
     expect(restoreCard(fresh).last_review).toBeUndefined();
     expect(storeCard(restoreCard(fresh)).last_review).toBeUndefined();
+  });
+});
+
+describe('wordProgress', () => {
+  const material = { hasDefinition: true, hasContext: true };
+  const base = { word: 'deploy', status: 'unknown' as const, collectedAt: NIGHT - 30 * DAY };
+
+  it('收藏後馴服是已馴服，只按 X 排除是已排除', () => {
+    expect(wordProgress({ ...base, status: 'known' }, material, NIGHT)).toBe('mastered');
+    expect(wordProgress({ ...base, status: 'known', collectedAt: null }, material, NIGHT))
+      .toBe('excluded');
+  });
+
+  it('缺少 AI 詞典的字還不能出題，不算現在可練', () => {
+    expect(wordProgress(base, { hasDefinition: false, hasContext: true }, NIGHT))
+      .toBe('needsLookup');
+  });
+
+  it('片語另外需要來源語境，單字不需要', () => {
+    const bare = { hasDefinition: true, hasContext: false };
+    expect(wordProgress({ ...base, word: 'roll out' }, bare, NIGHT)).toBe('needsLookup');
+    expect(wordProgress(base, bare, NIGHT)).toBe('fresh');
+  });
+
+  it('沒有 FSRS 卡片是尚未打過', () => {
+    expect(wordProgress(base, material, NIGHT)).toBe('fresh');
+  });
+
+  it('到期的卡現在可練，未到期的排程中', () => {
+    expect(wordProgress({ ...base, fsrsCard: stored }, material, NIGHT)).toBe('due');
+    expect(wordProgress(
+      { ...base, fsrsCard: { ...stored, due: midnight(NIGHT) + DAY } }, material, NIGHT,
+    )).toBe('scheduled');
+  });
+
+  it('間隔排到 30 天以上是漸漸穩定', () => {
+    expect(wordProgress(
+      { ...base, fsrsCard: { ...stored, due: midnight(NIGHT) + 30 * DAY, scheduled_days: 30 } },
+      material, NIGHT,
+    )).toBe('stable');
+  });
+
+  it('損壞的卡片跟選題一樣算現在可練，不會靜靜消失在排程中', () => {
+    expect(wordProgress(
+      { ...base, fsrsCard: { ...stored, stability: Number.NaN } }, material, NIGHT,
+    )).toBe('due');
+  });
+});
+
+describe('dayLabel', () => {
+  it('今天、明天，再遠就給日期', () => {
+    expect(dayLabel(midnight(NIGHT), NIGHT)).toBe('今天');
+    expect(dayLabel(midnight(NIGHT) + DAY, NIGHT)).toBe('明天');
+    expect(dayLabel(midnight(NIGHT) + 5 * DAY, NIGHT)).toMatch(/9/);
+  });
+
+  it('早就過期的卡也只說今天，不喊逾期', () => {
+    expect(dayLabel(midnight(NIGHT) - 10 * DAY, NIGHT)).toBe('今天');
   });
 });

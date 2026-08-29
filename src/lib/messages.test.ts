@@ -11,6 +11,7 @@ beforeEach(async () => {
   await db.contexts.clear();
   await db.lookupCache.clear();
   await db.sentenceCache.clear();
+  await db.reviewLog.clear();
   vi.restoreAllMocks();
   vi.spyOn(settings, 'loadSettings').mockResolvedValue({
     baseUrl: 'https://api.example.com/v1',
@@ -494,5 +495,47 @@ describe('今晚打老虎訊息', () => {
     });
     expect(nextReviewAt).toBeGreaterThan(Date.now());
     expect((await db.words.get('deploy'))!.fsrsCard!.due).toBe(nextReviewAt);
+  });
+
+  it('listWords 帶出練過次數、抓到次數與下次複習日', async () => {
+    await markWord('deploy', 'unknown');
+    await db.lookupCache.put({
+      word: 'deploy', payload: '部署', fetchedAt: 1,
+      updatedAt: 1, deletedAt: null, pending: 0,
+    });
+    await handleMessage({ type: 'reviewWord', word: 'deploy', remembered: true });
+    await handleMessage({ type: 'reviewWord', word: 'deploy', remembered: false });
+
+    const [row] = await handleMessage({ type: 'listWords' }) as any[];
+    expect(row.reviewCount).toBe(2);
+    expect(row.caughtCount).toBe(1);
+    expect(row.nextReviewAt).toBe((await db.words.get('deploy'))!.fsrsCard!.due);
+    expect(row.progress).toBe('scheduled');
+  });
+
+  it('沒有 AI 詞典的字在總表不算現在可練，數字跟實際題數一致', async () => {
+    await markWord('deploy', 'unknown');
+    await markWord('rollback', 'unknown');
+    await db.lookupCache.put({
+      word: 'deploy', payload: '部署', fetchedAt: 1,
+      updatedAt: 1, deletedAt: null, pending: 0,
+    });
+
+    const rows = await handleMessage({ type: 'listWords' }) as any[];
+    const progress = new Map(rows.map((r) => [r.word, r.progress]));
+    expect(progress.get('deploy')).toBe('fresh');
+    expect(progress.get('rollback')).toBe('needsLookup');
+    expect(await handleMessage({ type: 'listReviewItems' })).toHaveLength(1);
+  });
+
+  it('總表把收藏後馴服和只按 X 排除分開算', async () => {
+    await markWord('deploy', 'unknown');
+    await markWord('deploy', 'known');
+    await markWord('timestamp', 'known');
+
+    const rows = await handleMessage({ type: 'listWords' }) as any[];
+    const progress = new Map(rows.map((r) => [r.word, r.progress]));
+    expect(progress.get('deploy')).toBe('mastered');
+    expect(progress.get('timestamp')).toBe('excluded');
   });
 });

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
 import type { ExplainResult } from '@/src/lib/messages';
+import { dayLabel, type WordProgress } from '@/src/lib/review';
 
 interface ContextItem {
   id: string;
@@ -15,8 +16,12 @@ interface WordItem {
   word: string;
   status: 'unknown' | 'known';
   createdAt: number;
-  /** 打老虎的累計次數。 */
+  /** 打老虎的累計次數與其中抓到的次數。 */
   reviewCount: number;
+  caughtCount: number;
+  /** 下次複習日；尚未打過或卡片損壞時是 null。 */
+  nextReviewAt: number | null;
+  progress: WordProgress;
   /** 由新到舊。 */
   contexts: ContextItem[];
 }
@@ -30,6 +35,16 @@ interface CachedWord {
   fetchedAt: number;
 }
 
+type Filter = 'all' | 'due' | 'fresh' | 'scheduled' | 'mastered';
+
+const FILTERS: Array<{ key: Filter; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'due', label: '現在可練' },
+  { key: 'fresh', label: '尚未打過' },
+  { key: 'scheduled', label: '排程中' },
+  { key: 'mastered', label: '已馴服' },
+];
+
 const words = ref<WordItem[]>([]);
 const dictionaries = ref<Record<string, CachedWord | null>>({});
 const dictionaryLoading = ref<Record<string, boolean>>({});
@@ -37,8 +52,8 @@ const dictionaryErrors = ref<Record<string, string>>({});
 const selected = ref<string | null>(null);
 const translations = ref<Record<string, string>>({});
 const keyword = ref('');
-const statusFilter = ref<'all' | 'unknown' | 'known'>('unknown');
-const sortBy = ref<'recent' | 'word'>('recent');
+const filter = ref<Filter>('all');
+const sortBy = ref<'recent' | 'word' | 'due'>('recent');
 const isPhrase = (value: string) => /\s/.test(value);
 
 onMounted(reload);
@@ -48,58 +63,91 @@ async function reload() {
   words.value = (await browser.runtime.sendMessage({ type: 'listWords' })) ?? [];
 }
 
+/** 「排程中」含漸漸穩定；「還不能出題」與「已排除」只出現在全部。 */
+function inFilter(item: WordItem, key: Filter): boolean {
+  if (key === 'all') return true;
+  if (key === 'scheduled') return item.progress === 'scheduled' || item.progress === 'stable';
+  return item.progress === key;
+}
+
+const counts = computed(() => Object.fromEntries(
+  FILTERS.map((f) => [f.key, words.value.filter((w) => inFilter(w, f.key)).length]),
+) as Record<Filter, number>);
 const contextTotal = computed(() =>
   words.value.reduce((total, word) => total + word.contexts.length, 0),
 );
 const phraseTotal = computed(() => words.value.filter((word) => isPhrase(word.word)).length);
-const knownTotal = computed(() => words.value.filter((word) => word.status === 'known').length);
-const unknownWordTotal = computed(() => words.value
-  .filter((word) => !isPhrase(word.word) && word.status === 'unknown').length);
 
 const filtered = computed(() => {
   const query = keyword.value.trim().toLowerCase();
   return words.value
-    .filter((w) =>
-      (statusFilter.value === 'all' || w.status === statusFilter.value)
-      && w.word.toLowerCase().includes(query),
-    )
-    .sort((a, b) => sortBy.value === 'word'
-      ? a.word.localeCompare(b.word)
-      : (b.contexts[0]?.createdAt ?? 0) - (a.contexts[0]?.createdAt ?? 0)
-        || a.word.localeCompare(b.word));
+    .filter((w) => inFilter(w, filter.value) && w.word.toLowerCase().includes(query))
+    .sort((a, b) => {
+      if (sortBy.value === 'word') return a.word.localeCompare(b.word);
+      // 沒有下次日期的排最後，它們本來就不在等一個日子。
+      if (sortBy.value === 'due') {
+        return (a.nextReviewAt ?? Infinity) - (b.nextReviewAt ?? Infinity)
+          || a.word.localeCompare(b.word);
+      }
+      return (b.contexts[0]?.createdAt ?? 0) - (a.contexts[0]?.createdAt ?? 0)
+        || a.word.localeCompare(b.word);
+    });
 });
 
-async function toggleDictionary(item: WordItem) {
-  const { word } = item;
-  if (selected.value === word) {
+/** 一行講完學習狀態。順序跟 wordProgress 的規則一致，這裡只負責文案。 */
+function summary(item: WordItem): string {
+  const drills = item.reviewCount
+    ? [`練過 ${item.reviewCount} 次`, `抓到 ${item.caughtCount} 次`]
+    : [];
+  const next = item.nextReviewAt ? `下次${dayLabel(item.nextReviewAt)}` : '排程中';
+  const state: Record<WordProgress, string> = {
+    excluded: '已排除，不列入學習進度',
+    mastered: '已馴服',
+    needsLookup: '還不能出題 · 先查一次詞',
+    fresh: '尚未打過 · 有空時再認識牠',
+    due: '現在可練',
+    stable: `漸漸穩定 · ${next}`,
+    scheduled: next,
+  };
+  return [...drills, state[item.progress]].join(' · ');
+}
+
+async function toggle(item: WordItem) {
+  if (selected.value === item.word) {
     selected.value = null;
     return;
   }
-  selected.value = word;
-  if (dictionaryLoading.value[word] || dictionaries.value[word]) return;
+  selected.value = item.word;
+  // 展開只讀本機快取。查詞要花 AI 額度，交給使用者自己按。
+  if (dictionaries.value[item.word] !== undefined) return;
+  dictionaries.value[item.word] = await browser.runtime.sendMessage({
+    type: 'getCachedWord', word: item.word,
+  }) ?? null;
+}
 
+async function lookup(item: WordItem) {
+  const { word } = item;
   dictionaryLoading.value[word] = true;
   dictionaryErrors.value[word] = '';
   try {
-    const cached = await browser.runtime.sendMessage({
-      type: 'getCachedWord', word,
-    }) as CachedWord | undefined;
     const result = await browser.runtime.sendMessage({
-      type: 'lookup', word, surface: cached?.surface ?? word,
-      sentence: cached?.sentence ?? item.contexts[0]?.sentence ?? '',
+      type: 'lookup', word, surface: word,
+      sentence: item.contexts[0]?.sentence ?? '',
     }) as ExplainResult | undefined;
     if (!result?.ok) {
-      // 同步下來的定義已在手上，查詢失敗就沿用，不要退回錯誤畫面。
-      dictionaries.value[word] = cached ?? null;
-      if (!cached) dictionaryErrors.value[word] = result?.error ?? '背景程式沒有回應';
+      dictionaryErrors.value[word] = result?.error ?? '背景程式沒有回應';
       return;
     }
     dictionaries.value[word] = await browser.runtime.sendMessage({
       type: 'getCachedWord', word,
     }) ?? null;
-    if (!dictionaries.value[word]) dictionaryErrors.value[word] = 'AI 回答沒有寫進快取，請再試一次。';
+    if (!dictionaries.value[word]) {
+      dictionaryErrors.value[word] = 'AI 回答沒有寫進快取，請再試一次。';
+      return;
+    }
+    // 有了詞典就能出題，狀態要從「還不能出題」跟著變。
+    await reload();
   } catch (err) {
-    dictionaries.value[word] = null;
     dictionaryErrors.value[word] = err instanceof Error ? err.message : String(err);
   } finally {
     dictionaryLoading.value[word] = false;
@@ -146,80 +194,84 @@ async function exportJson() {
     <div class="page-title">
       <div>
         <h2>我的攔路虎</h2>
-        <p class="note">
-          {{ unknownWordTotal }} 隻生詞 · {{ phraseTotal }} 組片語 ·
-          {{ knownTotal }} 隻已馴服 · {{ contextTotal }} 條語境
-        </p>
+        <p class="note">{{ phraseTotal }} 組片語 · {{ contextTotal }} 條語境</p>
       </div>
       <button @click="exportJson">匯出 JSON</button>
+    </div>
+
+    <div class="filters">
+      <button v-for="f in FILTERS" :key="f.key" :class="{ active: filter === f.key }"
+        :aria-pressed="filter === f.key" @click="filter = f.key">
+        {{ f.label }} <span class="tally">{{ counts[f.key] }}</span>
+      </button>
     </div>
 
     <div class="toolbar">
       <div class="sort">
         <button :class="{ active: sortBy === 'recent' }" @click="sortBy = 'recent'">最近加入</button>
+        <button :class="{ active: sortBy === 'due' }" @click="sortBy = 'due'">下次複習</button>
         <button :class="{ active: sortBy === 'word' }" @click="sortBy = 'word'">字母排序</button>
       </div>
       <input v-model="keyword" placeholder="搜尋單字或片語" />
-      <select v-model="statusFilter">
-        <option value="unknown">生詞</option>
-        <option value="known">已馴服</option>
-        <option value="all">全部</option>
-      </select>
     </div>
 
-    <p v-if="filtered.length === 0" class="empty">沒有符合的收藏。</p>
+    <p v-if="filtered.length === 0" class="empty">這個分類還沒有字。</p>
 
     <div v-else class="word-list">
       <article v-for="w in filtered" :key="w.word" class="word-card">
         <header class="word-header">
-          <div>
+          <button class="row" :aria-expanded="selected === w.word" @click="toggle(w)">
             <h3>{{ w.word }}</h3>
-            <span class="status" :class="w.status">
-              {{ isPhrase(w.word) ? '片語' : (w.status === 'unknown' ? '生詞' : '已馴服') }}
-            </span>
-            <span class="count">{{ w.contexts.length }} 條語境</span>
-            <span v-if="w.reviewCount" class="count">練過 {{ w.reviewCount }} 次</span>
-          </div>
+            <span class="summary">{{ summary(w) }}</span>
+          </button>
           <div class="actions">
-            <button @click="toggleDictionary(w)">
-              {{ dictionaryLoading[w.word] ? '建立詞典中…' : selected === w.word ? '收起詞典' : 'AI 詞典' }}
-            </button>
-            <button v-if="!isPhrase(w.word)" @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
+            <button v-if="!isPhrase(w.word)"
+              @click="setStatus(w.word, w.status === 'unknown' ? 'known' : 'unknown')">
               {{ w.status === 'unknown' ? '標成已馴服' : '改回生詞' }}
             </button>
             <button class="danger" @click="remove(w.word)">刪除</button>
           </div>
         </header>
 
-        <div v-if="selected === w.word" class="dictionary">
-          <p v-if="dictionaryLoading[w.word]" class="note">英文老師正在整理這個{{ isPhrase(w.word) ? '片語' : '單字' }}…</p>
-          <template v-else-if="dictionaries[w.word]">
-            <small>
-              AI 詞典 · {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
-              {{ new Date(dictionaries[w.word]!.fetchedAt).toLocaleString() }}
-            </small>
-            <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
-          </template>
-          <p v-else class="note">AI 詞典建立失敗：{{ dictionaryErrors[w.word] || '請再試一次。' }}</p>
-        </div>
+        <template v-if="selected === w.word">
+          <div class="dictionary">
+            <p v-if="dictionaryLoading[w.word]" class="note">
+              英文老師正在整理這個{{ isPhrase(w.word) ? '片語' : '單字' }}…
+            </p>
+            <template v-else-if="dictionaries[w.word]">
+              <small>
+                AI 詞典 · {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
+                {{ new Date(dictionaries[w.word]!.fetchedAt).toLocaleString() }}
+              </small>
+              <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
+            </template>
+            <template v-else>
+              <p class="note">
+                還沒有 AI 詞典，這個{{ isPhrase(w.word) ? '片語' : '單字' }}不會出現在今晚打老虎。
+              </p>
+              <button @click="lookup(w)">查一次詞</button>
+              <p v-if="dictionaryErrors[w.word]" class="warn">{{ dictionaryErrors[w.word] }}</p>
+            </template>
+          </div>
 
-        <p v-if="w.contexts.length === 0" class="no-context">尚未保存語境。</p>
-        <ol v-else class="contexts">
-          <li v-for="(c, i) in w.contexts" :key="c.id">
-            <span class="index">{{ i + 1 }}</span>
-            <div class="context-body">
-              <p class="sentence">{{ c.sentence }}</p>
-              <p v-if="translations[c.id]" class="translation">{{ translations[c.id] }}</p>
-              <footer>
-                <time :datetime="new Date(c.createdAt).toISOString()">
-                  {{ new Date(c.createdAt).toLocaleString() }}
-                </time>
-                <a :href="c.url" target="_blank" rel="noreferrer">{{ c.title || c.url }}</a>
-                <button v-if="!translations[c.id]" @click="translateContext(c)">翻譯</button>
-              </footer>
-            </div>
-          </li>
-        </ol>
+          <p v-if="w.contexts.length === 0" class="no-context">尚未保存語境。</p>
+          <ol v-else class="contexts">
+            <li v-for="(c, i) in w.contexts" :key="c.id">
+              <span class="index">{{ i + 1 }}</span>
+              <div class="context-body">
+                <p class="sentence">{{ c.sentence }}</p>
+                <p v-if="translations[c.id]" class="translation">{{ translations[c.id] }}</p>
+                <footer>
+                  <time :datetime="new Date(c.createdAt).toISOString()">
+                    {{ new Date(c.createdAt).toLocaleString() }}
+                  </time>
+                  <a :href="c.url" target="_blank" rel="noreferrer">{{ c.title || c.url }}</a>
+                  <button v-if="!translations[c.id]" @click="translateContext(c)">翻譯</button>
+                </footer>
+              </div>
+            </li>
+          </ol>
+        </template>
       </article>
     </div>
   </section>
@@ -231,7 +283,6 @@ async function exportJson() {
 .page-title h2, .page-title p, h3 { margin: 0; }
 .toolbar { gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .toolbar input { flex: 1; min-width: 180px; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; }
-.toolbar select { width: auto; padding: .55rem; border: 1px solid #cbd5e1; border-radius: 8px; }
 .sort { display: flex; }
 .sort button { border-radius: 0; }
 .sort button:first-child { border-radius: 5px 0 0 5px; }
@@ -240,11 +291,15 @@ async function exportJson() {
 .word-list { display: grid; gap: .75rem; }
 .word-card { padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .word-header { align-items: flex-start; gap: 1rem; }
-.word-header h3 { display: inline; margin-right: .6rem; font-size: 24px; }
-.status { padding: .12rem .45rem; border-radius: 999px; font-size: 12px; }
-.status.unknown { color: #5d4db6; background: #eeeaff; }
-.status.known { color: #317045; background: #e5f5e9; }
-.count { margin-left: .5rem; color: #777; font-size: 13px; }
+.filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
+.filters button { color: #475569; }
+.filters .active { color: white; background: #6557c5; border-color: #6557c5; }
+.tally { margin-left: .3rem; color: #94a3b8; font-size: 12px; }
+.filters .active .tally { color: #ded9ff; }
+.row { flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; }
+.row h3 { font-size: 22px; }
+.summary { display: block; margin-top: .2rem; color: #64748b; font-size: 13px; }
+.warn { color: #b4451f; font-size: 13px; }
 .actions { gap: .4rem; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .danger { color: #b4451f; }
 .dictionary { margin: 1rem 0; border: 1px solid #dbe4f0; border-radius: 10px; padding: 1rem; background: white; }

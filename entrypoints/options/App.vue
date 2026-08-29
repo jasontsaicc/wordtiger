@@ -10,6 +10,7 @@ import CachedAnswers from './CachedAnswers.vue';
 import SyncPanel from './SyncPanel.vue';
 import ReviewSession from './ReviewSession.vue';
 import LearningDashboard from './LearningDashboard.vue';
+import { localDay, type ReviewEvent } from '@/src/lib/activity';
 import type { ReviewItem } from '@/src/lib/db';
 
 const settings = ref<Settings | null>(null);
@@ -23,6 +24,8 @@ const reviewItems = ref<ReviewItem[]>([]);
 const reviewTotal = ref(0);
 const reviewDone = ref(0);
 const reviewCaught = ref(0);
+/** 今天累計練了幾隻，跨輪次也累加。低壓介面靠這個顯示「還在前進」。 */
+const reviewToday = ref(0);
 const highlightTiers = [
   { key: 'saved', label: '我收藏的生詞' },
   { key: 'learning', label: '我的程度之外' },
@@ -35,7 +38,7 @@ onMounted(async () => {
   // 顯示載入錯誤，避免 settings 為 null 時呈現空白頁。
   try {
     settings.value = await loadSettings();
-    await loadReviewItems();
+    await Promise.all([loadReviewItems(), loadTodayCount()]);
   } catch (err) {
     loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     console.error('[wordtiger] options 載入失敗', err);
@@ -49,6 +52,12 @@ async function loadReviewItems() {
   reviewCaught.value = 0;
 }
 
+async function loadTodayCount() {
+  const log = (await browser.runtime.sendMessage({ type: 'listReviewLog' })) ?? [];
+  const today = localDay(Date.now());
+  reviewToday.value = (log as ReviewEvent[]).filter((e) => localDay(e.at) === today).length;
+}
+
 function selectTab(next: Tab) {
   tab.value = next;
   history.replaceState(null, '', next === 'review' || next === 'activity'
@@ -59,7 +68,13 @@ function selectTab(next: Tab) {
 function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
   reviewItems.value = reviewItems.value.filter((item) => item.word !== word);
   reviewDone.value++;
+  reviewToday.value++;
   if (remembered) reviewCaught.value++;
+}
+
+/** 「今天先到這裡」：本輪剩下的題目不出，成績與排程都已經寫好了。 */
+function stopRound() {
+  reviewItems.value = [];
 }
 
 async function persist() {
@@ -109,7 +124,8 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
     <ReviewSession v-if="tab === 'review'"
       :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
       :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
-      :caught="reviewCaught" @reviewed="reviewed" @next-round="loadReviewItems" />
+      :caught="reviewCaught" :today-done="reviewToday"
+      @reviewed="reviewed" @stop="stopRound" @next-round="loadReviewItems" />
 
     <LearningDashboard v-else-if="tab === 'activity'" />
 

@@ -4,6 +4,7 @@ import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
 import { SYSTEM_RULES } from './prompt';
 import type { WordStatus } from './decide';
+import { dueAt, wordProgress } from './review';
 
 export interface ExportBundle {
   exportedAt: number;
@@ -121,19 +122,37 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return handleStreamMessage(msg, () => {});
 
     case 'listWords': {
-      const [words, log] = await Promise.all([
+      // ponytail: 詞典只取字，全表掃描；快取列數大到有感時再改成逐字查。
+      const [words, log, cached] = await Promise.all([
         db.words.filter((row) => row.deletedAt === null).toArray(),
         listReviewLog(),
+        db.lookupCache.filter((row) => row.deletedAt == null).toArray(),
       ]);
-      const drills = new Map<string, number>();
-      for (const row of log) drills.set(row.word, (drills.get(row.word) ?? 0) + 1);
+      const defined = new Set(cached.map((row) => row.word));
+      const drills = new Map<string, { total: number; caught: number }>();
+      for (const row of log) {
+        const score = drills.get(row.word) ?? { total: 0, caught: 0 };
+        score.total += 1;
+        if (row.remembered) score.caught += 1;
+        drills.set(row.word, score);
+      }
+      const now = Date.now();
       return Promise.all(
-        words.map(async ({ word, status, createdAt, collectedAt }) => {
-          const contexts = await listContexts(word);
+        words.map(async (row) => {
+          const contexts = await listContexts(row.word);
+          const score = drills.get(row.word) ?? { total: 0, caught: 0 };
           return {
-            word, status, createdAt,
-            collectedAt: collectedAt ?? null,
-            reviewCount: drills.get(word) ?? 0,
+            word: row.word,
+            status: row.status,
+            createdAt: row.createdAt,
+            collectedAt: row.collectedAt ?? null,
+            reviewCount: score.total,
+            caughtCount: score.caught,
+            nextReviewAt: dueAt(row.fsrsCard) ?? null,
+            progress: wordProgress(row, {
+              hasDefinition: defined.has(row.word),
+              hasContext: contexts.length > 0,
+            }, now),
             contexts: contexts.reverse(),
           };
         }),

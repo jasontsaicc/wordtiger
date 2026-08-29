@@ -1,9 +1,9 @@
 import Dexie, { type Table } from 'dexie';
 import type { WordStatus } from './decide';
-import { isStoredFsrsCard, nextReview, type StoredFsrsCard } from './review';
+import {
+  canAnswer, dueAt, MASTER_INTERVAL_DAYS, nextReview, type StoredFsrsCard,
+} from './review';
 
-/** 排到 30 天以上就算穩定，複習畫面才給「已經馴服」。 */
-const MASTER_INTERVAL_DAYS = 30;
 /** 舊固定階梯的最後一階；沒有 FSRS 間隔的既有卡片靠它保留按鈕。 */
 const LEGACY_MASTER_STEP = 5;
 
@@ -227,18 +227,9 @@ export async function listContexts(word: string): Promise<ContextRow[]> {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/**
- * 可信的到期時間；卡片損壞時沒有。
- * 直接比較 `fsrsCard.due` 會讓 due 是 NaN 的卡片永遠落選，等於靜靜消失，
- * 使用者也就永遠看不到規格要求的可重試錯誤。損壞的卡片一律當作可出題。
- */
-function dueAt(row: WordRow): number | undefined {
-  return isStoredFsrsCard(row.fsrsCard) ? row.fsrsCard.due : undefined;
-}
-
 /** 已到期的卡在前，依 due 由早到晚；其後是新卡與損壞卡片，依收藏日由早到晚。 */
 function byReviewOrder(a: WordRow, b: WordRow): number {
-  const [x, y] = [dueAt(a), dueAt(b)];
+  const [x, y] = [dueAt(a.fsrsCard), dueAt(b.fsrsCard)];
   if (x !== undefined && y !== undefined) return x - y || a.createdAt - b.createdAt;
   if (x !== undefined || y !== undefined) return x !== undefined ? -1 : 1;
   return (a.collectedAt ?? a.createdAt) - (b.collectedAt ?? b.createdAt);
@@ -247,7 +238,7 @@ function byReviewOrder(a: WordRow, b: WordRow): number {
 export async function listReviewItems(limit = 5, now = Date.now()): Promise<ReviewItem[]> {
   const candidates = (await db.words
     .filter((row) => {
-      const due = dueAt(row);
+      const due = dueAt(row.fsrsCard);
       return row.deletedAt === null
         && row.status === 'unknown'
         && (due === undefined || due <= now);
@@ -273,7 +264,8 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
   for (const row of candidates) {
     const isPhrase = /\s/.test(row.word);
     const definition = definitions.get(row.word);
-    if (!definition || (isPhrase && !latest.has(row.word))) continue;
+    // canAnswer 已保證有詞典，但 TS 追不進函式，之後的 definition 用 ! 取用。
+    if (!canAnswer(row.word, Boolean(definition), latest.has(row.word))) continue;
 
     let context = isPhrase ? latest.get(row.word) : undefined;
     if (!isPhrase && definition?.sentence) {
@@ -290,12 +282,12 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
       && !reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
     items.push({
       word: row.word,
-      surface: definition.surface,
+      surface: definition!.surface,
       isPhrase,
       isPattern,
       canMaster: (row.fsrsCard?.scheduled_days ?? 0) >= MASTER_INTERVAL_DAYS
         || (row.reviewStep ?? 0) >= LEGACY_MASTER_STEP,
-      definition: definition.payload,
+      definition: definition!.payload,
       context: reviewContext,
     });
     if (items.length === limit) break;
