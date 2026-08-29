@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { State } from 'ts-fsrs';
 import {
-  dayLabel, nextReview, restoreCard, storeCard, wordProgress, type StoredFsrsCard,
+  nextReview, restoreCard, storeCard, wordProgress, type StoredFsrsCard,
 } from './review';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -141,14 +141,3 @@ describe('wordProgress', () => {
   });
 });
 
-describe('dayLabel', () => {
-  it('今天、明天，再遠就給日期', () => {
-    expect(dayLabel(midnight(NIGHT), NIGHT)).toBe('今天');
-    expect(dayLabel(midnight(NIGHT) + DAY, NIGHT)).toBe('明天');
-    expect(dayLabel(midnight(NIGHT) + 5 * DAY, NIGHT)).toMatch(/9/);
-  });
-
-  it('早就過期的卡也只說今天，不喊逾期', () => {
-    expect(dayLabel(midnight(NIGHT) - 10 * DAY, NIGHT)).toBe('今天');
-  });
-});

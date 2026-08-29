@@ -89,6 +89,11 @@ async function toggleAuto(event: Event) {
   await saveSettings({ autoOrigins: settings.value.autoOrigins });
 }
 
+async function saveThreshold() {
+  if (settings.value) await saveSettings({ threshold: settings.value.threshold });
+  status.value = '門檻已儲存，下次開啟標示時套用。';
+}
+
 async function saveColors() {
   if (settings.value) await saveSettings({
     highlightColors: settings.value.highlightColors,
@@ -147,7 +152,11 @@ async function openReview() {
 
     <section>
       <h2>高亮樣式</h2>
-      <p class="note">1–{{ settings.threshold.toLocaleString() }} 名不標示</p>
+      <!-- min 對齊 step，否則預設的 10,000 會落在格線外，一拉就跳掉。 -->
+      <input class="threshold" type="range" min="2000" max="30000" step="2000"
+        v-model.number="settings.threshold" aria-label="高亮詞頻排名門檻"
+        @change="saveThreshold" />
+      <p class="note">1–{{ settings.threshold.toLocaleString() }} 名不標示；往右拉，亮的字變少。</p>
       <div class="color-head"><span>等級</span><span>背景</span><span>字體</span><span>底線</span></div>
       <div v-for="tier in highlightTiers" :key="tier.key" class="color-row">
         <span>{{ tier.label }}</span>
@@ -193,6 +202,7 @@ section { border-top: 1px solid #e5e7eb; padding-top: 9px; margin-top: 9px; }
 h2 { margin: 0 0 7px; font-size: 13px; }
 section label { display: flex; align-items: center; gap: 7px; margin: 6px 0; }
 input[type="color"] { width: 30px; height: 24px; padding: 0; border: 0; background: none; }
+.threshold { display: block; width: 100%; margin: 0 0 2px; accent-color: #f59e0b; }
 .color-head, .color-row { display: grid; grid-template-columns: 1fr repeat(3, 42px); align-items: center; gap: 6px; }
 .color-head { margin-bottom: 4px; color: #64748b; font-size: 11px; text-align: center; }
 .color-head span:first-child { text-align: left; }

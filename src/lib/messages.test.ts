@@ -299,14 +299,13 @@ describe('詞庫列表', () => {
 });
 
 describe('單字快取管理', () => {
-  it('保留使用模型並可列出與清除', async () => {
+  it('保留使用模型並可清除', async () => {
     vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
     await handleStreamMessage(
       { type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' }, () => {},
     );
 
-    const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
-    expect(rows[0]).toMatchObject({
+    expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' })).toMatchObject({
       word: 'deploy', model: 'm', sentence: 'We deploy on Friday.',
     });
 
@@ -314,15 +313,24 @@ describe('單字快取管理', () => {
     expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' })).toBeUndefined();
   });
 
-  it('列出時不送出 options 頁用不到的 variant', async () => {
-    vi.spyOn(ai, 'lookupWord').mockResolvedValue('## 詞性與釋義\n- 部署');
-    await handleStreamMessage(
+  // 我的攔路虎的「重查」就是這條路徑：先打 tombstone，再讓 lookup 重問並整列覆蓋回來。
+  it('清除後重查會重新呼叫 AI，並把墓碑列救回來', async () => {
+    const lookupWord = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValueOnce('## 詞性與釋義\n- 部署')
+      .mockResolvedValueOnce('## 詞性與釋義\n- 上線');
+    const ask = () => handleStreamMessage(
       { type: 'lookup', word: 'deploy', sentence: 'We deploy on Friday.' }, () => {},
     );
 
-    const rows = await handleMessage({ type: 'listCachedWords' }) as any[];
-    expect((await db.lookupCache.get('deploy'))!.variant).toBeTypeOf('string');
-    expect(rows[0]).not.toHaveProperty('variant');
+    await ask();
+    await ask();
+    expect(lookupWord).toHaveBeenCalledTimes(1); // 第二次命中快取
+
+    await handleMessage({ type: 'deleteCachedWord', word: 'deploy' });
+    expect(await ask()).toMatchObject({ ok: true, text: '## 詞性與釋義\n- 上線' });
+    expect(lookupWord).toHaveBeenCalledTimes(2);
+    expect(await handleMessage({ type: 'getCachedWord', word: 'deploy' }))
+      .toMatchObject({ word: 'deploy', deletedAt: null });
   });
 });
 
@@ -509,7 +517,6 @@ describe('今晚打老虎訊息', () => {
     const [row] = await handleMessage({ type: 'listWords' }) as any[];
     expect(row.reviewCount).toBe(2);
     expect(row.caughtCount).toBe(1);
-    expect(row.nextReviewAt).toBe((await db.words.get('deploy'))!.fsrsCard!.due);
     expect(row.progress).toBe('scheduled');
   });
 

@@ -6,7 +6,6 @@ import {
 } from '@/src/lib/settings';
 import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
-import CachedAnswers from './CachedAnswers.vue';
 import SyncPanel from './SyncPanel.vue';
 import ReviewSession from './ReviewSession.vue';
 import LearningDashboard from './LearningDashboard.vue';
@@ -16,7 +15,7 @@ import type { ReviewItem } from '@/src/lib/db';
 const settings = ref<Settings | null>(null);
 const loadError = ref('');
 const version = browser.runtime.getManifest().version;
-type Tab = 'review' | 'activity' | 'contexts' | 'cache' | 'settings';
+type Tab = 'review' | 'activity' | 'contexts' | 'settings';
 const tab = ref<Tab>(location.hash === '#review' || location.hash === '#activity'
   ? location.hash.slice(1) as Tab
   : 'settings');
@@ -72,11 +71,6 @@ function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
   if (remembered) reviewCaught.value++;
 }
 
-/** 「今天先到這裡」：本輪剩下的題目不出，成績與排程都已經寫好了。 */
-function stopRound() {
-  reviewItems.value = [];
-}
-
 async function persist() {
   if (settings.value) await saveSettings(settings.value);
 }
@@ -115,9 +109,8 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       <button :class="{ active: tab === 'review' }" @click="selectTab('review')">
         今晚打老虎 <span v-if="reviewItems.length" class="nav-count">{{ reviewItems.length }}</span>
       </button>
-      <button :class="{ active: tab === 'activity' }" @click="selectTab('activity')">學習足跡</button>
+      <button :class="{ active: tab === 'activity' }" @click="selectTab('activity')">老虎足跡</button>
       <button :class="{ active: tab === 'contexts' }" @click="selectTab('contexts')">我的攔路虎</button>
-      <button :class="{ active: tab === 'cache' }" @click="selectTab('cache')">AI 回答庫</button>
       <button :class="{ active: tab === 'settings' }" @click="selectTab('settings')">設定</button>
     </nav>
 
@@ -125,7 +118,7 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
       :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
       :caught="reviewCaught" :today-done="reviewToday"
-      @reviewed="reviewed" @stop="stopRound" @next-round="loadReviewItems" />
+      @reviewed="reviewed" @next-round="loadReviewItems" />
 
     <LearningDashboard v-else-if="tab === 'activity'" />
 
@@ -153,7 +146,7 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       <p class="note">
         任何 OpenAI 相容端點都可以，網址填到 <code>/v1</code> 為止。
         Model 欄位可直接輸入該服務的模型名稱。
-        已快取的回答不會自動重查；測試新服務時可到「AI 回答庫」清除。
+        換模型或改 prompt 會自動重查，不必手動清快取。
       </p>
       <p class="note">
         OpenAI 常用選項：
@@ -176,7 +169,8 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
     <section>
       <h2>閱讀標示</h2>
       <p class="note">決定哪些字會跳出來攔你。</p>
-      <input type="range" min="1000" max="30000" step="2000"
+      <!-- min 對齊 step，否則預設的 10,000 會落在格線外，一拉就跳掉。 -->
+      <input type="range" min="2000" max="30000" step="2000"
         v-model.number="settings.threshold" @change="persist" />
       <p>高亮詞頻排名 <b>{{ settings.threshold.toLocaleString() }}</b> 名以外的字。每次調整 2,000 名；往右拉，亮的字變少。</p>
       <div class="colors">
@@ -213,7 +207,6 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
     </template>
 
     <WordLibrary v-else-if="tab === 'contexts'" />
-    <CachedAnswers v-else-if="tab === 'cache'" />
 
   </main>
 </template>

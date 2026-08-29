@@ -1,8 +1,6 @@
 import { createEmptyCard, fsrs, Rating, State, type Card } from 'ts-fsrs';
 import type { WordStatus } from './decide';
 
-const DAY = 24 * 60 * 60 * 1000;
-
 /** 排到 30 天以上就算穩定：複習畫面給「已經馴服」，總表顯示「漸漸穩定」。 */
 export const MASTER_INTERVAL_DAYS = 30;
 
@@ -139,16 +137,4 @@ export function wordProgress(
   const due = dueAt(row.fsrsCard);
   if (due === undefined || due <= now) return 'due';
   return row.fsrsCard.scheduled_days >= MASTER_INTERVAL_DAYS ? 'stable' : 'scheduled';
-}
-
-/**
- * 下次複習日的說法。逾期的卡一律說「今天」：低壓介面不算逾期天數，也不喊紅字。
- */
-export function dayLabel(at: number, now = Date.now()): string {
-  const days = Math.round(
-    (new Date(at).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / DAY,
-  );
-  if (days <= 0) return '今天';
-  if (days === 1) return '明天';
-  return new Date(at).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 }

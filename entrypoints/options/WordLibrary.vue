@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
 import type { ExplainResult } from '@/src/lib/messages';
-import { dayLabel, type WordProgress } from '@/src/lib/review';
+import type { WordProgress } from '@/src/lib/review';
 
 interface ContextItem {
   id: string;
@@ -19,8 +19,6 @@ interface WordItem {
   /** 打老虎的累計次數與其中抓到的次數。 */
   reviewCount: number;
   caughtCount: number;
-  /** 下次複習日；尚未打過或卡片損壞時是 null。 */
-  nextReviewAt: number | null;
   progress: WordProgress;
   /** 由新到舊。 */
   contexts: ContextItem[];
@@ -39,8 +37,8 @@ type Filter = 'all' | 'due' | 'fresh' | 'scheduled' | 'mastered';
 
 const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: 'all', label: '全部' },
-  { key: 'due', label: '現在可練' },
-  { key: 'fresh', label: '尚未打過' },
+  { key: 'due', label: '今天排到' },
+  { key: 'fresh', label: '還沒練過' },
   { key: 'scheduled', label: '排程中' },
   { key: 'mastered', label: '已馴服' },
 ];
@@ -53,8 +51,12 @@ const selected = ref<string | null>(null);
 const translations = ref<Record<string, string>>({});
 const keyword = ref('');
 const filter = ref<Filter>('all');
-const sortBy = ref<'recent' | 'word' | 'due'>('recent');
+/** 單字或片語，跟學習進度是兩個獨立的軸，可以同時成立。 */
+const kind = ref<'all' | 'word' | 'phrase'>('all');
+const sortBy = ref<'recent' | 'word'>('recent');
 const isPhrase = (value: string) => /\s/.test(value);
+const inKind = (item: WordItem) =>
+  kind.value === 'all' || (kind.value === 'phrase') === isPhrase(item.word);
 
 onMounted(reload);
 
@@ -70,8 +72,9 @@ function inFilter(item: WordItem, key: Filter): boolean {
   return item.progress === key;
 }
 
+// 數字跟著單字／片語一起收斂，按下去看到幾筆就先寫幾筆。
 const counts = computed(() => Object.fromEntries(
-  FILTERS.map((f) => [f.key, words.value.filter((w) => inFilter(w, f.key)).length]),
+  FILTERS.map((f) => [f.key, words.value.filter((w) => inFilter(w, f.key) && inKind(w)).length]),
 ) as Record<Filter, number>);
 const contextTotal = computed(() =>
   words.value.reduce((total, word) => total + word.contexts.length, 0),
@@ -81,35 +84,36 @@ const phraseTotal = computed(() => words.value.filter((word) => isPhrase(word.wo
 const filtered = computed(() => {
   const query = keyword.value.trim().toLowerCase();
   return words.value
-    .filter((w) => inFilter(w, filter.value) && w.word.toLowerCase().includes(query))
+    .filter((w) => inFilter(w, filter.value) && inKind(w) && w.word.toLowerCase().includes(query))
     .sort((a, b) => {
       if (sortBy.value === 'word') return a.word.localeCompare(b.word);
-      // 沒有下次日期的排最後，它們本來就不在等一個日子。
-      if (sortBy.value === 'due') {
-        return (a.nextReviewAt ?? Infinity) - (b.nextReviewAt ?? Infinity)
-          || a.word.localeCompare(b.word);
-      }
       return (b.contexts[0]?.createdAt ?? 0) - (a.contexts[0]?.createdAt ?? 0)
         || a.word.localeCompare(b.word);
     });
 });
 
-/** 一行講完學習狀態。順序跟 wordProgress 的規則一致，這裡只負責文案。 */
+/**
+ * 一行講完學習狀態。順序跟 wordProgress 的規則一致，這裡只負責文案。
+ * 「遇到」數的是語境筆數，而 addContext 以 (句子, 網址) 去重，
+ * 所以同一句在同一頁按幾次 A 都只算一次，數的是不同語境而不是按鍵次數。
+ */
 function summary(item: WordItem): string {
+  const met = item.contexts.length ? [`遇到 ${item.contexts.length} 次`] : [];
   const drills = item.reviewCount
     ? [`練過 ${item.reviewCount} 次`, `抓到 ${item.caughtCount} 次`]
     : [];
-  const next = item.nextReviewAt ? `下次${dayLabel(item.nextReviewAt)}` : '排程中';
   const state: Record<WordProgress, string> = {
     excluded: '已排除，不列入學習進度',
     mastered: '已馴服',
     needsLookup: '還不能出題 · 先查一次詞',
-    fresh: '尚未打過 · 有空時再認識牠',
-    due: '現在可練',
-    stable: `漸漸穩定 · ${next}`,
-    scheduled: next,
+    // 1.8.0 之前練過的字有 reviewLog 卻沒有 fsrsCard，跟從沒練過的一樣落在 fresh。
+    // 兩者不能講同一句話，否則會出現「練過 1 次 · 還沒練過」這種自相矛盾的列。
+    fresh: item.reviewCount ? '升級後排程重新開始' : '還沒練過，去今晚打老虎遇遇看',
+    due: '今天排到',
+    stable: '漸漸穩定',
+    scheduled: '排程中',
   };
-  return [...drills, state[item.progress]].join(' · ');
+  return [...met, ...drills, state[item.progress]].join(' · ');
 }
 
 async function toggle(item: WordItem) {
@@ -152,6 +156,16 @@ async function lookup(item: WordItem) {
   } finally {
     dictionaryLoading.value[word] = false;
   }
+}
+
+/**
+ * AI 這次答得不好時重問一次。快取命中會回同一份答案，所以要先打上 tombstone；
+ * putCached 之後會用同一個 word 主鍵整列覆蓋回來，同步端也看得到這次更新。
+ */
+async function relookup(item: WordItem) {
+  await browser.runtime.sendMessage({ type: 'deleteCachedWord', word: item.word });
+  dictionaries.value[item.word] = null;
+  await lookup(item);
 }
 
 async function translateContext(context: ContextItem) {
@@ -205,14 +219,19 @@ async function exportJson() {
         {{ f.label }} <span class="tally">{{ counts[f.key] }}</span>
       </button>
     </div>
+    <p class="note filter-note">今晚打老虎從「今天排到」和「還沒練過」兩堆各抓，湊滿 5 題。</p>
 
     <div class="toolbar">
       <div class="sort">
         <button :class="{ active: sortBy === 'recent' }" @click="sortBy = 'recent'">最近加入</button>
-        <button :class="{ active: sortBy === 'due' }" @click="sortBy = 'due'">下次複習</button>
         <button :class="{ active: sortBy === 'word' }" @click="sortBy = 'word'">字母排序</button>
       </div>
       <input v-model="keyword" placeholder="搜尋單字或片語" />
+      <select v-model="kind" class="kind" aria-label="單字或片語">
+        <option value="all">全部</option>
+        <option value="word">單字</option>
+        <option value="phrase">片語</option>
+      </select>
     </div>
 
     <p v-if="filtered.length === 0" class="empty">這個分類還沒有字。</p>
@@ -221,7 +240,7 @@ async function exportJson() {
       <article v-for="w in filtered" :key="w.word" class="word-card">
         <header class="word-header">
           <button class="row" :aria-expanded="selected === w.word" @click="toggle(w)">
-            <h3>{{ w.word }}</h3>
+            <h3>{{ w.word }}</h3><span v-if="isPhrase(w.word)" class="kindtag">片語</span>
             <span class="summary">{{ summary(w) }}</span>
           </button>
           <div class="actions">
@@ -239,10 +258,13 @@ async function exportJson() {
               英文老師正在整理這個{{ isPhrase(w.word) ? '片語' : '單字' }}…
             </p>
             <template v-else-if="dictionaries[w.word]">
-              <small>
-                AI 詞典 · {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
-                {{ new Date(dictionaries[w.word]!.fetchedAt).toLocaleString() }}
-              </small>
+              <div class="dictionary-head">
+                <small>
+                  AI 詞典 · {{ dictionaries[w.word]!.model ?? '未知模型' }} ·
+                  {{ new Date(dictionaries[w.word]!.fetchedAt).toLocaleString() }}
+                </small>
+                <button @click="relookup(w)">重查</button>
+              </div>
               <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
             </template>
             <template v-else>
@@ -250,8 +272,8 @@ async function exportJson() {
                 還沒有 AI 詞典，這個{{ isPhrase(w.word) ? '片語' : '單字' }}不會出現在今晚打老虎。
               </p>
               <button @click="lookup(w)">查一次詞</button>
-              <p v-if="dictionaryErrors[w.word]" class="warn">{{ dictionaryErrors[w.word] }}</p>
             </template>
+            <p v-if="dictionaryErrors[w.word]" class="warn">{{ dictionaryErrors[w.word] }}</p>
           </div>
 
           <p v-if="w.contexts.length === 0" class="no-context">尚未保存語境。</p>
@@ -283,6 +305,7 @@ async function exportJson() {
 .page-title h2, .page-title p, h3 { margin: 0; }
 .toolbar { gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .toolbar input { flex: 1; min-width: 180px; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; }
+.kind { padding: .5rem .6rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; font: inherit; cursor: pointer; }
 .sort { display: flex; }
 .sort button { border-radius: 0; }
 .sort button:first-child { border-radius: 5px 0 0 5px; }
@@ -291,18 +314,22 @@ async function exportJson() {
 .word-list { display: grid; gap: .75rem; }
 .word-card { padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .word-header { align-items: flex-start; gap: 1rem; }
-.filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
+.filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
 .filters button { color: #475569; }
 .filters .active { color: white; background: #6557c5; border-color: #6557c5; }
 .tally { margin-left: .3rem; color: #94a3b8; font-size: 12px; }
 .filters .active .tally { color: #ded9ff; }
 .row { flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; }
-.row h3 { font-size: 22px; }
+/* h3 改 inline，徽章才跟得上同一行而不被擠到下一行。 */
+.row h3 { display: inline; vertical-align: middle; font-size: 22px; }
+.kindtag { display: inline-block; vertical-align: middle; margin-left: .5rem; padding: .1rem .45rem; border: 1px solid #dbe4f0; border-radius: 999px; color: #64748b; background: white; font-size: 11px; font-weight: 600; }
 .summary { display: block; margin-top: .2rem; color: #64748b; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
 .actions { gap: .4rem; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .danger { color: #b4451f; }
+.filter-note { margin: 0 0 .9rem; }
 .dictionary { margin: 1rem 0; border: 1px solid #dbe4f0; border-radius: 10px; padding: 1rem; background: white; }
+.dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .dictionary :deep(.h) { margin-top: 1rem; color: #6557c5; font-weight: 700; }
 .dictionary :deep(p), .dictionary :deep(ul) { margin: .4rem 0; }
 .contexts { margin: 1rem 0 0; padding: 0; list-style: none; }

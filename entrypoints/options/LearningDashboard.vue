@@ -66,7 +66,7 @@ function changeMonth() {
     <header class="heading">
       <div>
         <p class="eyebrow">LEARNING ACTIVITY</p>
-        <h2>學習足跡</h2>
+        <h2>老虎足跡</h2>
         <p>只記錄你收藏與打老虎的日期、來源，不追蹤一般瀏覽紀錄。</p>
       </div>
       <input v-model="month" type="month" aria-label="選擇月份" @change="changeMonth" />

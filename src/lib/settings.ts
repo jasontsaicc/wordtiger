@@ -70,7 +70,8 @@ const DEFAULTS: Settings = {
   apiKey: '',
   model: OPENAI_MODELS[0].value,
   profile: '',
-  threshold: 5000,
+  // 一開始就標到 5000 名，整篇文章會亮成一片。新使用者從 10000 名起跳比較不嚇人。
+  threshold: 10000,
   highlightColors: DEFAULT_HIGHLIGHT_COLORS,
   highlightTextColors: DEFAULT_HIGHLIGHT_TEXT_COLORS,
   highlightUnderlineColors: DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,

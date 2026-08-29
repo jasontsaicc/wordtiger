@@ -2,7 +2,6 @@
 import { ref } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
 import { speak } from '@/src/content/speak';
-import { dayLabel } from '@/src/lib/review';
 import type { ReviewItem } from '@/src/lib/db';
 
 const props = defineProps<{
@@ -14,22 +13,18 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   reviewed: [{ word: string; remembered: boolean }];
-  stop: [];
   nextRound: [];
 }>();
 
 const revealed = ref(false);
 const busy = ref(false);
 const error = ref('');
-/** 答完先停在這裡。按「再抓一隻」才換下一張，不自動推進。 */
-const finished = ref<{
-  word: string; remembered: boolean; nextReviewAt: number | null;
-} | null>(null);
 
 async function grade(remembered: boolean) {
   if (!props.item || busy.value) return;
   busy.value = true;
   error.value = '';
+  // 回傳的下次日期不顯示，只當成功訊號：null 代表沒寫進去，要重試。
   const nextReviewAt = await browser.runtime.sendMessage({
     type: 'reviewWord', word: props.item.word, remembered,
   }) as number | null;
@@ -38,7 +33,7 @@ async function grade(remembered: boolean) {
     error.value = '這題沒有存成功，請再試一次。';
     return;
   }
-  finished.value = { word: props.item.word, remembered, nextReviewAt };
+  emit('reviewed', { word: props.item.word, remembered });
 }
 
 async function master() {
@@ -54,14 +49,7 @@ async function master() {
     error.value = '這個字沒有存成功，請再試一次。';
     return;
   }
-  finished.value = { word: props.item.word, remembered: true, nextReviewAt: null };
-}
-
-/** 成績早就寫進資料庫了，這裡只決定畫面往哪走。 */
-function advance(stop: boolean) {
-  if (!finished.value) return;
-  emit('reviewed', { word: finished.value.word, remembered: finished.value.remembered });
-  if (stop) emit('stop');
+  emit('reviewed', { word: props.item.word, remembered: true });
 }
 
 function wordLabel(item: ReviewItem): string {
@@ -81,12 +69,12 @@ function wordLabel(item: ReviewItem): string {
       <img src="/icons/128.png" alt="" />
     </header>
 
-    <div v-if="total && item && !finished" class="progress-wrap">
-      <span>本輪最多 {{ total }} 隻</span>
+    <div v-if="total && item" class="progress-wrap">
+      <span>本輪 {{ total }} 題</span>
       <div class="paws" aria-hidden="true">
         <span v-for="n in total" :key="n" :class="{ done: n <= done }">●</span>
       </div>
-      <span>今天已練 {{ todayDone }} 隻</span>
+      <span>今天已練 {{ todayDone }} 題</span>
       <progress class="sr-only" :value="done" :max="total">{{ done }}／{{ total }}</progress>
     </div>
 
@@ -95,35 +83,18 @@ function wordLabel(item: ReviewItem): string {
       <p>目前沒有到期題目，安心去讀英文吧。</p>
     </div>
 
-    <div v-else-if="finished" class="finish pause" aria-live="polite">
-      <p class="paw" aria-hidden="true">🐾</p>
-      <h3>今天又前進 1 步</h3>
-      <p>記得或忘記，都是學習的一部分。</p>
-      <p class="next-at">
-        {{ finished.nextReviewAt
-          ? `${finished.word} 下次：${dayLabel(finished.nextReviewAt)}`
-          : `${finished.word} 已經馴服，之後不再排進來。` }}
-      </p>
-      <div class="pause-actions">
-        <button class="next-round" @click="advance(false)">
-          {{ done + 1 >= total ? '看本輪收工' : '再抓一隻' }}
-        </button>
-        <button @click="advance(true)">今天先到這裡</button>
-      </div>
-    </div>
-
     <div v-else-if="!item" class="finish" aria-live="polite">
       <img src="/icons/128.png" alt="" />
-      <h3>今天先到這裡</h3>
-      <p>今天已練 {{ todayDone }} 隻。溜走的會再排回來，不用追。</p>
-      <p v-if="done" class="note">本輪抓到 {{ caught }}／{{ done }} 隻。</p>
+      <h3>抓到 1 隻</h3>
+      <p>這一輪 {{ caught }}／{{ done }} 抓到。</p>
+      <p class="note">今天已練 {{ todayDone }} 題。溜走的會再排回來，不用追。</p>
       <button class="next-round" @click="emit('nextRound')">再抓一輪</button>
     </div>
 
     <article v-else class="review-card">
       <div class="card-meta">
         <span>{{ item.isPattern ? '句型' : item.isPhrase ? '片語' : '單字' }}</span>
-        <span>第 {{ done + 1 }} 隻</span>
+        <span>第 {{ done + 1 }} 題 ／ 共 {{ total }} 題</span>
       </div>
       <template v-if="item.isPhrase">
         <p class="question">
@@ -177,8 +148,6 @@ function wordLabel(item: ReviewItem): string {
       </div>
       <p v-if="error" class="error">{{ error }}</p>
     </article>
-
-    <button v-if="item && !finished" class="stop" @click="emit('stop')">今天先到這裡</button>
   </section>
 </template>
 
@@ -220,17 +189,12 @@ button:active { transform: scale(.98); }
 .empty p, .finish p { margin: .5rem 0 0; color: #64748b; }
 .finish img { width: 88px; height: 88px; margin-bottom: 1rem; border-radius: 20px; animation: caught 560ms ease-out; }
 .finish .note { color: #94a3b8; font-size: 13px; }
-.pause .paw { margin: 0 0 .6rem; font-size: 46px; line-height: 1; animation: caught 560ms ease-out; }
-.pause .next-at { margin-top: 1rem; color: #0f172a; font-weight: 700; }
-.pause-actions { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 1.3rem; }
-.pause-actions button { min-height: 44px; padding-inline: 1.1rem; }
-.stop { display: block; margin: 0 auto 1.5rem; color: #64748b; }
-.next-round { margin-top: 1rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
+.next-round { min-height: 44px; margin-top: 1.3rem; padding-inline: 1.1rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
 .error { color: #b91c1c; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @keyframes arrive { from { opacity: 0; transform: translateY(5px); } }
 @keyframes caught { 45% { transform: translateY(-8px) rotate(-5deg) scale(1.08); } }
-@media (prefers-reduced-motion: reduce) { .review-card, .finish img, .pause .paw { animation: none; } button, .paws span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .review-card, .finish img { animation: none; } button, .paws span { transition: none; } }
 @media (prefers-contrast: more) { .review-card { border: 2px solid #334155; } }
 @media (max-width: 540px) { .review-head { padding: 1.1rem; } .review-head img { width: 58px; height: 58px; } .review-card { margin: 1rem; padding: 1.1rem; } .grade-actions { grid-template-columns: 1fr; } }
 </style>

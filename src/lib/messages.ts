@@ -4,7 +4,7 @@ import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
 import { SYSTEM_RULES } from './prompt';
 import type { WordStatus } from './decide';
-import { dueAt, wordProgress } from './review';
+import { wordProgress } from './review';
 
 export interface ExportBundle {
   exportedAt: number;
@@ -45,7 +45,6 @@ export type Msg =
   | { type: 'setWordStatus'; word: string; status: WordStatus }
   | { type: 'exportData' }
   | { type: 'getCachedWord'; word: string }
-  | { type: 'listCachedWords' }
   | { type: 'deleteCachedWord'; word: string }
   | { type: 'getSyncState' }
   | { type: 'syncLogin'; url: string; anonKey: string; email: string; password: string }
@@ -148,7 +147,6 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
             collectedAt: row.collectedAt ?? null,
             reviewCount: score.total,
             caughtCount: score.caught,
-            nextReviewAt: dueAt(row.fsrsCard) ?? null,
             progress: wordProgress(row, {
               hasDefinition: defined.has(row.word),
               hasContext: contexts.length > 0,
@@ -193,12 +191,6 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       const row = await db.lookupCache.get(msg.word);
       return row?.deletedAt == null ? row : undefined;
     }
-
-    case 'listCachedWords':
-      // variant 是 2.7KB 的 prompt 全文，快取頁用不到，別跟著 runtime message 走。
-      return (await db.lookupCache.orderBy('fetchedAt').reverse()
-        .filter((row) => row.deletedAt == null).toArray())
-        .map(({ variant, ...row }) => row);
 
     case 'deleteCachedWord':
       await deleteCached(msg.word);
