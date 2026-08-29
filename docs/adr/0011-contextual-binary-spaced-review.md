@@ -1,6 +1,6 @@
 # ADR-0011: 用真實語境與二選一自評做最小間隔複習
 
-Date: 2026-08-25 | Status: accepted; 排程部分 superseded by [ADR-0023](0023-fsrs-replaces-fixed-interval-ladder.md)
+Date: 2026-08-25 | Status: accepted; 排程部分 superseded by [ADR-0023](0023-fsrs-replaces-fixed-interval-ladder.md)，介面部分 superseded by [ADR-0024](0024-round-is-the-unit-and-schedule-dates-stay-hidden.md)
 
 ## Context
 

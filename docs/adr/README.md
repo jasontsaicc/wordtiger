@@ -27,3 +27,6 @@
 | [0021](0021-composite-primary-key-for-synced-tables.md) | 可同步資料表用 (user_id, id) 複合主鍵 | accepted | 2026-08-27 |
 | [0022](0022-surface-form-is-learning-unit-lemma-remains-identity.md) | 實際字形是學習呈現單位，lemma 保留為內部身分 | accepted | 2026-08-28 |
 | [0023](0023-fsrs-replaces-fixed-interval-ladder.md) | 用 ts-fsrs 取代固定間隔階梯，卡片狀態整組存在 words | accepted | 2026-08-28 |
+| [0024](0024-round-is-the-unit-and-schedule-dates-stay-hidden.md) | 一輪是收工單位，排程日期不進介面 | accepted | 2026-08-29 |
+| [0025](0025-prompt-fingerprint-owns-cache-invalidation.md) | 快取失效由 prompt 指紋負責，不保留人工清除介面 | accepted | 2026-08-29 |
+| [0026](0026-one-accent-colour-per-card.md) | 卡片只用一個重點色，區塊分成參考與帶走兩層 | accepted | 2026-08-29 |
