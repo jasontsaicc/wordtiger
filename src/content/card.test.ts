@@ -64,4 +64,15 @@ describe('renderCardHtml', () => {
     expect(html).toContain('<div class="h">詞性與釋義</div>');
     expect(html).toContain('<strong>部署</strong>');
   });
+
+  it('給了 onRetry 才畫重試鈕,非 AI 卡片不該出現', () => {
+    const opts = { title: 'deploy', body: '部署' };
+    expect(renderCardHtml(opts)).not.toContain('class="retry"');
+    expect(renderCardHtml({ ...opts, onRetry: () => {} })).toContain('class="retry"');
+  });
+
+  it('載入中的重試鈕要 disabled,不然連點會開兩條 stream', () => {
+    const html = renderCardHtml({ title: 'a', body: 'b', loading: true, onRetry: () => {} });
+    expect(html).toMatch(/class="retry"[^>]*disabled/);
+  });
 });

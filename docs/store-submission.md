@@ -9,8 +9,8 @@ Partner Center 每個欄位的稿子，照著複製貼上。規格取自 [Publis
 | 項目 | 狀態 |
 | :--- | :--- |
 | 帳號類型選 Individual（驗證較快，且免費） | 待辦 |
-| 截圖重拍成 1.8.0 的介面 | 待辦 |
-| `pnpm zip` 產出最新封裝 | `.output/wordtiger-1.8.0-chrome.zip` |
+| 截圖重拍成 1.8.1 的介面 | 待辦 |
+| `pnpm zip` 產出最新封裝 | `.output/wordtiger-1.8.1-chrome.zip` |
 | 隱私政策可公開存取 | <https://github.com/jasontsaicc/wordtiger/blob/master/docs/privacy.md> |
 
 帳號的 **country/region** 與 **account type** 註冊後不能改，選之前先確認。

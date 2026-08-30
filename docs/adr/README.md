@@ -30,3 +30,4 @@
 | [0024](0024-round-is-the-unit-and-schedule-dates-stay-hidden.md) | 一輪是收工單位，排程日期不進介面 | accepted | 2026-08-29 |
 | [0025](0025-prompt-fingerprint-owns-cache-invalidation.md) | 快取失效由 prompt 指紋負責，不保留人工清除介面 | accepted | 2026-08-29 |
 | [0026](0026-one-accent-colour-per-card.md) | 卡片只用一個重點色，區塊分成參考與帶走兩層 | accepted | 2026-08-29 |
+| [0027](0027-retry-reads-past-the-cache-instead-of-clearing-it.md) | 重試跳過快取讀取，不刪快取 | accepted | 2026-08-30 |

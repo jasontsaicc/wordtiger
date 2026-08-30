@@ -29,7 +29,8 @@ export type Msg =
   | { type: 'getMarks' }
   | { type: 'getHighlightSettings' }
   | { type: 'toggleMark'; word: string; status?: WordStatus }
-  | { type: 'lookup'; word: string; surface?: string; sentence: string }
+  /** fresh:這一次不讀快取,重問 AI。卡片的重試鈕用它繞過 variant 指紋。 */
+  | { type: 'lookup'; word: string; surface?: string; sentence: string; fresh?: boolean }
   | { type: 'speak'; text: string }
   | { type: 'saveContext'; word: string; sentence: string; url: string; title: string }
   | { type: 'listWords' }
@@ -39,7 +40,7 @@ export type Msg =
   | { type: 'masterWord'; word: string }
   | {
     type: 'explain'; kind: 'translate' | 'grammar'; sentence: string;
-    focus?: string; previous?: string; title?: string;
+    focus?: string; previous?: string; title?: string; fresh?: boolean;
   }
   | { type: 'deleteWord'; word: string }
   | { type: 'setWordStatus'; word: string; status: WordStatus }
@@ -228,7 +229,7 @@ export async function handleStreamMessage(
     const settings = await loadSettings();
     const sentence = msg.sentence.trim();
     const variant = lookupVariant(settings);
-    const row = await db.lookupCache.get(msg.word);
+    const row = msg.fresh ? undefined : await db.lookupCache.get(msg.word);
     const surface = msg.surface?.trim() || msg.word;
     // ponytail: 同步不搬 surface/sentence/variant，缺欄位視同命中；要精準到句子再改複合主鍵。
     if (row && row.deletedAt == null
@@ -257,7 +258,7 @@ export async function handleStreamMessage(
 
   const settings = await loadSettings();
   const variant = explainVariant(msg, settings);
-  const cached = await getSentence(msg.kind, msg.sentence, variant);
+  const cached = msg.fresh ? null : await getSentence(msg.kind, msg.sentence, variant);
   if (cached !== null) {
     onDelta(cached);
     return { ok: true, text: cached };

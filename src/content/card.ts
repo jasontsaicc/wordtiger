@@ -11,6 +11,8 @@ export interface CardOptions {
   loading?: boolean;
   celebrate?: boolean;
   onClose?: () => void;
+  /** 只有 AI 卡片給;沒給就不畫重試鈕。 */
+  onRetry?: () => void;
 }
 
 let host: HTMLDivElement | null = null;
@@ -60,8 +62,11 @@ function ensureRoot(): ShadowRoot {
       .dragging .header { cursor: grabbing; }
       .brand { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px; opacity: .92; transform-origin: 50% 85%; filter: drop-shadow(0 3px 4px rgba(245,158,11,.18)); will-change: transform, filter; }
       .title { min-width: 0; flex: 1; color: var(--ink); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
-      .close { width: 26px; height: 26px; padding: 0; color: var(--muted); background: var(--chip); border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
-      .close:hover { color: var(--ink); background: var(--chip-hover); }
+      .close, .retry { width: 26px; height: 26px; padding: 0; color: var(--muted); background: var(--chip); border: 0; border-radius: 50%; cursor: pointer; font: 18px/24px system-ui; }
+      .close:hover, .retry:not(:disabled):hover { color: var(--ink); background: var(--chip-hover); }
+      .retry { font-size: 15px; }
+      .retry:disabled { opacity: .4; cursor: default; }
+      .retry + .close { margin-left: -6px; }
       .body { max-height: min(60vh, 520px); overflow-y: auto; scrollbar-width: thin; }
       .body p { margin: 0 0 6px; }
       .body ul { margin: 0 0 6px; padding-left: 18px; }
@@ -173,7 +178,10 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
   if (opts.title) {
     const cls = opts.marked ? 'title marked' : 'title';
     const icon = browser.runtime.getURL('/icons/32.png');
-    parts.push(`<div class="header"><img class="brand" src="${icon}" alt="" aria-hidden="true"><div class="${cls}">${escapeHtml(opts.title)}</div><button class="close" type="button" aria-label="關閉">×</button></div>`);
+    const retry = opts.onRetry
+      ? `<button class="retry" type="button" aria-label="重問一次"${opts.loading ? ' disabled' : ''}>↻</button>`
+      : '';
+    parts.push(`<div class="header"><img class="brand" src="${icon}" alt="" aria-hidden="true"><div class="${cls}">${escapeHtml(opts.title)}</div>${retry}<button class="close" type="button" aria-label="關閉">×</button></div>`);
   }
   parts.push(`<div class="body">${renderMarkdown(opts.body)}</div>`);
   if (opts.hint) {
@@ -191,10 +199,11 @@ export function showCard(opts: CardOptions): void {
     && anchor.left === opts.rect.left && anchor.right === opts.rect.right
     && anchor.top === opts.rect.top && anchor.bottom === opts.rect.bottom;
 
+  // 拖過去的位置是使用者選的,只有換錨點才收回;同錨點重畫(串流、重問)要留在原地。
+  if (!sameAnchor) dragged = false;
   if (!sameAnchor || (loading && !wasLoading)) {
     anchor = opts.rect;
     placement = null;
-    dragged = false;
   }
 
   card.innerHTML = renderCardHtml(opts);
@@ -206,6 +215,7 @@ export function showCard(opts: CardOptions): void {
     hideCard();
     opts.onClose?.();
   }, { once: true });
+  card.querySelector('.retry')?.addEventListener('click', () => opts.onRetry?.(), { once: true });
 
   host!.style.display = 'block';
   host!.style.visibility = 'hidden';

@@ -141,6 +141,106 @@ export default defineContentScript({
     const wordTitle = (hover: Hover) => hover.word.toLowerCase() === hover.lemma
       ? hover.word : `${hover.word} → ${hover.lemma}`;
 
+    /**
+     * 查詞卡的 AI 部分。重試鈕帶 fresh 繞過快取重問，但不重跑收藏與語境：
+     * 收藏是「你遇到這個字」這個事件，重問一次答案並沒有再遇到一次。
+     * previous 是重問前畫面上那份答案，重問失敗就退回去，錯誤放進 hint 那一排。
+     */
+    const runLookup = async (hover: Hover, fresh = false, previous = '') => {
+      const hint = wordHint(hover.lemma);
+      const marked = marks.get(hover.lemma) === 'unknown';
+      const retry = (from: string) => () => void runLookup(hover, true, from);
+
+      showCard({
+        title: wordTitle(hover), rect: hover.rect,
+        body: previous || '老虎正在抓這個字…',
+        hint: '', marked, loading: true, onClose: closeAiCard, onRetry: retry(previous),
+      });
+
+      const seq = ++explainSeq;
+      const result = await requestAi({
+        type: 'lookup', word: hover.lemma, surface: hover.word, sentence: hover.sentence, fresh,
+      }, (body) => {
+        if (seq === explainSeq) {
+          currentDefinition = body;
+          showCard({
+            title: wordTitle(hover), body, rect: hover.rect,
+            hint, marked, loading: true, onClose: closeAiCard, onRetry: retry(previous),
+          });
+        }
+      });
+      if (seq !== explainSeq) return;
+
+      if (result?.ok) {
+        currentDefinition = result.text;
+        showCard({
+          title: wordTitle(hover), body: result.text, rect: hover.rect,
+          hint, marked, onClose: closeAiCard, onRetry: retry(result.text),
+        });
+        return;
+      }
+
+      // 重問失敗留住舊答案，錯誤擠進本來就在的 hint 那排，不多佔一行高度。
+      const error = result?.error ?? '背景程式沒有回應';
+      currentDefinition = previous;
+      showCard({
+        title: wordTitle(hover),
+        body: previous || `查詢失敗:${error}`,
+        rect: hover.rect,
+        hint: previous ? `重問失敗:${error}` : hint,
+        marked,
+        onClose: closeAiCard,
+        onRetry: retry(previous),
+      });
+    };
+
+    /** 拆句卡的 AI 部分；msg 原樣重送，所以重試不會換句子也不會換 focus。 */
+    const runExplain = async (
+      msg: Extract<StreamMsg, { type: 'explain' }>,
+      rect: DOMRect,
+      fresh = false,
+      previous = '',
+    ) => {
+      const { kind, sentence } = msg;
+      const title = kind === 'translate' ? '快速看懂' : '拆懂這句';
+      const cardBody = (body: string) => kind === 'translate'
+        ? `原文｜${sentence}\n${body}`
+        : body;
+      const waiting = kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…';
+      const retry = (from: string) => () => void runExplain(msg, rect, true, from);
+
+      showCard({
+        title, body: cardBody(previous || waiting), rect, hint: sentenceHint,
+        loading: true, onClose: closeAiCard, onRetry: retry(previous),
+      });
+
+      const seq = ++explainSeq;
+      const result = await requestAi({ ...msg, fresh }, (body) => {
+        if (seq === explainSeq) showCard({
+          title, body: cardBody(body), rect,
+          hint: sentenceHint, loading: true, onClose: closeAiCard, onRetry: retry(previous),
+        });
+      });
+      if (seq !== explainSeq) return;
+
+      if (!result.ok) {
+        showCard({
+          title, body: cardBody(previous || `查詢失敗:${result.error}`), rect,
+          hint: previous ? `重問失敗:${result.error}` : sentenceHint,
+          onClose: closeAiCard, onRetry: retry(previous),
+        });
+        return;
+      }
+
+      const phrase = kind === 'grammar' ? extractTakeaway(result.text) : null;
+      if (phrase) currentTakeaway = { phrase, sentence, rect, body: result.text };
+      showCard({
+        title, body: cardBody(result.text), rect,
+        hint: phrase ? takeawayHint(phrase) : sentenceHint,
+        onClose: closeAiCard, onRetry: retry(result.text),
+      });
+    };
+
     // mousemove 僅記錄座標，命中測試延後到按鍵事件。
     document.addEventListener('mousemove', (e) => {
       pointerX = e.clientX;
@@ -227,45 +327,13 @@ export default defineContentScript({
         currentDefinition = '';
         current = hover;
 
-        const hint = wordHint(hover.lemma);
-        const marked = marks.get(hover.lemma) === 'unknown';
-
         // 已收藏單字再次查詢時累積語境；addContext 負責去重。
-        if (marked) void browser.runtime.sendMessage({
+        if (marks.get(hover.lemma) === 'unknown') void browser.runtime.sendMessage({
           type: 'saveContext', word: hover.lemma, sentence: hover.sentence,
           url: location.href, title: document.title,
         });
 
-        // 網路查詢期間先提供載入狀態。
-        showCard({
-          title: wordTitle(hover), body: '老虎正在抓這個字…', rect: hover.rect,
-          hint: '', marked, loading: true, onClose: closeAiCard,
-        });
-
-        const seq = ++explainSeq;
-        const result = await requestAi({
-          type: 'lookup', word: hover.lemma, surface: hover.word, sentence: hover.sentence,
-        }, (body) => {
-          if (seq === explainSeq) {
-            currentDefinition = body;
-            showCard({
-              title: wordTitle(hover), body, rect: hover.rect,
-              hint, marked, loading: true, onClose: closeAiCard,
-            });
-          }
-        });
-        if (seq !== explainSeq) return;
-
-        currentDefinition = result?.ok ? result.text : '';
-
-        showCard({
-          title: wordTitle(hover),
-          body: result?.ok ? result.text : `查詢失敗:${result?.error ?? '背景程式沒有回應'}`,
-          rect: hover.rect,
-          hint,
-          marked,
-          onClose: closeAiCard,
-        });
+        await runLookup(hover);
         return;
       }
 
@@ -283,48 +351,16 @@ export default defineContentScript({
         const rect = range.getBoundingClientRect();
 
         const kind = (e.key === 's' || e.key === 'S') ? 'translate' : 'grammar';
-        const title = kind === 'translate' ? '快速看懂' : '拆懂這句';
-        const cardBody = (body: string) => kind === 'translate'
-          ? `原文｜${sentence}\n${body}`
-          : body;
         // 整句卡不保留先前的單字操作目標。
         current = null;
         currentTakeaway = null;
         currentSpeech = sentence;
         currentDefinition = '';
 
-        // 網路查詢期間先提供載入狀態。
-        showCard({
-          title,
-          body: cardBody(kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…'),
-          rect, hint: sentenceHint,
-          loading: true, onClose: closeAiCard,
-        });
-
-        const seq = ++explainSeq;
-        const result = await requestAi({
-          type: 'explain', kind, sentence, previous, focus, title: document.title,
-        }, (body) => {
-          if (seq === explainSeq) showCard({
-            title, body: cardBody(body), rect,
-            hint: sentenceHint, loading: true, onClose: closeAiCard,
-          });
-        });
-        if (seq !== explainSeq) return;
-
-        let phrase: string | null = null;
-        if (result.ok && kind === 'grammar') {
-          phrase = extractTakeaway(result.text);
-          if (phrase) currentTakeaway = { phrase, sentence, rect, body: result.text };
-        }
-
-        showCard({
-          title,
-          body: cardBody(result.ok ? result.text : `查詢失敗:${result.error}`),
+        await runExplain(
+          { type: 'explain', kind, sentence, previous, focus, title: document.title },
           rect,
-          hint: phrase ? takeawayHint(phrase) : sentenceHint,
-          onClose: closeAiCard,
-        });
+        );
         return;
       }
 

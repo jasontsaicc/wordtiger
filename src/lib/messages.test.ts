@@ -132,6 +132,23 @@ describe('handleMessage', () => {
     expect(got).toEqual({ ok: true, text: '新回答' });
   });
 
+  it('fresh 時跳過快取重問,新答案覆蓋舊的', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValueOnce('舊回答')
+      .mockResolvedValueOnce('新回答');
+    const msg = { type: 'lookup' as const, word: 'deploy', sentence: 'We deploy on Friday.' };
+
+    await handleStreamMessage(msg, () => {});
+    const retried = await handleStreamMessage({ ...msg, fresh: true }, () => {}) as ExplainResult;
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(retried).toEqual({ ok: true, text: '新回答' });
+
+    // 覆蓋而非刪除:下一次不帶 fresh 要拿到新答案,而且不再打 AI。
+    const after = await handleStreamMessage(msg, () => {}) as ExplainResult;
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(after).toEqual({ ok: true, text: '新回答' });
+  });
+
   it('同一原形換句子時重新查詢', async () => {
     const spy = vi.spyOn(ai, 'lookupWord')
       .mockResolvedValueOnce('對照比較')
@@ -348,6 +365,22 @@ describe('explain', () => {
     const second = await handleMessage({ type: 'explain', kind: 'translate', sentence });
     expect(second).toEqual({ ok: true, text: '我們每週五部署。' });
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('fresh 時跳過拆句快取重問,新答案覆蓋舊的', async () => {
+    const spy = vi.spyOn(ai, 'explainSentence')
+      .mockResolvedValueOnce('舊譯文')
+      .mockResolvedValueOnce('新譯文');
+    const msg = { type: 'explain' as const, kind: 'translate' as const, sentence };
+
+    await handleStreamMessage(msg, () => {});
+    const retried = await handleStreamMessage({ ...msg, fresh: true }, () => {}) as ExplainResult;
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(retried).toEqual({ ok: true, text: '新譯文' });
+
+    const after = await handleStreamMessage(msg, () => {}) as ExplainResult;
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(after).toEqual({ ok: true, text: '新譯文' });
   });
 
   it('translate 和 grammar 各自快取', async () => {
