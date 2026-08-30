@@ -330,7 +330,7 @@ async function exportJson() {
 .filter-note { margin: 0 0 .9rem; }
 .dictionary { margin: 1rem 0; border: 1px solid #dbe4f0; border-radius: 10px; padding: 1rem; background: white; }
 .dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.dictionary :deep(.h) { margin-top: 1rem; color: #6557c5; font-weight: 700; }
+.dictionary :deep(.h) { margin-top: 1rem; color: #b45309; font-weight: 700; }
 .dictionary :deep(p), .dictionary :deep(ul) { margin: .4rem 0; }
 .contexts { margin: 1rem 0 0; padding: 0; list-style: none; }
 .contexts li { display: flex; gap: .7rem; padding: .8rem 0; border-top: 1px solid #eee; }

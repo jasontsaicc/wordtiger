@@ -175,7 +175,7 @@ button:active { transform: scale(.98); }
 .voice-note { display: inline; margin-left: .6rem; color: #64748b; font-size: 12px; }
 .reveal { width: 100%; padding: .7rem; color: white; border-color: #0e7490; background: #0e7490; font-weight: 800; }
 .answer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-.answer :deep(.h) { margin-top: .8rem; color: #4f46e5; font-weight: 800; }
+.answer :deep(.h) { margin-top: .8rem; color: #b45309; font-weight: 800; }
 .answer :deep(p), .answer :deep(ul) { margin: .35rem 0; }
 .answer a { display: inline-block; margin-top: .7rem; color: #0e7490; }
 .answer-label { margin: 0; color: #64748b; font-size: 12px; font-weight: 800; text-transform: uppercase; }
