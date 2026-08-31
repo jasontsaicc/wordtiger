@@ -276,8 +276,10 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
     // canAnswer 已保證有詞典，但 TS 追不進函式，之後的 definition 用 ! 取用。
     if (!canAnswer(row.word, Boolean(definition), list.length > 0)) continue;
 
+    // reps 是這裡唯一沒經過 isStoredFsrsCard 驗證就讀的 FSRS 欄位，損壞時退回 0。
+    const reps = Number.isInteger(row.fsrsCard?.reps) ? Math.max(row.fsrsCard!.reps, 0) : 0;
     // 零筆語境時 % 0 會是 NaN，用長度守衛退回 definition.sentence。
-    const rotated = list.length ? list[(row.fsrsCard?.reps ?? 0) % list.length] : undefined;
+    const rotated = list.length ? list[reps % list.length] : undefined;
     const reviewContext = rotated
       ? { sentence: rotated.sentence, url: rotated.url, title: rotated.title }
       : definition?.sentence

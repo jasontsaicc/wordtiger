@@ -403,6 +403,19 @@ describe('今晚打老虎', () => {
     expect(item!.context?.sentence).toBe('We deploy to production every single Friday night.');
   });
 
+  it('reps 損壞（NaN）時仍退回第一筆語境，不會讓有語境的字失去語境', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{ word: 'deploy', payload: '部署' }]);
+    await addContext({
+      word: 'deploy', sentence: 'We deploy to production every single Friday night.',
+      url: 'u', title: 't',
+    });
+    await db.words.update('deploy', { fsrsCard: card(0, { reps: Number.NaN }) });
+
+    const [item] = await listReviewItems();
+    expect(item!.context?.sentence).toBe('We deploy to production every single Friday night.');
+  });
+
   it('零筆語境時退回 definition.sentence，不會因為除以零而消失', async () => {
     await markWord('deploy', 'unknown');
     await putCached([{
