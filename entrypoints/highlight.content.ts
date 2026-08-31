@@ -3,7 +3,7 @@ import { buildRanges } from '@/src/content/paint';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
 import type { ExplainResult, Msg } from '@/src/lib/messages';
-import { extractTakeaway, stripQuiz } from '@/src/lib/prompt';
+import { extractQuiz, extractTakeaway, stripQuiz } from '@/src/lib/prompt';
 import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
 
@@ -55,11 +55,12 @@ export default defineContentScript({
         highlightTextColors: Record<HighlightTier, string>;
         highlightUnderlineColors: Record<HighlightTier, string>;
         markConjunctions: boolean;
+        guessFirst: boolean;
       }>,
     ]);
     const {
       threshold, highlightColors, highlightTextColors,
-      highlightUnderlineColors, markConjunctions,
+      highlightUnderlineColors, markConjunctions, guessFirst,
     } = highlightSettings;
     injectStyle(highlightColors, highlightTextColors, highlightUnderlineColors);
 
@@ -101,6 +102,24 @@ export default defineContentScript({
     let currentTakeaway: Takeaway | null = null;
     let currentSpeech = '';
     let currentDefinition = '';
+    interface Quiz {
+      choices: [string, string, string];
+      right: 0 | 1 | 2;
+      /** 畫面第 i 個位置顯示 choices[order[i]]。元素型別是 `0 | 1 | 2`,不是 `number`。 */
+      order: [0 | 1 | 2, 0 | 1 | 2, 0 | 1 | 2];
+      state: 'pending' | 'revealed';
+      /** 揭曉時的原始索引；A 跳過時為 null。 */
+      picked: 0 | 1 | 2 | null;
+    }
+    let currentQuiz: Quiz | null = null;
+    /** A 跳過或選項還沒解析出來就按 A,跳過後不再重新出題,直到換一個字。 */
+    let quizSkipped = false;
+    /**
+     * true 代表目前沒有查詞請求在飛，或飛的那個已經有結果了；用來跟「currentQuiz 還是
+     * null 是因為還沒解析出來」（true 的情況不該讓 A 被當成跳過鍵吃掉）分開判斷，
+     * 否則一個字如果從頭到尾沒有解析出題目，A 會永遠被誤判成跳過鍵，查不了下一個字。
+     */
+    let lookupSettled = true;
     // 序號阻止舊 request 覆蓋較新的卡片狀態。
     let explainSeq = 0;
     let activeAi: AbortController | undefined;
@@ -118,6 +137,7 @@ export default defineContentScript({
       currentTakeaway = null;
       currentSpeech = '';
       currentDefinition = '';
+      resetQuiz();
       dismissAi();
     };
     const requestAi = async (msg: StreamMsg, onText: (text: string) => void) => {
@@ -141,6 +161,65 @@ export default defineContentScript({
     const wordTitle = (hover: Hover) => hover.word.toLowerCase() === hover.lemma
       ? hover.word : `${hover.word} → ${hover.lemma}`;
 
+    const resetQuiz = () => { currentQuiz = null; quizSkipped = false; };
+
+    const retry = (hover: Hover, from: string) => () => void runLookup(hover, true, from);
+
+    /** 查詞卡現在該顯示什麼；所有查詞卡的 showCard 呼叫都經過這裡,揭曉前絕不外流答案。 */
+    const renderQuizCard = (baseHint: string): {
+      body: string; hint: string; choices?: [string, string, string];
+    } => {
+      if (!guessFirst || !currentQuiz) return { body: currentDefinition, hint: baseHint };
+      if (currentQuiz.state === 'pending') {
+        const displayed = currentQuiz.order.map((i) => currentQuiz!.choices[i]) as [string, string, string];
+        return {
+          body: '這隻在這句是哪一個意思？選一個最接近的。',
+          hint: '1／2／3 選答案 · A 跳過',
+          choices: displayed,
+        };
+      }
+      const diagnostic = currentQuiz.picked === null
+        ? `略過了,正解是「${currentQuiz.choices[currentQuiz.right]}」。`
+        : currentQuiz.picked === currentQuiz.right
+          ? '答對了！'
+          : `答錯了,正解是「${currentQuiz.choices[currentQuiz.right]}」。`;
+      return { body: `${diagnostic}\n\n${currentDefinition}`, hint: baseHint };
+    };
+
+    /** 只在還沒有題目、也還沒跳過時抓取；已揭曉或已跳過都不再洗牌或覆蓋。 */
+    const applyQuizExtraction = (raw: string) => {
+      if (currentQuiz || quizSkipped) return;
+      // 答案那行還沒收完就武裝，模型若把「2」續寫成「23」，題目會鎖在錯的正解上。
+      // 等後面確定還有一行（代表答案行已換行）再洗牌。
+      const lines = raw.split(/\r?\n/);
+      let start = 0;
+      while (start < lines.length && lines[start]!.trim() === '') start++;
+      if (lines.length <= start + 2) return;
+
+      const extracted = extractQuiz(raw);
+      if (!extracted) return;
+      currentQuiz = { ...extracted, order: shuffleOrder(), state: 'pending', picked: null };
+    };
+
+    /** position 是畫面位置索引;換算回原始索引才是 quizLog 要存的值。 */
+    const onQuizPick = (position: 0 | 1 | 2) => {
+      if (!current || !currentQuiz || currentQuiz.state !== 'pending') return;
+      const hover = current;
+      const picked = currentQuiz.order[position];
+      currentQuiz = { ...currentQuiz, state: 'revealed', picked };
+      void browser.runtime.sendMessage({
+        type: 'recordQuiz', word: hover.lemma,
+        picked, right: currentQuiz.right, choices: currentQuiz.choices,
+      });
+      const view = renderQuizCard(wordHint(hover.lemma));
+      showCard({
+        title: wordTitle(hover), rect: hover.rect,
+        body: view.body, hint: view.hint, choices: view.choices,
+        marked: marks.get(hover.lemma) === 'unknown',
+        onClose: closeAiCard, onRetry: retry(hover, currentDefinition),
+      });
+    };
+
     /**
      * 查詞卡的 AI 部分。重試鈕帶 fresh 繞過快取重問，但不重跑收藏與語境：
      * 收藏是「你遇到這個字」這個事件，重問一次答案並沒有再遇到一次。
@@ -149,12 +228,17 @@ export default defineContentScript({
     const runLookup = async (hover: Hover, fresh = false, previous = '') => {
       const hint = wordHint(hover.lemma);
       const marked = marks.get(hover.lemma) === 'unknown';
-      const retry = (from: string) => () => void runLookup(hover, true, from);
+      // 已揭曉或已跳過的題目不重新武裝；重問只是換一個字的答案,不是重新考一次。
+      const keepQuiz = fresh && (currentQuiz?.state === 'revealed' || quizSkipped);
+      if (!keepQuiz) resetQuiz();
+      // 這個查詞請求還在飛,期間 currentQuiz 是 null 不代表「沒有題目」,
+      // 而是「還沒解析出來」，A 鍵要能分辨這兩種情況。
+      lookupSettled = false;
 
       showCard({
         title: wordTitle(hover), rect: hover.rect,
         body: previous || '老虎正在抓這個字…',
-        hint: '', marked, loading: true, onClose: closeAiCard, onRetry: retry(previous),
+        hint: '', marked, loading: true, onClose: closeAiCard, onRetry: retry(hover, previous),
       });
 
       const seq = ++explainSeq;
@@ -163,9 +247,12 @@ export default defineContentScript({
       }, (body) => {
         if (seq === explainSeq) {
           currentDefinition = stripQuiz(body);
+          if (guessFirst) applyQuizExtraction(body);
+          const view = renderQuizCard(hint);
           showCard({
-            title: wordTitle(hover), body: currentDefinition, rect: hover.rect,
-            hint, marked, loading: true, onClose: closeAiCard, onRetry: retry(previous),
+            title: wordTitle(hover), body: view.body, rect: hover.rect,
+            hint: view.hint, choices: view.choices, marked, loading: true,
+            onClose: closeAiCard, onRetry: retry(hover, previous), onPick: onQuizPick,
           });
         }
       });
@@ -173,14 +260,19 @@ export default defineContentScript({
 
       if (result?.ok) {
         currentDefinition = stripQuiz(result.text);
+        if (guessFirst) applyQuizExtraction(result.text);
+        lookupSettled = true;
+        const view = renderQuizCard(hint);
         showCard({
-          title: wordTitle(hover), body: currentDefinition, rect: hover.rect,
-          hint, marked, onClose: closeAiCard, onRetry: retry(currentDefinition),
+          title: wordTitle(hover), body: view.body, rect: hover.rect,
+          hint: view.hint, choices: view.choices, marked,
+          onClose: closeAiCard, onRetry: retry(hover, currentDefinition), onPick: onQuizPick,
         });
         return;
       }
 
       // 重問失敗留住舊答案，錯誤擠進本來就在的 hint 那排，不多佔一行高度。
+      lookupSettled = true;
       const error = result?.error ?? '背景程式沒有回應';
       currentDefinition = previous;
       showCard({
@@ -190,7 +282,7 @@ export default defineContentScript({
         hint: previous ? `重問失敗:${error}` : hint,
         marked,
         onClose: closeAiCard,
-        onRetry: retry(previous),
+        onRetry: retry(hover, previous),
       });
     };
 
@@ -276,7 +368,15 @@ export default defineContentScript({
         currentTakeaway = null;
         currentSpeech = '';
         currentDefinition = '';
+        resetQuiz();
         dismissAi();
+        return;
+      }
+
+      if ((e.key === '1' || e.key === '2' || e.key === '3')
+        && guessFirst && current && currentQuiz?.state === 'pending') {
+        e.preventDefault();
+        onQuizPick((Number(e.key) - 1) as 0 | 1 | 2);
         return;
       }
 
@@ -313,6 +413,22 @@ export default defineContentScript({
           hint: wordHint(hover.lemma),
           celebrate: status === 'known',
           onClose: closeAiCard,
+        });
+        return;
+      }
+
+      if ((e.key === 'a' || e.key === 'A') && guessFirst && current && !quizSkipped
+        && (currentQuiz?.state === 'pending' || (currentQuiz === null && !lookupSettled))) {
+        e.preventDefault();
+        currentQuiz = null;
+        quizSkipped = true;
+        const hover = current;
+        const view = renderQuizCard(wordHint(hover.lemma));
+        showCard({
+          title: wordTitle(hover), rect: hover.rect,
+          body: view.body, hint: view.hint, choices: view.choices,
+          marked: marks.get(hover.lemma) === 'unknown',
+          onClose: closeAiCard, onRetry: retry(hover, currentDefinition),
         });
         return;
       }
@@ -417,14 +533,17 @@ export default defineContentScript({
         }
         paintHighlights();
 
+        const view = renderQuizCard(wordHint(hover.lemma));
         showCard({
           title: wordTitle(hover),
-          body: currentDefinition,
+          body: view.body,
           rect: hover.rect,
-          hint: wordHint(hover.lemma),
+          hint: view.hint,
+          choices: view.choices,
           marked: status === 'unknown',
           celebrate: status === 'unknown',
           onClose: closeAiCard,
+          onPick: onQuizPick,
         });
       }
     }, { signal: controller.signal });
@@ -443,6 +562,21 @@ interface Takeaway {
   sentence: string;
   rect: DOMRect;
   body: string;
+}
+
+/**
+ * Fisher-Yates,產生 [0,1,2] 的隨機排列。
+ * 回傳元素型別必須是 `0 | 1 | 2` 而不是 `number`：`order[position]` 會直接存進
+ * `Quiz.picked`（型別 `0 | 1 | 2 | null`）並送進 recordQuiz 訊息，元素型別是 number
+ * 就過不了 `pnpm typecheck`。
+ */
+function shuffleOrder(): [0 | 1 | 2, 0 | 1 | 2, 0 | 1 | 2] {
+  const order = [0, 1, 2];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j]!, order[i]!];
+  }
+  return order as [0 | 1 | 2, 0 | 1 | 2, 0 | 1 | 2];
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
