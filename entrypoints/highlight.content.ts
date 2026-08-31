@@ -103,6 +103,8 @@ export default defineContentScript({
     let currentSpeech = '';
     let currentDefinition = '';
     interface Quiz {
+      /** 出題當下對應的字;current 之後可能被別的按鍵改指到別的字,recordQuiz 要認這個而不是 current。 */
+      word: string;
       choices: [string, string, string];
       right: 0 | 1 | 2;
       /** 畫面第 i 個位置顯示 choices[order[i]]。元素型別是 `0 | 1 | 2`,不是 `number`。 */
@@ -114,6 +116,8 @@ export default defineContentScript({
     let currentQuiz: Quiz | null = null;
     /** A 跳過或選項還沒解析出來就按 A,跳過後不再重新出題,直到換一個字。 */
     let quizSkipped = false;
+    /** SYSTEM_RULES 規定第一、二行固定是題目;累積內容一開頭就不是這個開頭,代表這次不會出題。 */
+    const QUIZ_PREFIX = '選項｜';
     /**
      * true 代表目前沒有查詞請求在飛，或飛的那個已經有結果了；用來跟「currentQuiz 還是
      * null 是因為還沒解析出來」（true 的情況不該讓 A 被當成跳過鍵吃掉）分開判斷，
@@ -191,7 +195,7 @@ export default defineContentScript({
     };
 
     /** 只在還沒有題目、也還沒跳過時抓取；已揭曉或已跳過都不再洗牌或覆蓋。 */
-    const applyQuizExtraction = (raw: string) => {
+    const applyQuizExtraction = (raw: string, word: string) => {
       if (currentQuiz || quizSkipped) return;
       // 答案那行還沒收完就武裝，模型若把「2」續寫成「23」，題目會鎖在錯的正解上。
       // 等後面確定還有一行（代表答案行已換行）再洗牌。
@@ -202,7 +206,7 @@ export default defineContentScript({
 
       const extracted = extractQuiz(raw);
       if (!extracted) return;
-      currentQuiz = { ...extracted, order: shuffleOrder(), state: 'pending', picked: null };
+      currentQuiz = { ...extracted, word, order: shuffleOrder(), state: 'pending', picked: null };
     };
 
     /** position 是畫面位置索引;換算回原始索引才是 quizLog 要存的值。 */
@@ -210,9 +214,12 @@ export default defineContentScript({
       if (!current || !currentQuiz || currentQuiz.state !== 'pending') return;
       const hover = current;
       const picked = currentQuiz.order[position];
+      // recordQuiz 認 quiz 出題當下綁定的字,不是這一刻的 current:current 可能已經
+      // 被 X／S／D 移到別的字,用 current.lemma 會把這一題錯記到別的字頭上。
+      const word = currentQuiz.word;
       currentQuiz = { ...currentQuiz, state: 'revealed', picked };
       void browser.runtime.sendMessage({
-        type: 'recordQuiz', word: hover.lemma,
+        type: 'recordQuiz', word,
         picked, right: currentQuiz.right, choices: currentQuiz.choices,
       });
       const view = renderQuizCard(wordHint(hover.lemma));
@@ -220,6 +227,9 @@ export default defineContentScript({
         title: wordTitle(hover), rect: hover.rect,
         body: view.body, hint: view.hint, choices: view.choices,
         marked: marks.get(hover.lemma) === 'unknown',
+        // 答題當下串流可能還沒結束;維持 loading 才不會提早播完成動畫,
+        // 下一個 delta 進來又把卡片打回 loading,造成動畫閃兩次。
+        loading: !lookupSettled,
         onClose: closeAiCard, onRetry: retry(hover, currentDefinition),
       });
     };
@@ -256,7 +266,18 @@ export default defineContentScript({
       }, (body) => {
         if (seq === explainSeq) {
           currentDefinition = stripQuiz(body);
-          if (guessFirst) applyQuizExtraction(body);
+          if (guessFirst) {
+            applyQuizExtraction(body, hover.lemma);
+            // 題目還沒武裝、也還沒被跳過,但累積內容一開頭就不是「選項｜」:
+            // 代表這次模型沒有照格式先出題,不用等這次查詢結束就能確定沒有題目,
+            // 不然 A 會在整個串流期間被誤判成跳過鍵吃掉,查不了下一個字。
+            if (!currentQuiz && !quizSkipped && !lookupSettled) {
+              const seen = body.replace(/^\s+/, '');
+              if (seen && !QUIZ_PREFIX.startsWith(seen) && !seen.startsWith(QUIZ_PREFIX)) {
+                lookupSettled = true;
+              }
+            }
+          }
           const view = renderQuizCard(hint);
           showCard({
             title: wordTitle(hover), body: view.body, rect: hover.rect,
@@ -269,7 +290,7 @@ export default defineContentScript({
 
       if (result?.ok) {
         currentDefinition = stripQuiz(result.text);
-        if (guessFirst) applyQuizExtraction(result.text);
+        if (guessFirst) applyQuizExtraction(result.text, hover.lemma);
         lookupSettled = true;
         const view = renderQuizCard(hint);
         showCard({
@@ -411,6 +432,9 @@ export default defineContentScript({
         currentTakeaway = null;
         currentSpeech = '';
         current = hover;
+        // 題目還沒作答就被藏起來(不是揭曉),不解除武裝的話 1/2/3 之後還能對著
+        // 已經換過的 current 送出張冠李戴的 recordQuiz。
+        resetQuiz();
 
         const status = await browser.runtime.sendMessage({
           type: 'toggleMark', word: hover.lemma, status: 'known',
@@ -433,8 +457,11 @@ export default defineContentScript({
       if ((e.key === 'a' || e.key === 'A') && guessFirst && current && !quizSkipped
         && (currentQuiz?.state === 'pending' || (currentQuiz === null && !lookupSettled))) {
         e.preventDefault();
-        currentQuiz = null;
         quizSkipped = true;
+        // 題目已經出來才跳過:揭曉正解而不是整題消失,renderQuizCard 裡
+        // 「揭曉但 picked 是 null」那條診斷文字才有機會真的畫出來。題目根本還沒解析出來
+        // 就按 A 的情況(currentQuiz 為 null)沒有正解可揭曉,維持原本直接顯示定義。
+        if (currentQuiz) currentQuiz = { ...currentQuiz, state: 'revealed', picked: null };
         const hover = current;
         const view = renderQuizCard(wordHint(hover.lemma));
         showCard({
@@ -485,6 +512,9 @@ export default defineContentScript({
         currentTakeaway = null;
         currentSpeech = sentence;
         currentDefinition = '';
+        // current 被清空後,原本掛在那個字上、還沒作答的題目一樣要解除武裝,
+        // 不然接下來按 X 換一個字時,這題會被錯記到新換到的那個字上。
+        resetQuiz();
 
         await runExplain(
           { type: 'explain', kind, sentence, previous, focus, title: document.title },
@@ -527,6 +557,10 @@ export default defineContentScript({
       if (e.key === ' ' && current) {
         e.preventDefault();
         const hover = current;
+        // dismissAi() 在這支功能之前就會砍掉飛行中的請求,Space 收藏向來如此;
+        // 差別是題目把答案擋住了,使用者看不到串流被腰斬。題目揭曉前不能播慶祝動畫
+        // (卡片內容其實還是問題,不是剛拿到手的定義),也要留重試鈕撿回被砍掉的定義。
+        const quizPending = currentQuiz?.state === 'pending';
         dismissAi();
         const status = await browser.runtime.sendMessage({
           type: 'toggleMark', word: hover.lemma,
@@ -554,8 +588,9 @@ export default defineContentScript({
           hint: view.hint,
           choices: view.choices,
           marked: status === 'unknown',
-          celebrate: status === 'unknown',
+          celebrate: !quizPending && status === 'unknown',
           onClose: closeAiCard,
+          onRetry: quizPending ? retry(hover, currentDefinition) : undefined,
           onPick: onQuizPick,
         });
       }

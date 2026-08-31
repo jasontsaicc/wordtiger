@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { State } from 'ts-fsrs';
 import type { StoredFsrsCard } from './review';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, recordQuiz, listQuizLog, putCached, deleteCached, sentenceKey, getSentence, putSentence, type WordRow, type QuizLogRow } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, recordQuiz, listQuizLog, putCached, deleteCached, sentenceKey, getSentence, putSentence, type WordRow } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
