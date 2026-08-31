@@ -288,3 +288,31 @@ export function extractTakeaway(response: string): string | null {
   if (!phrase || ELLIPSIS.test(phrase)) return null;
   return phrase.slice(0, 160);
 }
+
+export interface QuizExtract {
+  choices: [string, string, string];
+  right: 0 | 1 | 2;
+}
+
+/**
+ * 只認回應開頭兩行的選項與答案；任一條件不成立就回 null，寧可不出題。
+ * `right` 是選項在原始順序裡的索引（0-based），畫面洗牌後的位置由呼叫端另外算。
+ */
+export function extractQuiz(text: string): QuizExtract | null {
+  const lines = text.split(/\r?\n/);
+  let start = 0;
+  while (start < lines.length && lines[start]!.trim() === '') start++;
+
+  const optionLine = lines[start]?.trim();
+  const answerLine = lines[start + 1]?.trim();
+  if (!optionLine?.startsWith('選項｜') || !answerLine?.startsWith('答案｜')) return null;
+
+  const choices = optionLine.slice('選項｜'.length).split('｜').map((s) => s.trim());
+  if (choices.length !== 3 || choices.some((c) => !c)) return null;
+  if (new Set(choices).size !== 3) return null;
+
+  const answer = Number(answerLine.slice('答案｜'.length).trim());
+  if (!Number.isInteger(answer) || answer < 1 || answer > 3) return null;
+
+  return { choices: choices as [string, string, string], right: (answer - 1) as 0 | 1 | 2 };
+}

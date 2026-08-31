@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTemplate, extractTakeaway, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
+import { renderTemplate, extractTakeaway, extractQuiz, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
 
 describe('renderTemplate', () => {
   it('取代單一變數', () => {
@@ -49,6 +49,49 @@ describe('extractTakeaway', () => {
 
   it('英文夾中文佔位的句型不當作詞庫 key', () => {
     expect(extractTakeaway('帶走｜provided [條件]｜前提是……才……')).toBe(null);
+  });
+});
+
+describe('extractQuiz', () => {
+  it('正常時回傳選項與正確答案的原始索引', () => {
+    expect(extractQuiz('選項｜掐住、扼住｜被服務端限流擋下｜主動調降發送速率\n答案｜2\n## 詞性與釋義'))
+      .toEqual({ choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'], right: 1 });
+  });
+
+  it('開頭空行不影響判定', () => {
+    expect(extractQuiz('\n\n選項｜A｜B｜C\n答案｜1'))
+      .toEqual({ choices: ['A', 'B', 'C'], right: 0 });
+  });
+
+  it('選項不是剛好三個時回 null', () => {
+    expect(extractQuiz('選項｜A｜B\n答案｜1')).toBeNull();
+    expect(extractQuiz('選項｜A｜B｜C｜D\n答案｜1')).toBeNull();
+  });
+
+  it('任一選項為空字串時回 null', () => {
+    expect(extractQuiz('選項｜A｜｜C\n答案｜1')).toBeNull();
+  });
+
+  it('選項有重複時回 null', () => {
+    expect(extractQuiz('選項｜A｜A｜B\n答案｜1')).toBeNull();
+  });
+
+  it('答案越界時回 null', () => {
+    expect(extractQuiz('選項｜A｜B｜C\n答案｜0')).toBeNull();
+    expect(extractQuiz('選項｜A｜B｜C\n答案｜4')).toBeNull();
+  });
+
+  it('缺少選項行或答案行時回 null', () => {
+    expect(extractQuiz('選項｜A｜B｜C')).toBeNull();
+    expect(extractQuiz('答案｜1')).toBeNull();
+  });
+
+  it('選項行不在開頭時視為內容,不算出題', () => {
+    expect(extractQuiz('## 本句用法\n選項｜A｜B｜C\n答案｜1')).toBeNull();
+  });
+
+  it('舊 payload 沒有選項行時回 null', () => {
+    expect(extractQuiz('## 詞性與釋義\n- 部署')).toBeNull();
   });
 });
 
