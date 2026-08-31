@@ -131,6 +131,10 @@ export default defineContentScript({
     const dismissAi = () => {
       cancelAi();
       explainSeq++;
+      // 取消掉的請求永遠不會走到 runLookup 裡設 true 的那兩行（它們都在
+      // seq !== explainSeq 的提前 return 之後）；不在這裡補上，字沒有題目又被
+      // 取消時 lookupSettled 會卡在 false，A 會被永久誤判成跳過鍵。
+      lookupSettled = true;
     };
     const closeAiCard = () => {
       current = null;
@@ -229,8 +233,13 @@ export default defineContentScript({
       const hint = wordHint(hover.lemma);
       const marked = marks.get(hover.lemma) === 'unknown';
       // 已揭曉或已跳過的題目不重新武裝；重問只是換一個字的答案,不是重新考一次。
+      const wasPending = currentQuiz?.state === 'pending';
       const keepQuiz = fresh && (currentQuiz?.state === 'revealed' || quizSkipped);
       if (!keepQuiz) resetQuiz();
+      // 題目還沒作答就被重問（點↻或按 A）等於放棄這一題；previous 與 currentDefinition
+      // 都是揭曉後才該外流的完整定義，這裡沒清掉的話，loading 卡片或緊接著的 A 跳過鍵
+      // 都會在使用者答題之前把答案洩漏出去。
+      if (wasPending && !keepQuiz) { previous = ''; currentDefinition = ''; }
       // 這個查詞請求還在飛,期間 currentQuiz 是 null 不代表「沒有題目」,
       // 而是「還沒解析出來」，A 鍵要能分辨這兩種情況。
       lookupSettled = false;
@@ -273,6 +282,10 @@ export default defineContentScript({
 
       // 重問失敗留住舊答案，錯誤擠進本來就在的 hint 那排，不多佔一行高度。
       lookupSettled = true;
+      // 題目在串流中武裝了,但最終查詢失敗:這一題沒有機會被回答,不能留著懸空。
+      // 留著的話 1/2/3 還能對一題使用者根本沒看到的題目送出 recordQuiz,已揭曉
+      // 則保留,讓失敗後重試仍維持原本的揭曉診斷。
+      if (currentQuiz?.state === 'pending') resetQuiz();
       const error = result?.error ?? '背景程式沒有回應';
       currentDefinition = previous;
       showCard({

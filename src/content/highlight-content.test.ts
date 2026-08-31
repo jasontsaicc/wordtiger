@@ -6,12 +6,14 @@ import { ContentScriptContext } from 'wxt/utils/content-script-context';
 // 不會被 done 事件蓋掉 body 之後就看不到。
 const card = vi.hoisted(() => ({
   body: '', bodies: [] as string[], choices: undefined as string[] | undefined,
+  onRetry: undefined as (() => void) | undefined,
 }));
 vi.mock('@/src/content/card', () => ({
-  showCard: (opts: { body: string; choices?: string[] }) => {
+  showCard: (opts: { body: string; choices?: string[]; onRetry?: () => void }) => {
     card.body = opts.body;
     card.bodies.push(opts.body);
     card.choices = opts.choices;
+    card.onRetry = opts.onRetry;
   },
   hideCard: vi.fn(),
 }));
@@ -33,6 +35,7 @@ describe('highlight content 快捷鍵', () => {
     fakeBrowser.reset();
     card.body = '';
     card.choices = undefined;
+    card.onRetry = undefined;
     guessFirst = true;
     card.bodies = [];
     recorded = [];
@@ -135,7 +138,10 @@ describe('highlight content 快捷鍵', () => {
   });
 
   it('guessFirst 開啟時,選項出現後可以用數字鍵作答,答對會揭曉完整定義並寫入 quizLog', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.99); // 讓洗牌結果等於原始順序,方便斷言
+    // random() 回 0 讓 shuffleOrder 洗出 [1,2,0]（不是原始順序 [0,1,2]），這樣才會
+    // 真的驗證到「畫面位置換算回原始索引」這件事：如果程式錯誤地直接把畫面位置存進
+    // picked，這裡選第 1 個位置會答錯（原始順序時兩者長得一樣,測不出差異）。
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const listeners: Array<(event: any) => void> = [];
     vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
       onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
@@ -152,10 +158,13 @@ describe('highlight content 快捷鍵', () => {
     document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
 
-    await vi.waitFor(() => expect(card.choices).toEqual(['甲', '乙', '丙']));
+    // order=[1,2,0]:畫面第 0 個位置顯示 choices[1]='乙',第 1 個顯示 choices[2]='丙',
+    // 第 2 個顯示 choices[0]='甲'。
+    await vi.waitFor(() => expect(card.choices).toEqual(['乙', '丙', '甲']));
     expect(card.body).not.toContain('答案｜');
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }));
+    // 正解原始索引是 1（答案｜2）,對應畫面第 0 個位置（order[0] === 1）,按鍵是 '1'。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
 
     await vi.waitFor(() => expect(card.body).toContain('答對了'));
     expect(card.body).toContain('忙翻');
@@ -184,6 +193,67 @@ describe('highlight content 快捷鍵', () => {
 
     await vi.waitFor(() => expect(card.body).toBe('忙翻'));
     expect(card.choices).toBeUndefined();
+    expect(recorded.some((m) => m.type === 'recordQuiz')).toBe(false);
+  });
+
+  it('題目還沒作答時點重試鈕,不會把答案洩漏到 loading 畫面上', async () => {
+    // 一定要真的送 done、讓 result?.ok 那個分支跑完,漏洞就在那個分支的
+    // onRetry: retry(hover, currentDefinition)。只送 delta 拿到的是串流那次
+    // showCard 的 onRetry（retry(hover, previous)，previous 本來就是空字串)，
+    // 測不出這個漏洞。
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        const text = '選項｜甲｜乙｜丙\n答案｜2\n忙翻';
+        listeners.forEach((listener) => listener({ type: 'delta', delta: text }));
+        listeners.forEach((listener) => listener({ type: 'done', result: { ok: true, text } }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    await vi.waitFor(() => expect(card.choices).toHaveLength(3)); // 洗牌順序不是本測試重點
+
+    const onRetry = card.onRetry;
+    expect(onRetry).toBeTypeOf('function');
+    onRetry!();
+
+    // 重試鈕點下去的當下同步執行到 loading 卡片那次 showCard,還沒有新的串流資料進來。
+    expect(card.body).not.toContain('忙翻');
+    expect(card.body).toBe('老虎正在抓這個字…');
+    expect(card.choices).toBeUndefined();
+  });
+
+  it('串流先出現題目後卻查詢失敗時,不留下懸空的題目狀態(不能再被作答)', async () => {
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        listeners.forEach((listener) => listener({
+          type: 'delta', delta: '選項｜甲｜乙｜丙\n答案｜2\n忙翻',
+        }));
+        listeners.forEach((listener) => listener({
+          type: 'done', result: { ok: false, error: '模擬失敗' },
+        }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    await vi.waitFor(() => expect(card.body).toContain('查詢失敗'));
+
+    // 題目在串流時已經武裝過,但最終查詢失敗,使用者從沒看過選項畫面。
+    // 這一題不該再能被作答,按數字鍵不該送出 recordQuiz。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }));
     expect(recorded.some((m) => m.type === 'recordQuiz')).toBe(false);
   });
 
@@ -236,6 +306,34 @@ describe('highlight content 快捷鍵', () => {
     await vi.waitFor(() => expect(lookups).toBe(2));
   });
 
+  it('Space 收藏取消了還在飛的查詢後,按 A 查下一個字不會被誤判成跳過鍵', async () => {
+    let lookups = 0;
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockImplementation(() => {
+      lookups++;
+      return {
+        onMessage: { addListener: vi.fn() },
+        onDisconnect: { addListener: vi.fn() },
+        // 永遠不觸發 delta/done,模擬這個字的查詢一直卡在飛行中,直到被 dismissAi() 取消。
+        postMessage: vi.fn(),
+        disconnect: vi.fn(),
+      } as any;
+    });
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' })); // word1,查詢卡在飛行中
+    expect(lookups).toBe(1);
+
+    // Space 收藏會呼叫 dismissAi() 取消飛行中的查詢,但不會再另外開一次 runLookup。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    expect(lookups).toBe(1);
+
+    // 這個字從頭到尾沒有 lookupSettled=true 的機會(直到 dismissAi 自己補上),
+    // A 不該被永遠卡在跳過分支,查下一個字要正常觸發新的查詢連線。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+    expect(lookups).toBe(2);
+  });
+
   it('答案那行還沒收到換行前不出題,收到換行與後續內容後才出題', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.99); // 讓洗牌結果等於原始順序,方便斷言
     const listeners: Array<(event: any) => void> = [];
@@ -260,5 +358,39 @@ describe('highlight content 快捷鍵', () => {
     // 換行與後續內容都到了，答案行確定收完，才出題。
     listeners.forEach((listener) => listener({ type: 'delta', delta: '\n忙翻' }));
     await vi.waitFor(() => expect(card.choices).toEqual(['甲', '乙', '丙']));
+  });
+
+  it('題目還沒解析出來、查詢也還在飛時按 A,會被當成跳過鍵,不會誤判成查下一個字,也不會等換行後補武裝', async () => {
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: vi.fn(), // 手動控制每一幀 delta，不靠自動觸發、也不送 done
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+    expect(fakeBrowser.runtime.connect).toHaveBeenCalledTimes(1);
+
+    // 答案行還沒換行,currentQuiz 仍是 null,但查詢還在飛(lookupSettled 是 false)。
+    // 這正是「還不確定有沒有題目」的中間態,A 要落在跳過分支,不能落到查下一個字的分支。
+    listeners.forEach((listener) => listener({
+      type: 'delta', delta: '選項｜甲｜乙｜丙\n答案｜2',
+    }));
+    await vi.waitFor(() => expect(card.body).toBe(''));
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    // 落在跳過分支的話不會呼叫 hoveredWord() 重新查詞,不會有新的 connect()。
+    expect(fakeBrowser.runtime.connect).toHaveBeenCalledTimes(1);
+    expect(card.choices).toBeUndefined();
+
+    // 就算後面確定還有一行(代表答案行已換行),題目已經被跳過就不該補武裝,
+    // 應該直接顯示串流累積出的完整定義。
+    listeners.forEach((listener) => listener({ type: 'delta', delta: '\n忙翻' }));
+    await vi.waitFor(() => expect(card.body).toBe('忙翻'));
+    expect(card.choices).toBeUndefined();
   });
 });
