@@ -84,4 +84,28 @@ describe('highlight content 快捷鍵', () => {
 
     await vi.waitFor(() => expect(card.body).toBe('忙翻'));
   });
+
+  it('串流與結果都會剝除選項與答案行,不外流到畫面上', async () => {
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        listeners.forEach((listener) => listener({
+          type: 'delta', delta: '選項｜A｜B｜C\n答案｜1\n忙翻',
+        }));
+        listeners.forEach((listener) => listener({
+          type: 'done', result: { ok: true, text: '選項｜A｜B｜C\n答案｜1\n忙翻' },
+        }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    await vi.waitFor(() => expect(card.body).toBe('忙翻'));
+    expect(card.body).not.toContain('選項｜');
+  });
 });

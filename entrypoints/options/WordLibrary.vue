@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
+import { stripQuiz } from '@/src/lib/prompt';
 import type { ExplainResult } from '@/src/lib/messages';
 import type { WordProgress } from '@/src/lib/review';
 
@@ -265,7 +266,7 @@ async function exportJson() {
                 </small>
                 <button @click="relookup(w)">重查</button>
               </div>
-              <div v-html="renderMarkdown(dictionaries[w.word]!.payload)" />
+              <div v-html="renderMarkdown(stripQuiz(dictionaries[w.word]!.payload))" />
             </template>
             <template v-else>
               <p class="note">

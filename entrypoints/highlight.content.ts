@@ -3,7 +3,7 @@ import { buildRanges } from '@/src/content/paint';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
 import type { ExplainResult, Msg } from '@/src/lib/messages';
-import { extractTakeaway } from '@/src/lib/prompt';
+import { extractTakeaway, stripQuiz } from '@/src/lib/prompt';
 import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
 
@@ -162,9 +162,9 @@ export default defineContentScript({
         type: 'lookup', word: hover.lemma, surface: hover.word, sentence: hover.sentence, fresh,
       }, (body) => {
         if (seq === explainSeq) {
-          currentDefinition = body;
+          currentDefinition = stripQuiz(body);
           showCard({
-            title: wordTitle(hover), body, rect: hover.rect,
+            title: wordTitle(hover), body: currentDefinition, rect: hover.rect,
             hint, marked, loading: true, onClose: closeAiCard, onRetry: retry(previous),
           });
         }
@@ -172,10 +172,10 @@ export default defineContentScript({
       if (seq !== explainSeq) return;
 
       if (result?.ok) {
-        currentDefinition = result.text;
+        currentDefinition = stripQuiz(result.text);
         showCard({
-          title: wordTitle(hover), body: result.text, rect: hover.rect,
-          hint, marked, onClose: closeAiCard, onRetry: retry(result.text),
+          title: wordTitle(hover), body: currentDefinition, rect: hover.rect,
+          hint, marked, onClose: closeAiCard, onRetry: retry(currentDefinition),
         });
         return;
       }

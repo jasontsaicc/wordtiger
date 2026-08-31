@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { renderMarkdown } from '@/src/content/markdown';
+import { stripQuiz } from '@/src/lib/prompt';
 import { speak } from '@/src/content/speak';
 import type { ReviewItem } from '@/src/lib/db';
 
@@ -127,7 +128,7 @@ function wordLabel(item: ReviewItem): string {
         <p v-if="item.definitionSentence" class="definition-note">
           詞典解釋的是這句：{{ item.definitionSentence }}
         </p>
-        <div v-html="renderMarkdown(item.definition)" />
+        <div v-html="renderMarkdown(stripQuiz(item.definition))" />
 
         <a v-if="item.context?.url" :href="item.context.url" target="_blank" rel="noreferrer">
           {{ item.context.title || '查看來源' }}
