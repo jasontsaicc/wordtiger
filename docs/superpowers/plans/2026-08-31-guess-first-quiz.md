@@ -1331,7 +1331,7 @@ git commit -m "feat: 新增 recordQuiz 訊息並讓 exportData 帶出 quizLog"
 - Modify: `src/lib/settings.ts:6-26, 68-82, 109-111`
 - Modify: `src/lib/messages.ts:61-70`
 - Modify: `entrypoints/options/App.vue:188-191`
-- Modify: `src/lib/messages.test.ts:16-24`（Task 8 已加 `guessFirst: true`，本任務確認一致）
+- Modify: `src/lib/messages.test.ts` 的**三個** `loadSettings` mock（約 16-24、262-269、428-435 行），每個都補上 `guessFirst: true`。`mockResolvedValue` 要求完整的 `Settings` 物件，所以新增一個必填欄位會同時弄壞三個。這三處由**本任務**負責，不是 Task 8：`Settings.guessFirst` 要到本任務才存在，Task 8 先加會是 excess property，那個 commit 單獨 typecheck 就會噴 TS2353。
 - Modify: `src/content/highlight-content.test.ts:39-51`
 - Test: `src/lib/settings.test.ts`
 
