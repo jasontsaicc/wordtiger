@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderTemplate, extractTakeaway, extractQuiz, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
+import { renderTemplate, extractTakeaway, extractQuiz, stripQuiz, DEFAULT_TEMPLATES, SYSTEM_RULES } from './prompt';
 
 describe('renderTemplate', () => {
   it('取代單一變數', () => {
@@ -92,6 +92,27 @@ describe('extractQuiz', () => {
 
   it('舊 payload 沒有選項行時回 null', () => {
     expect(extractQuiz('## 詞性與釋義\n- 部署')).toBeNull();
+  });
+});
+
+describe('stripQuiz', () => {
+  it('選項與答案都在開頭時整份剝除', () => {
+    expect(stripQuiz('選項｜A｜B｜C\n答案｜1\n## 詞性與釋義\n- 部署'))
+      .toBe('## 詞性與釋義\n- 部署');
+  });
+
+  it('沒有選項行時原樣回傳', () => {
+    const text = '## 詞性與釋義\n- 部署';
+    expect(stripQuiz(text)).toBe(text);
+  });
+
+  it('只有選項行沒有答案行時仍要剝除,避免壞題漏到畫面上', () => {
+    expect(stripQuiz('選項｜A｜B｜C\n## 詞性與釋義')).toBe('## 詞性與釋義');
+  });
+
+  it('選項行出現在正文中間時不誤刪', () => {
+    const text = '## 本句用法\n選項｜A｜B｜C\n答案｜1';
+    expect(stripQuiz(text)).toBe(text);
   });
 });
 

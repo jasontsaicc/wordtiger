@@ -316,3 +316,21 @@ export function extractQuiz(text: string): QuizExtract | null {
 
   return { choices: choices as [string, string, string], right: (answer - 1) as 0 | 1 | 2 };
 }
+
+/**
+ * 無條件剝除開頭的選項／答案行，不管抽取有沒有成功。
+ * 模型只吐了選項沒吐答案時，extractQuiz 會回 null，但那行仍必須剝掉，
+ * 否則壞題直接印在卡片上。只認開頭的行，正文中間的同名行視為內容不動它。
+ */
+export function stripQuiz(text: string): string {
+  const lines = text.split(/\r?\n/);
+  let start = 0;
+  while (start < lines.length && lines[start]!.trim() === '') start++;
+
+  let end = start;
+  if (lines[end]?.trim().startsWith('選項｜')) end++;
+  if (lines[end]?.trim().startsWith('答案｜')) end++;
+  if (end === start) return text;
+
+  return lines.slice(end).join('\n');
+}
