@@ -116,6 +116,27 @@ drop policy if exists "own review log" on public.review_log;
 create policy "own review log" on public.review_log for all to authenticated
 using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- 查詞時的三選一逐次結果，只新增不修改，所以沒有 deleted_at，也不掛 updated_at trigger：
+-- updated_at 停在寫入時間，重送同一列時不會被重新 pull 回來。
+-- right 是 PostgreSQL 保留字，欄位改叫 right_choice。
+create table if not exists public.quiz_log (
+  id uuid not null,
+  user_id uuid references auth.users on delete cascade not null,
+  word text not null,
+  picked smallint not null check (picked between 0 and 2),
+  right_choice smallint not null check (right_choice between 0 and 2),
+  choices jsonb not null,
+  at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
+alter table public.quiz_log enable row level security;
+
+drop policy if exists "own quiz log" on public.quiz_log;
+create policy "own quiz log" on public.quiz_log for all to authenticated
+using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 create or replace function public.sync_clock()
 returns timestamptz language sql security invoker
 as $$ select clock_timestamp(); $$;
