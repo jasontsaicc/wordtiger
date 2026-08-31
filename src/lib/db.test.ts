@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { State } from 'ts-fsrs';
 import type { StoredFsrsCard } from './review';
-import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, putCached, deleteCached, sentenceKey, getSentence, putSentence, type WordRow } from './db';
+import { db, markWord, unmarkWord, deleteWord, loadMarks, addContext, listContexts, listReviewItems, listReviewLog, inferCollectedAt, masterWord, recordReview, recordQuiz, listQuizLog, putCached, deleteCached, sentenceKey, getSentence, putSentence, type WordRow, type QuizLogRow } from './db';
 
 beforeEach(async () => {
   await db.words.clear();
@@ -10,6 +10,7 @@ beforeEach(async () => {
   await db.lookupCache.clear();
   await db.sentenceCache.clear();
   await db.reviewLog.clear();
+  await db.quizLog.clear();
   vi.restoreAllMocks();
 });
 
@@ -616,5 +617,22 @@ describe('sentenceCache', () => {
     // Cache key 必須保留原句以利追查。
     await putSentence('translate', sentence, '譯文');
     expect(await getSentence('translate', ` ${sentence}`)).toBe(null);
+  });
+});
+
+describe('quizLog', () => {
+  it('寫入後讀得到', async () => {
+    await recordQuiz('throttled', 1, 1, ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'], 100);
+    expect(await listQuizLog()).toMatchObject([
+      { word: 'throttled', picked: 1, right: 1, choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'] },
+    ]);
+  });
+
+  it('每筆用 uuid 當主鍵,同一個字可以留下多筆', async () => {
+    await recordQuiz('slam', 0, 2, ['忙翻', '被投訴', '被裁員'], 10);
+    await recordQuiz('slam', 2, 2, ['忙翻', '被投訴', '被裁員'], 20);
+    const log = await listQuizLog();
+    expect(log).toHaveLength(2);
+    expect(new Set(log.map((row) => row.id)).size).toBe(2);
   });
 });

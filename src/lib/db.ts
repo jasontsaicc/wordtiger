@@ -81,6 +81,20 @@ export interface ReviewLogRow {
   pending?: 0 | 1;
 }
 
+/** 查詞時三選一的逐次結果。只新增不修改，因此用 uuid 主鍵就能跨裝置合併。 */
+export interface QuizLogRow {
+  id: string;
+  word: string;
+  /** 洗牌前的原始索引。 */
+  picked: 0 | 1 | 2;
+  right: 0 | 1 | 2;
+  /** 供日後回頭檢查題目品質。 */
+  choices: [string, string, string];
+  at: number;
+  /** 本機改動尚未被雲端確認；舊資料缺少此欄時也視為待同步。 */
+  pending?: 0 | 1;
+}
+
 export interface CacheRow {
   word: string;
   payload: string;
@@ -104,6 +118,7 @@ class WordTigerDb extends Dexie {
   lookupCache!: Table<CacheRow, string>;
   sentenceCache!: Table<SentenceRow, string>;
   reviewLog!: Table<ReviewLogRow, string>;
+  quizLog!: Table<QuizLogRow, string>;
 
   constructor() {
     super('wordtiger');
@@ -142,6 +157,9 @@ class WordTigerDb extends Dexie {
         // 裝置較新的改動。拉取時由 sync 的 mergeCollectedAt 決定最終收藏日。
         pending: 1 as const,
       })));
+    });
+    this.version(7).stores({
+      quizLog: 'id, at',
     });
   }
 }
@@ -347,6 +365,22 @@ export function masterWord(word: string, now = Date.now()): Promise<boolean> {
 export function listReviewLog(): Promise<ReviewLogRow[]> {
   // ponytail: 全表掃描；筆數大到有感時再改用 at 索引取區間。
   return db.reviewLog.orderBy('at').toArray();
+}
+
+/** 查詞三選一的逐次紀錄，只新增不修改。 */
+export async function recordQuiz(
+  word: string,
+  picked: 0 | 1 | 2,
+  right: 0 | 1 | 2,
+  choices: [string, string, string],
+  now = Date.now(),
+): Promise<void> {
+  await db.quizLog.add({ id: crypto.randomUUID(), word, picked, right, choices, at: now, pending: 1 });
+}
+
+/** 由舊到新。 */
+export function listQuizLog(): Promise<QuizLogRow[]> {
+  return db.quizLog.orderBy('at').toArray();
 }
 
 export async function putCached(
