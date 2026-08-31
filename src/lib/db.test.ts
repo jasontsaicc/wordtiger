@@ -347,16 +347,18 @@ describe('今晚打老虎', () => {
 
   it('reps 為 0 時取最舊的語境，不是最新的', async () => {
     const oldest = 'The certificate authority will issue a new certificate tomorrow.';
+    const newest = 'A production issue interrupted the deployment this morning.';
     await markWord('issue', 'unknown');
+    // 詞典看到的句子刻意用較新那句，這樣 context 斷言只有在「取最舊」規則下才會過。
     await putCached([{
-      word: 'issue', surface: 'issued', payload: '核發', sentence: oldest,
+      word: 'issue', surface: 'issued', payload: '核發', sentence: newest,
     }]);
     await addContext({
       word: 'issue', sentence: oldest,
       url: 'https://example.com/cert', title: 'Certificate guide',
     });
     await addContext({
-      word: 'issue', sentence: 'A production issue interrupted the deployment this morning.',
+      word: 'issue', sentence: newest,
       url: 'https://example.com/incident', title: 'Incident',
     });
 
@@ -364,8 +366,8 @@ describe('今晚打老虎', () => {
       expect.objectContaining({
         word: 'issue', surface: 'issued', definition: '核發',
         context: expect.objectContaining({ sentence: oldest, title: 'Certificate guide' }),
-        // 出題語境剛好就是詞典看到的那句，不必多印一行提示。
-        definitionSentence: undefined,
+        // 詞典看到的句子跟出題語境不同，要多印一行提示。
+        definitionSentence: newest,
       }),
     ]);
   });
