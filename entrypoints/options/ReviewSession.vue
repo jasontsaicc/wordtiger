@@ -124,6 +124,9 @@ function wordLabel(item: ReviewItem): string {
 
       <div v-else class="answer" aria-live="polite">
         <p v-if="item.isPhrase" class="answer-label">老師回饋</p>
+        <p v-if="item.definitionSentence" class="definition-note">
+          詞典解釋的是這句：{{ item.definitionSentence }}
+        </p>
         <div v-html="renderMarkdown(item.definition)" />
 
         <a v-if="item.context?.url" :href="item.context.url" target="_blank" rel="noreferrer">
@@ -179,6 +182,7 @@ button:active { transform: scale(.98); }
 .answer :deep(p), .answer :deep(ul) { margin: .35rem 0; }
 .answer a { display: inline-block; margin-top: .7rem; color: #0e7490; }
 .answer-label { margin: 0; color: #64748b; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.definition-note { margin: 0 0 .6rem; padding: .6rem .8rem; border-left: 3px solid #94a3b8; border-radius: 0 8px 8px 0; color: #475569; background: #f1f5f9; font-size: 13px; }
 .self-check { margin: 1.2rem 0 .55rem; color: #334155; font-weight: 700; }
 .grade-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .7rem; }
 .grade-actions button { min-height: 44px; }
