@@ -16,6 +16,7 @@ beforeEach(async () => {
   await db.contexts.clear();
   await db.lookupCache.clear();
   await db.reviewLog.clear();
+  await db.quizLog.clear();
   vi.restoreAllMocks();
 });
 
@@ -112,6 +113,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([{
         user_id: 'user-1', word: 'local', status: 'unknown',
         created_at: '1970-01-01T00:00:00.030Z',
@@ -128,9 +130,9 @@ describe('syncNow', () => {
     expect((await db.words.get('local'))!.pending).toBe(0);
     // 收藏日要跟著上雲端，否則換裝置後學習足跡會少掉「新收藏」。
     expect((await db.words.get('local'))!.collectedAt).toBe(35);
-    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"word":"local"');
-    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"review_step":2');
-    expect(fetchMock.mock.calls[6]![1]?.body)
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"word":"local"');
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"review_step":2');
+    expect(fetchMock.mock.calls[7]![1]?.body)
       .toContain('"collected_at":"1970-01-01T00:00:00.035Z"');
   });
 
@@ -164,6 +166,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([
         {
           user_id: 'user-1', word: 'local', status: 'unknown',
@@ -184,7 +187,7 @@ describe('syncNow', () => {
     expect((await db.words.get('local'))!.fsrsCard).toEqual(fsrsCard);
     expect((await db.words.get('blank'))!.fsrsCard).toBeUndefined();
     // bulk insert 要求同批物件的 key 集合一致，沒有卡片的列也要帶 fsrs_card。
-    expect(JSON.parse(fetchMock.mock.calls[6]![1]?.body as string)).toEqual([
+    expect(JSON.parse(fetchMock.mock.calls[7]![1]?.body as string)).toEqual([
       expect.objectContaining({ word: 'blank', fsrs_card: null }),
       expect.objectContaining({ word: 'local', fsrs_card: fsrsCard }),
     ]);
@@ -220,6 +223,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([remote]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([saved]));
 
     await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
@@ -230,10 +234,10 @@ describe('syncNow', () => {
     expect((await db.lookupCache.get('local'))!.surface).toBe('locals');
     expect((await db.lookupCache.get('local'))!.sentence).toBe('Local sentence.');
     expect((await db.lookupCache.get('local'))!.variant).toBe('local-variant');
-    expect(fetchMock.mock.calls[6]![1]?.body).toContain('"payload":"本機詞典"');
-    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"surface"');
-    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"sentence"');
-    expect(fetchMock.mock.calls[6]![1]?.body).not.toContain('"variant"');
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"payload":"本機詞典"');
+    expect(fetchMock.mock.calls[7]![1]?.body).not.toContain('"surface"');
+    expect(fetchMock.mock.calls[7]![1]?.body).not.toContain('"sentence"');
+    expect(fetchMock.mock.calls[7]![1]?.body).not.toContain('"variant"');
   });
 
   it('遠端還沒回填時，不會用 null 蓋掉本機的 collectedAt', async () => {
@@ -262,6 +266,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([{
         user_id: 'user-1', word: 'deploy', status: 'unknown',
         created_at: '1970-01-01T00:00:00.010Z',
@@ -273,7 +278,7 @@ describe('syncNow', () => {
     await syncNow();
 
     expect((await db.words.get('deploy'))!.collectedAt).toBe(10);
-    expect(fetchMock.mock.calls[6]![1]?.body)
+    expect(fetchMock.mock.calls[7]![1]?.body)
       .toContain('"collected_at":"1970-01-01T00:00:00.010Z"');
   });
 
@@ -292,10 +297,15 @@ describe('syncNow', () => {
     await signIn('https://project.supabase.co', 'anon', 'one@example.com', 'password');
     await putCached([{ word: 'private', payload: '舊帳號內容' }]);
     await db.reviewLog.add({ id: 'log-1', word: 'deploy', remembered: true, at: 10, pending: 0 });
+    await db.quizLog.add({
+      id: 'quiz-1', word: 'deploy', picked: 0, right: 0,
+      choices: ['甲', '乙', '丙'], at: 10, pending: 0,
+    });
     await signIn('https://project.supabase.co', 'anon', 'two@example.com', 'password');
     expect((await db.lookupCache.get('private'))!.pending).toBe(0);
     // 打老虎成績屬於學習歷程，跟著人走，切換帳號要重新上傳。
     expect((await db.reviewLog.get('log-1'))!.pending).toBe(1);
+    expect((await db.quizLog.get('quiz-1'))!.pending).toBe(1);
   });
 
   it('打老虎成績會拉回別台裝置的紀錄，並用複合主鍵推送本機紀錄', async () => {
@@ -327,6 +337,7 @@ describe('syncNow', () => {
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([remote]))
+      .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([{
         id: 'ctx-1', user_id: 'user-1', word: 'deploy',
         sentence: 'We deploy to production on Fridays.',
@@ -345,10 +356,54 @@ describe('syncNow', () => {
       id: 'remote-1', word: 'roll back', remembered: false, at: 10, pending: 0,
     });
     expect((await db.reviewLog.get('local-1'))!.pending).toBe(0);
-    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"remembered":true');
-    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"id":"local-1"');
+    expect(fetchMock.mock.calls[8]![1]?.body).toContain('"remembered":true');
+    expect(fetchMock.mock.calls[8]![1]?.body).toContain('"id":"local-1"');
     // 主鍵只有 id 時，換帳號重傳會撞到別的帳號的列而被 RLS 擋下。
-    expect(fetchMock.mock.calls[6]![0]).toContain('contexts?on_conflict=user_id%2Cid');
-    expect(fetchMock.mock.calls[7]![0]).toContain('review_log?on_conflict=user_id%2Cid');
+    expect(fetchMock.mock.calls[7]![0]).toContain('contexts?on_conflict=user_id%2Cid');
+    expect(fetchMock.mock.calls[8]![0]).toContain('review_log?on_conflict=user_id%2Cid');
+  });
+
+  it('quizLog 會拉回別台裝置的紀錄，並用複合主鍵推送本機紀錄', async () => {
+    await db.quizLog.add({
+      id: 'local-quiz-1', word: 'throttled', picked: 1, right: 1,
+      choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'], at: 30, pending: 1,
+    });
+    const response = (body: unknown) => ({
+      ok: true, status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response);
+    const remote = {
+      id: 'remote-quiz-1', user_id: 'user-1', word: 'slammed',
+      picked: 0, right_choice: 2, choices: ['忙翻', '被投訴', '被裁員'],
+      at: '1970-01-01T00:00:00.010Z',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response({
+        access_token: 'access', refresh_token: 'refresh', expires_in: 3600,
+        user: { id: 'user-1', email: 'me@example.com' },
+      }))
+      .mockResolvedValueOnce(response('1970-01-01T00:00:01.000Z'))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response([remote]))
+      .mockResolvedValueOnce(response([{
+        id: 'local-quiz-1', user_id: 'user-1', word: 'throttled',
+        picked: 1, right_choice: 1,
+        choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'],
+        at: '1970-01-01T00:00:00.030Z',
+      }]));
+
+    await signIn('https://project.supabase.co', 'anon', 'me@example.com', 'password');
+    expect(await syncNow()).toMatchObject({ pulled: 1, pushed: 1 });
+    expect(await db.quizLog.get('remote-quiz-1')).toEqual({
+      id: 'remote-quiz-1', word: 'slammed', picked: 0, right: 2,
+      choices: ['忙翻', '被投訴', '被裁員'], at: 10, pending: 0,
+    });
+    expect((await db.quizLog.get('local-quiz-1'))!.pending).toBe(0);
+    expect(fetchMock.mock.calls[7]![1]?.body).toContain('"right_choice":1');
+    expect(fetchMock.mock.calls[7]![0]).toContain('quiz_log?on_conflict=user_id%2Cid');
   });
 });

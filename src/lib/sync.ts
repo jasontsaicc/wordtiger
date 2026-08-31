@@ -1,4 +1,4 @@
-import { db, type CacheRow, type ContextRow, type ReviewLogRow, type WordRow } from './db';
+import { db, type CacheRow, type ContextRow, type QuizLogRow, type ReviewLogRow, type WordRow } from './db';
 import type { StoredFsrsCard } from './review';
 
 const KEY = 'sync';
@@ -67,6 +67,16 @@ type RemoteReviewLog = {
   user_id: string;
   word: string;
   remembered: boolean;
+  at: string;
+};
+
+type RemoteQuizLog = {
+  id: string;
+  user_id: string;
+  word: string;
+  picked: number;
+  right_choice: number;
+  choices: [string, string, string];
   at: string;
 };
 
@@ -146,6 +156,7 @@ export async function signIn(
       db.words.toCollection().modify({ pending: 1 }),
       db.contexts.toCollection().modify({ pending: 1 }),
       db.reviewLog.toCollection().modify({ pending: 1 }),
+      db.quizLog.toCollection().modify({ pending: 1 }),
       // 切換帳號時不將原帳號 cache 上傳至新帳號。
       db.lookupCache.toCollection().modify({ pending: 0 }),
     ]);
@@ -267,6 +278,18 @@ function localReviewLog(row: RemoteReviewLog): ReviewLogRow {
   };
 }
 
+function localQuizLog(row: RemoteQuizLog): QuizLogRow {
+  return {
+    id: row.id,
+    word: row.word,
+    picked: row.picked as 0 | 1 | 2,
+    right: row.right_choice as 0 | 1 | 2,
+    choices: row.choices,
+    at: Date.parse(row.at),
+    pending: 0,
+  };
+}
+
 function localLookupCache(row: RemoteLookupCache): CacheRow {
   return {
     word: row.word,
@@ -338,6 +361,18 @@ function remoteReviewLog(row: ReviewLogRow, userId: string) {
     user_id: userId,
     word: row.word,
     remembered: row.remembered,
+    at: iso(row.at),
+  };
+}
+
+function remoteQuizLog(row: QuizLogRow, userId: string) {
+  return {
+    id: row.id,
+    user_id: userId,
+    word: row.word,
+    picked: row.picked,
+    right_choice: row.right,
+    choices: row.choices,
     at: iso(row.at),
   };
 }
@@ -435,80 +470,92 @@ async function performSync(): Promise<SyncResult> {
     const cutoff = await request<string>(stored, active, 'rpc/sync_clock', {
       method: 'POST', body: '{}',
     });
-    const [remoteWords, remoteContexts, remoteLookupCaches, remoteReviewLogs] = await Promise.all([
-      pull<RemoteWord>(stored, active, 'words', cutoff),
-      pull<RemoteContext>(stored, active, 'contexts', cutoff),
-      pull<RemoteLookupCache>(stored, active, 'lookup_cache', cutoff),
-      pull<RemoteReviewLog>(stored, active, 'review_log', cutoff),
-    ]);
+    const [remoteWords, remoteContexts, remoteLookupCaches, remoteReviewLogs, remoteQuizLogs] =
+      await Promise.all([
+        pull<RemoteWord>(stored, active, 'words', cutoff),
+        pull<RemoteContext>(stored, active, 'contexts', cutoff),
+        pull<RemoteLookupCache>(stored, active, 'lookup_cache', cutoff),
+        pull<RemoteReviewLog>(stored, active, 'review_log', cutoff),
+        pull<RemoteQuizLog>(stored, active, 'quiz_log', cutoff),
+      ]);
 
-    await db.transaction('rw', db.words, db.contexts, db.lookupCache, db.reviewLog, async () => {
-      for (const row of remoteWords) {
-        const remote = localWord(row);
-        const local = await db.words.get(remote.word);
-        await db.words.put(mergeCollectedAt(local, remote, resolveRow(local, remote)));
-      }
-      for (const row of remoteContexts) {
-        const remote = localContext(row);
-        await db.contexts.put(resolveRow(await db.contexts.get(remote.id), remote));
-      }
-      for (const row of remoteLookupCaches) {
-        const remote = localLookupCache(row);
-        const local = await db.lookupCache.get(remote.word);
-        await db.lookupCache.put(preserveLocalLookupMetadata(local, resolveRow(local, remote)));
-      }
-      // 成績只新增不修改，同一個 id 兩邊內容一定相同，不需要衝突解析。
-      for (const row of remoteReviewLogs) await db.reviewLog.put(localReviewLog(row));
-    });
+    await db.transaction(
+      'rw', db.words, db.contexts, db.lookupCache, db.reviewLog, db.quizLog, async () => {
+        for (const row of remoteWords) {
+          const remote = localWord(row);
+          const local = await db.words.get(remote.word);
+          await db.words.put(mergeCollectedAt(local, remote, resolveRow(local, remote)));
+        }
+        for (const row of remoteContexts) {
+          const remote = localContext(row);
+          await db.contexts.put(resolveRow(await db.contexts.get(remote.id), remote));
+        }
+        for (const row of remoteLookupCaches) {
+          const remote = localLookupCache(row);
+          const local = await db.lookupCache.get(remote.word);
+          await db.lookupCache.put(preserveLocalLookupMetadata(local, resolveRow(local, remote)));
+        }
+        // 成績只新增不修改，同一個 id 兩邊內容一定相同，不需要衝突解析。
+        for (const row of remoteReviewLogs) await db.reviewLog.put(localReviewLog(row));
+        for (const row of remoteQuizLogs) await db.quizLog.put(localQuizLog(row));
+      },
+    );
 
-    const [pendingWords, pendingContexts, pendingLookupCaches, pendingReviewLogs] =
+    const [pendingWords, pendingContexts, pendingLookupCaches, pendingReviewLogs, pendingQuizLogs] =
       await Promise.all([
         db.words.filter((row) => row.pending !== 0).toArray(),
         db.contexts.filter((row) => row.pending !== 0).toArray(),
         db.lookupCache.filter((row) => row.pending !== 0).toArray(),
         db.reviewLog.filter((row) => row.pending !== 0).toArray(),
+        db.quizLog.filter((row) => row.pending !== 0).toArray(),
       ]);
-    const [savedWords, savedContexts, savedLookupCaches, savedReviewLogs] = await Promise.all([
-      push<RemoteWord>(stored, active, 'words', 'user_id,word',
-        pendingWords.map((row) => remoteWord(row, active.userId))),
-      push<RemoteContext>(stored, active, 'contexts', 'user_id,id',
-        pendingContexts.map((row) => remoteContext(row, active.userId))),
-      push<RemoteLookupCache>(stored, active, 'lookup_cache', 'user_id,word',
-        pendingLookupCaches.map((row) => remoteLookupCache(row, active.userId))),
-      push<RemoteReviewLog>(stored, active, 'review_log', 'user_id,id',
-        pendingReviewLogs.map((row) => remoteReviewLog(row, active.userId))),
-    ]);
+    const [savedWords, savedContexts, savedLookupCaches, savedReviewLogs, savedQuizLogs] =
+      await Promise.all([
+        push<RemoteWord>(stored, active, 'words', 'user_id,word',
+          pendingWords.map((row) => remoteWord(row, active.userId))),
+        push<RemoteContext>(stored, active, 'contexts', 'user_id,id',
+          pendingContexts.map((row) => remoteContext(row, active.userId))),
+        push<RemoteLookupCache>(stored, active, 'lookup_cache', 'user_id,word',
+          pendingLookupCaches.map((row) => remoteLookupCache(row, active.userId))),
+        push<RemoteReviewLog>(stored, active, 'review_log', 'user_id,id',
+          pendingReviewLogs.map((row) => remoteReviewLog(row, active.userId))),
+        push<RemoteQuizLog>(stored, active, 'quiz_log', 'user_id,id',
+          pendingQuizLogs.map((row) => remoteQuizLog(row, active.userId))),
+      ]);
     const sentWords = new Map(pendingWords.map((row) => [row.word, row]));
     const sentContexts = new Map(pendingContexts.map((row) => [row.id, row]));
     const sentLookupCaches = new Map(pendingLookupCaches.map((row) => [row.word, row]));
-    await db.transaction('rw', db.words, db.contexts, db.lookupCache, db.reviewLog, async () => {
-      for (const row of savedWords.map(localWord)) {
-        await db.words.put(acknowledgeRow(
-          await db.words.get(row.word), sentWords.get(row.word), row,
-        ));
-      }
-      for (const row of savedContexts.map(localContext)) {
-        await db.contexts.put(acknowledgeRow(
-          await db.contexts.get(row.id), sentContexts.get(row.id), row,
-        ));
-      }
-      for (const row of savedLookupCaches.map(localLookupCache)) {
-        const current = await db.lookupCache.get(row.word);
-        await db.lookupCache.put(preserveLocalLookupMetadata(current, acknowledgeRow(
-          current, sentLookupCaches.get(row.word), row,
-        )));
-      }
-      for (const row of savedReviewLogs.map(localReviewLog)) await db.reviewLog.put(row);
-    });
+    await db.transaction(
+      'rw', db.words, db.contexts, db.lookupCache, db.reviewLog, db.quizLog, async () => {
+        for (const row of savedWords.map(localWord)) {
+          await db.words.put(acknowledgeRow(
+            await db.words.get(row.word), sentWords.get(row.word), row,
+          ));
+        }
+        for (const row of savedContexts.map(localContext)) {
+          await db.contexts.put(acknowledgeRow(
+            await db.contexts.get(row.id), sentContexts.get(row.id), row,
+          ));
+        }
+        for (const row of savedLookupCaches.map(localLookupCache)) {
+          const current = await db.lookupCache.get(row.word);
+          await db.lookupCache.put(preserveLocalLookupMetadata(current, acknowledgeRow(
+            current, sentLookupCaches.get(row.word), row,
+          )));
+        }
+        for (const row of savedReviewLogs.map(localReviewLog)) await db.reviewLog.put(row);
+        for (const row of savedQuizLogs.map(localQuizLog)) await db.quizLog.put(row);
+      },
+    );
 
     const finishedAt = Date.now();
     delete stored.lastError;
     await save({ ...stored, session: active, cursor: Date.parse(cutoff), lastSuccessAt: finishedAt });
     return {
       pulled: remoteWords.length + remoteContexts.length
-        + remoteLookupCaches.length + remoteReviewLogs.length,
+        + remoteLookupCaches.length + remoteReviewLogs.length + remoteQuizLogs.length,
       pushed: savedWords.length + savedContexts.length
-        + savedLookupCaches.length + savedReviewLogs.length,
+        + savedLookupCaches.length + savedReviewLogs.length + savedQuizLogs.length,
       finishedAt,
     };
   } catch (error) {
