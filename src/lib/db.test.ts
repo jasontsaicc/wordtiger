@@ -469,9 +469,15 @@ describe('今晚打老虎', () => {
     }
 
     await db.words.update('roll back', { fsrsCard: card(0, { reps: 0 }) });
-    expect((await listReviewItems())[0]!.context?.sentence).toBe(sentences[0]);
+    const round0 = (await listReviewItems())[0]!;
+    expect(round0.context?.sentence).toBe(sentences[0]);
+    expect(round0.isPattern).toBe(false);
     await db.words.update('roll back', { fsrsCard: card(0, { reps: 1 }) });
-    expect((await listReviewItems())[0]!.context?.sentence).toBe(sentences[1]);
+    const round1 = (await listReviewItems())[0]!;
+    expect(round1.context?.sentence).toBe(sentences[1]);
+    // 第二句是「rolled back」而非字面 roll back，若 isPattern 跟著輪替後的句子變動
+    // 這裡會誤判成句型；isPattern 是跨語境的性質，兩輪都要一樣。
+    expect(round1.isPattern).toBe(false);
   });
 
   it('自評後寫入 FSRS 卡片、回傳下次日期並留下待同步標記', async () => {

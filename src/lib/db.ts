@@ -285,8 +285,10 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
       : definition?.sentence
         ? { sentence: definition.sentence, url: '', title: '' }
         : undefined;
-    const isPattern = Boolean(isPhrase && reviewContext
-      && !reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
+    // 句型與否是片語跨所有語境的性質，不是當下輪替到哪一句的性質；
+    // canAnswer 已保證片語至少有一筆語境，list 對片語不會是空的。
+    const isPattern = isPhrase
+      && !list.some((c) => c.sentence.toLowerCase().includes(row.word.toLowerCase()));
     // 詞典解釋的是 definition.sentence；只在跟輪替後的出題語境不同時才帶出，
     // 否則單一語境的常見情況會多出一行雜訊。
     const definitionSentence = definition?.sentence && definition.sentence !== reviewContext?.sentence
