@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 
-const card = vi.hoisted(() => ({ body: '' }));
+// bodies 記錄每一次 showCard 被呼叫時的 body，讓測試能單獨檢查串流那一幀，
+// 不會被 done 事件蓋掉 body 之後就看不到。
+const card = vi.hoisted(() => ({ body: '', bodies: [] as string[] }));
 vi.mock('@/src/content/card', () => ({
-  showCard: (opts: { body: string }) => { card.body = opts.body; },
+  showCard: (opts: { body: string }) => { card.body = opts.body; card.bodies.push(opts.body); },
   hideCard: vi.fn(),
 }));
 vi.mock('@/src/content/paint', () => ({
@@ -21,6 +23,7 @@ describe('highlight content 快捷鍵', () => {
   beforeEach(() => {
     fakeBrowser.reset();
     card.body = '';
+    card.bodies = [];
     document.body.textContent = 'We got slammed with alerts.';
     const text = document.body.firstChild!;
     Object.defineProperty(document, 'caretPositionFromPoint', {
@@ -107,5 +110,10 @@ describe('highlight content 快捷鍵', () => {
 
     await vi.waitFor(() => expect(card.body).toBe('忙翻'));
     expect(card.body).not.toContain('選項｜');
+
+    // delta 與 done 幾乎同一個 microtask 內連發，只看最終 card.body 會被 done
+    // 那次呼叫蓋掉，測不出串流那次剝除有沒有做。改查完整呼叫紀錄，
+    // 確保串流那一次的 showCard 呼叫本身也沒有帶著選項／答案行。
+    expect(card.bodies.some((body) => body.includes('選項｜'))).toBe(false);
   });
 });
