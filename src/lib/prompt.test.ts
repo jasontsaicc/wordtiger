@@ -191,3 +191,11 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES.lookup).toContain('不適用情況');
   });
 });
+
+describe('SYSTEM_RULES.lookup 的出題規則', () => {
+  it('要求輸出選項與答案兩行,並帶反例避免義項型出題', () => {
+    expect(SYSTEM_RULES.lookup).toContain('選項｜');
+    expect(SYSTEM_RULES.lookup).toContain('答案｜');
+    expect(SYSTEM_RULES.lookup).toContain('throttled');
+  });
+});
