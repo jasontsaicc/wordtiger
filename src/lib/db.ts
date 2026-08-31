@@ -38,6 +38,11 @@ export interface ReviewItem {
   canMaster: boolean;
   definition: string;
   context?: Pick<ContextRow, 'sentence' | 'url' | 'title'>;
+  /**
+   * 詞典解釋當時看到的原句（`definition.sentence`）。
+   * 只在跟輪替後的出題語境不同時才有值；同步下來的裝置上可能缺少。
+   */
+  definitionSentence?: string;
 }
 
 export interface ContextRow {
@@ -254,32 +259,37 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
     db.lookupCache.where('word').anyOf(words)
       .filter((row) => row.deletedAt === null).toArray(),
   ]);
-  const latest = new Map<string, ContextRow>();
+  // 依字分組並由舊到新排序，語境才能用 reps 取餘數輪替；片語與單字共用同一份分組。
+  const byWord = new Map<string, ContextRow[]>();
   for (const row of contexts) {
-    if ((latest.get(row.word)?.createdAt ?? -1) < row.createdAt) latest.set(row.word, row);
+    const list = byWord.get(row.word);
+    if (list) list.push(row); else byWord.set(row.word, [row]);
   }
+  for (const list of byWord.values()) list.sort((a, b) => a.createdAt - b.createdAt);
   const definitions = new Map(caches.map((row) => [row.word, row]));
 
   const items: ReviewItem[] = [];
   for (const row of candidates) {
     const isPhrase = /\s/.test(row.word);
     const definition = definitions.get(row.word);
+    const list = byWord.get(row.word) ?? [];
     // canAnswer 已保證有詞典，但 TS 追不進函式，之後的 definition 用 ! 取用。
-    if (!canAnswer(row.word, Boolean(definition), latest.has(row.word))) continue;
+    if (!canAnswer(row.word, Boolean(definition), list.length > 0)) continue;
 
-    let context = isPhrase ? latest.get(row.word) : undefined;
-    if (!isPhrase && definition?.sentence) {
-      // ponytail: 每題 O(n) 尋找語境；取題出現可測延遲時再建複合索引。
-      context = contexts.find((item) =>
-        item.word === row.word && item.sentence === definition.sentence);
-    }
-    const reviewContext = context
-      ? { sentence: context.sentence, url: context.url, title: context.title }
+    // 零筆語境時 % 0 會是 NaN，用長度守衛退回 definition.sentence。
+    const rotated = list.length ? list[(row.fsrsCard?.reps ?? 0) % list.length] : undefined;
+    const reviewContext = rotated
+      ? { sentence: rotated.sentence, url: rotated.url, title: rotated.title }
       : definition?.sentence
         ? { sentence: definition.sentence, url: '', title: '' }
         : undefined;
     const isPattern = Boolean(isPhrase && reviewContext
       && !reviewContext.sentence.toLowerCase().includes(row.word.toLowerCase()));
+    // 詞典解釋的是 definition.sentence；只在跟輪替後的出題語境不同時才帶出，
+    // 否則單一語境的常見情況會多出一行雜訊。
+    const definitionSentence = definition?.sentence && definition.sentence !== reviewContext?.sentence
+      ? definition.sentence
+      : undefined;
     items.push({
       word: row.word,
       surface: definition!.surface,
@@ -289,6 +299,7 @@ export async function listReviewItems(limit = 5, now = Date.now()): Promise<Revi
         || (row.reviewStep ?? 0) >= LEGACY_MASTER_STEP,
       definition: definition!.payload,
       context: reviewContext,
+      definitionSentence,
     });
     if (items.length === limit) break;
   }

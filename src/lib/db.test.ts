@@ -345,14 +345,14 @@ describe('今晚打老虎', () => {
     ]);
   });
 
-  it('單字題使用產生答案時的句子，不混用最新語境', async () => {
-    const answerSentence = 'The certificate authority will issue a new certificate tomorrow.';
+  it('reps 為 0 時取最舊的語境，不是最新的', async () => {
+    const oldest = 'The certificate authority will issue a new certificate tomorrow.';
     await markWord('issue', 'unknown');
     await putCached([{
-      word: 'issue', surface: 'issued', payload: '核發', sentence: answerSentence,
+      word: 'issue', surface: 'issued', payload: '核發', sentence: oldest,
     }]);
     await addContext({
-      word: 'issue', sentence: answerSentence,
+      word: 'issue', sentence: oldest,
       url: 'https://example.com/cert', title: 'Certificate guide',
     });
     await addContext({
@@ -363,9 +363,102 @@ describe('今晚打老虎', () => {
     expect(await listReviewItems()).toEqual([
       expect.objectContaining({
         word: 'issue', surface: 'issued', definition: '核發',
-        context: expect.objectContaining({ sentence: answerSentence, title: 'Certificate guide' }),
+        context: expect.objectContaining({ sentence: oldest, title: 'Certificate guide' }),
+        // 出題語境剛好就是詞典看到的那句，不必多印一行提示。
+        definitionSentence: undefined,
       }),
     ]);
+  });
+
+  it('複習語境依 reps 取餘數輪替，同一個字連續三輪拿到三個不同語境', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{ word: 'deploy', payload: '部署' }]);
+    const sentences = [
+      'We deploy to production every single Friday night.',
+      'They deploy the service to staging first every morning.',
+      'The team will deploy a hotfix within the hour tonight.',
+    ];
+    for (const sentence of sentences) {
+      await addContext({ word: 'deploy', sentence, url: 'u', title: 't' });
+    }
+
+    for (let reps = 0; reps < 3; reps++) {
+      await db.words.update('deploy', { fsrsCard: card(0, { reps }) });
+      const [item] = await listReviewItems();
+      expect(item!.context?.sentence).toBe(sentences[reps]);
+    }
+  });
+
+  it('只有一筆語境時不出錯', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{ word: 'deploy', payload: '部署' }]);
+    await addContext({
+      word: 'deploy', sentence: 'We deploy to production every single Friday night.',
+      url: 'u', title: 't',
+    });
+    // reps 遠大於語境筆數也要能正確取餘數，不能整個掛掉。
+    await db.words.update('deploy', { fsrsCard: card(0, { reps: 5 }) });
+
+    const [item] = await listReviewItems();
+    expect(item!.context?.sentence).toBe('We deploy to production every single Friday night.');
+  });
+
+  it('零筆語境時退回 definition.sentence，不會因為除以零而消失', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{
+      word: 'deploy', payload: '部署',
+      sentence: 'We deploy to production every single Friday night.',
+    }]);
+
+    const [item] = await listReviewItems();
+    expect(item!.context).toEqual({
+      sentence: 'We deploy to production every single Friday night.', url: '', title: '',
+    });
+  });
+
+  it('definition.sentence 缺少時（模擬同步裝置）仍拿得到語境', async () => {
+    await markWord('deploy', 'unknown');
+    await putCached([{ word: 'deploy', payload: '部署' }]);
+    await addContext({
+      word: 'deploy', sentence: 'We deploy to production every single Friday night.',
+      url: 'u', title: 't',
+    });
+
+    const [item] = await listReviewItems();
+    expect(item!.context?.sentence).toBe('We deploy to production every single Friday night.');
+  });
+
+  it('definitionSentence 只在跟出題語境不同時才帶出', async () => {
+    const contextSentence = 'We deploy to production every single Friday night.';
+    await markWord('deploy', 'unknown');
+    await addContext({ word: 'deploy', sentence: contextSentence, url: 'u', title: 't' });
+
+    await putCached([{ word: 'deploy', payload: '部署', sentence: contextSentence }]);
+    expect((await listReviewItems())[0]!.definitionSentence).toBeUndefined();
+
+    await putCached([{
+      word: 'deploy', payload: '部署',
+      sentence: 'The certificate authority will issue a new certificate tomorrow.',
+    }]);
+    expect((await listReviewItems())[0]!.definitionSentence)
+      .toBe('The certificate authority will issue a new certificate tomorrow.');
+  });
+
+  it('片語也依 reps 輪替語境', async () => {
+    await markWord('roll back', 'unknown');
+    await putCached([{ word: 'roll back', payload: '## 核心意思\n- 回滾變更' }]);
+    const sentences = [
+      'We should roll back this release right now.',
+      'They rolled back the migration after the outage.',
+    ];
+    for (const sentence of sentences) {
+      await addContext({ word: 'roll back', sentence, url: 'u', title: 't' });
+    }
+
+    await db.words.update('roll back', { fsrsCard: card(0, { reps: 0 }) });
+    expect((await listReviewItems())[0]!.context?.sentence).toBe(sentences[0]);
+    await db.words.update('roll back', { fsrsCard: card(0, { reps: 1 }) });
+    expect((await listReviewItems())[0]!.context?.sentence).toBe(sentences[1]);
   });
 
   it('自評後寫入 FSRS 卡片、回傳下次日期並留下待同步標記', async () => {
