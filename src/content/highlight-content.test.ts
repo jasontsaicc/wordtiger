@@ -20,9 +20,12 @@ vi.mock('@/src/content/speak', () => ({ speak: vi.fn() }));
 import contentScript from '../../entrypoints/highlight.content';
 
 describe('highlight content 快捷鍵', () => {
+  let guessFirst = true;
+
   beforeEach(() => {
     fakeBrowser.reset();
     card.body = '';
+    guessFirst = true;
     card.bodies = [];
     document.body.textContent = 'We got slammed with alerts.';
     const text = document.body.firstChild!;
@@ -47,6 +50,7 @@ describe('highlight content 快捷鍵', () => {
         highlightTextColors: {},
         highlightUnderlineColors: {},
         markConjunctions: false,
+        guessFirst,
       });
       else if (msg.type === 'toggleMark') sendResponse(msg.status ?? 'unknown');
       else sendResponse(true);

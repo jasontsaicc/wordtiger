@@ -21,6 +21,7 @@ beforeEach(async () => {
     highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
     highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
     markConjunctions: true,
+    guessFirst: true,
     templates: DEFAULT_TEMPLATES,
   });
 });
@@ -267,6 +268,7 @@ describe('handleMessage', () => {
       highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
       highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
       markConjunctions: true,
+      guessFirst: true,
     });
     const spy = vi.spyOn(ai, 'lookupWord');
 
@@ -433,6 +435,7 @@ describe('explain', () => {
       highlightTextColors: settings.DEFAULT_HIGHLIGHT_TEXT_COLORS,
       highlightUnderlineColors: settings.DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
       markConjunctions: true,
+      guessFirst: true,
     });
     const spy = vi.spyOn(ai, 'explainSentence');
 
@@ -527,7 +530,10 @@ describe('recordQuiz 訊息', () => {
       type: 'recordQuiz', word: 'throttled', picked: 1, right: 1,
       choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'],
     });
-    expect(await listQuizLog()).toMatchObject([{ word: 'throttled', picked: 1, right: 1 }]);
+    expect(await listQuizLog()).toMatchObject([{
+      word: 'throttled', picked: 1, right: 1,
+      choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'],
+    }]);
   });
 
   it('exportData 帶出 quizLog', async () => {

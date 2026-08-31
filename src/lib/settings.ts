@@ -17,6 +17,8 @@ export interface Settings {
   highlightUnderlineColors: HighlightColors;
   /** 以不同底線標示對等連接詞與從屬連接詞。 */
   markConjunctions: boolean;
+  /** 查詞卡先出三選一,答對或跳過才看完整答案;開關只影響顯示與作答,不影響出題 prompt。 */
+  guessFirst: boolean;
   /** 重新載入時自動啟用標示的網站 origin pattern。 */
   autoOrigins: string[];
   /** 永不啟用的網域。 */
@@ -76,6 +78,7 @@ const DEFAULTS: Settings = {
   highlightTextColors: DEFAULT_HIGHLIGHT_TEXT_COLORS,
   highlightUnderlineColors: DEFAULT_HIGHLIGHT_UNDERLINE_COLORS,
   markConjunctions: true,
+  guessFirst: true,
   autoOrigins: [],
   blockedHosts: ['localhost', '127.0.0.1'],
   templates: DEFAULT_TEMPLATES,
@@ -109,6 +112,9 @@ export async function loadSettings(): Promise<Settings> {
     markConjunctions: typeof stored.markConjunctions === 'boolean'
       ? stored.markConjunctions
       : DEFAULTS.markConjunctions,
+    guessFirst: typeof stored.guessFirst === 'boolean'
+      ? stored.guessFirst
+      : DEFAULTS.guessFirst,
     // 深層合併，確保舊設定取得新增的 templates。
     templates: {
       ...DEFAULT_TEMPLATES,

@@ -66,11 +66,11 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'getHighlightSettings': {
       const {
         threshold, highlightColors, highlightTextColors,
-        highlightUnderlineColors, markConjunctions,
+        highlightUnderlineColors, markConjunctions, guessFirst,
       } = await loadSettings();
       return {
         threshold, highlightColors, highlightTextColors,
-        highlightUnderlineColors, markConjunctions,
+        highlightUnderlineColors, markConjunctions, guessFirst,
       };
     }
 

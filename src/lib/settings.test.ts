@@ -168,6 +168,7 @@ describe('loadSettings 的 template 合併', () => {
     expect(s.highlightTextColors).toEqual(DEFAULT_HIGHLIGHT_TEXT_COLORS);
     expect(s.highlightUnderlineColors).toEqual(DEFAULT_HIGHLIGHT_UNDERLINE_COLORS);
     expect(s.markConjunctions).toBe(true);
+    expect(s.guessFirst).toBe(true);
     expect(s.autoOrigins).toEqual([]);
   });
 
@@ -324,5 +325,19 @@ describe('blockedHosts 一定是陣列', () => {
     // 讀回後必須維持陣列介面。
     expect(s.blockedHosts.some((h) => h === 'localhost')).toBe(true);
     expect(() => s.blockedHosts.join('\n')).not.toThrow();
+  });
+});
+
+describe('guessFirst', () => {
+  beforeEach(() => fakeBrowser.reset());
+
+  it('storage 存壞資料時退回預設值', async () => {
+    await fakeBrowser.storage.local.set({ settings: { guessFirst: 'yes' } });
+    expect((await loadSettings()).guessFirst).toBe(true);
+  });
+
+  it('可以關閉並持久化', async () => {
+    await saveSettings({ guessFirst: false });
+    expect((await loadSettings()).guessFirst).toBe(false);
   });
 });

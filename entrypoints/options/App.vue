@@ -189,6 +189,10 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
         <input v-model="settings.markConjunctions" type="checkbox" @change="persist" />
         連詞標記：並列連詞用點線，從句連詞用雙線
       </label>
+      <label class="switch">
+        <input v-model="settings.guessFirst" type="checkbox" @change="persist" />
+        查詞先猜再揭曉：查詞卡先出三選一，答對或跳過才看完整答案
+      </label>
       <p class="note">背景色支援透明度；新配色使用淡色背景、黑字和較深下劃線，讓技術文件更容易掃讀。</p>
       <p class="note">
         詞頻排名資料來自 SUBTLEX-US（Brysbaert &amp; New, 2009），
