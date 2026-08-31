@@ -75,4 +75,25 @@ describe('renderCardHtml', () => {
     const html = renderCardHtml({ title: 'a', body: 'b', loading: true, onRetry: () => {} });
     expect(html).toMatch(/class="retry"[^>]*disabled/);
   });
+
+  it('有選項時渲染三個按鈕,沒有就不畫', () => {
+    expect(renderCardHtml({ title: 'a', body: 'b' })).not.toContain('class="quiz"');
+    const html = renderCardHtml({ title: 'a', body: 'b', choices: ['甲', '乙', '丙'] });
+    expect(html).toContain('class="quiz"');
+    expect((html.match(/class="quiz-choice"/g) ?? []).length).toBe(3);
+    expect(html).toContain('甲');
+    expect(html).toContain('乙');
+    expect(html).toContain('丙');
+    expect(html).toContain('data-position="0"');
+    expect(html).toContain('data-position="1"');
+    expect(html).toContain('data-position="2"');
+  });
+
+  it('選項按鈕的文字要跳脫,不能真的變成節點', () => {
+    const html = renderCardHtml({
+      title: '', body: 'b', choices: ['<img src=x onerror=alert(1)>', '乙', '丙'],
+    });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img');
+  });
 });

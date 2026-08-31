@@ -13,6 +13,10 @@ export interface CardOptions {
   onClose?: () => void;
   /** 只有 AI 卡片給;沒給就不畫重試鈕。 */
   onRetry?: () => void;
+  /** 三選一畫面顯示順序;給了才畫按鈕,只有題目 pending 時才傳。 */
+  choices?: [string, string, string];
+  /** 點第 i 個按鈕時呼叫,i 是畫面位置索引,不是洗牌前的原始索引。 */
+  onPick?: (position: 0 | 1 | 2) => void;
 }
 
 let host: HTMLDivElement | null = null;
@@ -102,6 +106,13 @@ function ensureRoot(): ShadowRoot {
       .coach-note { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
       .hint { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: var(--muted); font-size: 11px; }
       .hint span { padding: 2px 7px; border: 1px solid var(--chip-border); border-radius: 999px; background: var(--chip); }
+      .quiz { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+      .quiz-choice {
+        padding: 8px 10px; text-align: left; color: var(--body); background: var(--chip);
+        border: 1px solid var(--chip-border); border-radius: 8px; cursor: pointer; font: inherit;
+      }
+      .quiz-choice:hover { background: var(--chip-hover); }
+      .quiz-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       .marked { color: var(--accent-ink); }
       .loading .body { color: var(--muted); }
       .card:not(.loading):not(.complete):not(.celebrate) .header:hover .brand { animation: hello 520ms cubic-bezier(.2,.8,.2,1); }
@@ -184,6 +195,11 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
     parts.push(`<div class="header"><img class="brand" src="${icon}" alt="" aria-hidden="true"><div class="${cls}">${escapeHtml(opts.title)}</div>${retry}<button class="close" type="button" aria-label="關閉">×</button></div>`);
   }
   parts.push(`<div class="body">${renderMarkdown(opts.body)}</div>`);
+  if (opts.choices) {
+    parts.push(`<div class="quiz">${opts.choices.map((choice, i) =>
+      `<button class="quiz-choice" type="button" data-position="${i}">${escapeHtml(choice)}</button>`,
+    ).join('')}</div>`);
+  }
   if (opts.hint) {
     parts.push(`<div class="hint">${opts.hint.split(' · ').map((item) => `<span>${escapeHtml(item)}</span>`).join('')}</div>`);
   }
@@ -216,6 +232,10 @@ export function showCard(opts: CardOptions): void {
     opts.onClose?.();
   }, { once: true });
   card.querySelector('.retry')?.addEventListener('click', () => opts.onRetry?.(), { once: true });
+  card.querySelectorAll<HTMLButtonElement>('.quiz-choice').forEach((btn) => {
+    const position = Number(btn.dataset.position) as 0 | 1 | 2;
+    btn.addEventListener('click', () => opts.onPick?.(position), { once: true });
+  });
 
   host!.style.display = 'block';
   host!.style.visibility = 'hidden';
