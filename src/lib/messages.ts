@@ -1,4 +1,4 @@
-import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, listReviewLog, masterWord, recordReview, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow, type ReviewLogRow } from './db';
+import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, listReviewLog, listQuizLog, masterWord, recordReview, recordQuiz, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow, type ReviewLogRow, type QuizLogRow } from './db';
 import { lookupWord, explainSentence, generateSpeech } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
@@ -11,6 +11,7 @@ export interface ExportBundle {
   words: WordRow[];
   contexts: ContextRow[];
   reviewLog: ReviewLogRow[];
+  quizLog: QuizLogRow[];
 }
 
 /** 文字 AI 請求的統一結果。 */
@@ -37,6 +38,10 @@ export type Msg =
   | { type: 'listReviewItems' }
   | { type: 'listReviewLog' }
   | { type: 'reviewWord'; word: string; remembered: boolean }
+  | {
+    type: 'recordQuiz'; word: string;
+    picked: 0 | 1 | 2; right: 0 | 1 | 2; choices: [string, string, string];
+  }
   | { type: 'masterWord'; word: string }
   | {
     type: 'explain'; kind: 'translate' | 'grammar'; sentence: string;
@@ -167,6 +172,10 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
     case 'reviewWord':
       return recordReview(msg.word, msg.remembered);
 
+    case 'recordQuiz':
+      await recordQuiz(msg.word, msg.picked, msg.right, msg.choices);
+      return null;
+
     case 'masterWord':
       return masterWord(msg.word);
 
@@ -180,12 +189,13 @@ export async function handleMessage(msg: Msg): Promise<unknown> {
       return true;
 
     case 'exportData': {
-      const [words, contexts, reviewLog] = await Promise.all([
+      const [words, contexts, reviewLog, quizLog] = await Promise.all([
         db.words.filter((r) => r.deletedAt === null).toArray(),
         db.contexts.filter((r) => r.deletedAt === null).toArray(),
         listReviewLog(),
+        listQuizLog(),
       ]);
-      return { exportedAt: Date.now(), words, contexts, reviewLog } satisfies ExportBundle;
+      return { exportedAt: Date.now(), words, contexts, reviewLog, quizLog } satisfies ExportBundle;
     }
 
     case 'getCachedWord': {

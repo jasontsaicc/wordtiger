@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { handleMessage, handleStreamMessage, type ExplainResult, type SpeechResult } from './messages';
-import { db, markWord, sentenceKey } from './db';
+import { db, markWord, sentenceKey, listQuizLog } from './db';
 import * as ai from './ai';
 import * as settings from './settings';
 import { DEFAULT_TEMPLATES } from './prompt';
@@ -12,6 +12,7 @@ beforeEach(async () => {
   await db.lookupCache.clear();
   await db.sentenceCache.clear();
   await db.reviewLog.clear();
+  await db.quizLog.clear();
   vi.restoreAllMocks();
   vi.spyOn(settings, 'loadSettings').mockResolvedValue({
     baseUrl: 'https://api.example.com/v1',
@@ -517,6 +518,25 @@ describe('詞庫管理', () => {
 
     const bundle = await handleMessage({ type: 'exportData' }) as any;
     expect(bundle.words).toHaveLength(0);
+  });
+});
+
+describe('recordQuiz 訊息', () => {
+  it('寫入三選一的作答紀錄', async () => {
+    await handleMessage({
+      type: 'recordQuiz', word: 'throttled', picked: 1, right: 1,
+      choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'],
+    });
+    expect(await listQuizLog()).toMatchObject([{ word: 'throttled', picked: 1, right: 1 }]);
+  });
+
+  it('exportData 帶出 quizLog', async () => {
+    await handleMessage({
+      type: 'recordQuiz', word: 'throttled', picked: 1, right: 1,
+      choices: ['掐住、扼住', '被服務端限流擋下', '主動調降發送速率'],
+    });
+    const bundle = await handleMessage({ type: 'exportData' }) as any;
+    expect(bundle.quizLog).toHaveLength(1);
   });
 });
 
