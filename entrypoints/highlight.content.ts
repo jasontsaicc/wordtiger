@@ -1,4 +1,4 @@
-import { collectTokens, sentenceAround, sentenceContextAround, type ConjunctionKind } from '@/src/content/scan';
+import { collectTokens, sentenceContextAround, type ConjunctionKind } from '@/src/content/scan';
 import { buildRanges } from '@/src/content/paint';
 import { shouldHighlight, type HighlightTier, type WordStatus } from '@/src/lib/decide';
 import { wordAtPoint, textPositionAtPoint } from '@/src/content/locate';
@@ -6,6 +6,7 @@ import type { ExplainResult, Msg } from '@/src/lib/messages';
 import { extractQuiz, extractTakeaway, stripQuiz } from '@/src/lib/prompt';
 import { showCard, hideCard } from '@/src/content/card';
 import { speak } from '@/src/content/speak';
+import { captureYouTubeSubtitle, type YouTubeSubtitle } from '@/src/content/youtube';
 
 const HIGHLIGHT_NAMES: Record<HighlightTier, string> = {
   saved: 'wordtiger-saved',
@@ -102,9 +103,15 @@ export default defineContentScript({
     let currentTakeaway: Takeaway | null = null;
     let currentSpeech = '';
     let currentDefinition = '';
+    let currentSentenceSource: YouTubeSubtitle | null = null;
+    const consumedVideoKeys = new Set<string>();
     interface Quiz {
       /** 出題當下對應的字;current 之後可能被別的按鍵改指到別的字,recordQuiz 要認這個而不是 current。 */
       word: string;
+      /** 出題當下的實際字形與原句,用來畫題目;理由同 word,不能改讀 current。 */
+      surface: string;
+      sentence: string;
+      previous: string;
       choices: [string, string, string];
       right: 0 | 1 | 2;
       /** 畫面第 i 個位置顯示 choices[order[i]]。元素型別是 `0 | 1 | 2`,不是 `number`。 */
@@ -145,6 +152,7 @@ export default defineContentScript({
       currentTakeaway = null;
       currentSpeech = '';
       currentDefinition = '';
+      currentSentenceSource = null;
       resetQuiz();
       dismissAi();
     };
@@ -176,26 +184,38 @@ export default defineContentScript({
     /** 查詞卡現在該顯示什麼；所有查詞卡的 showCard 呼叫都經過這裡,揭曉前絕不外流答案。 */
     const renderQuizCard = (baseHint: string): {
       body: string; hint: string; choices?: [string, string, string];
+      verdict?: { kind: 'right' | 'wrong' | 'skipped'; text: string };
     } => {
       if (!guessFirst || !currentQuiz) return { body: currentDefinition, hint: baseHint };
       if (currentQuiz.state === 'pending') {
         const displayed = currentQuiz.order.map((i) => currentQuiz!.choices[i]) as [string, string, string];
         return {
-          body: '這隻在這句是哪一個意思？選一個最接近的。',
-          hint: '1／2／3 選答案 · A 跳過',
+          // 先給原句再問,不然使用者只看到三個中文選項,不知道要拿什麼去猜。
+          // 代名詞或主題設定住在前一句時,只給目標句是無解而不是難,所以前一句要一起給。
+          body: [
+            currentQuiz.previous && `前一句｜${currentQuiz.previous}`,
+            quizExcerpt(currentQuiz.sentence, currentQuiz.surface),
+            '',
+            `猜猜看:**${currentQuiz.surface}** 在這句是哪個意思?先猜再看答案,記得比較久。`,
+          ].filter(Boolean).join('\n'),
+          hint: '1／2／3 猜一個 · A 跳過',
           choices: displayed,
         };
       }
-      const diagnostic = currentQuiz.picked === null
-        ? `略過了,正解是「${currentQuiz.choices[currentQuiz.right]}」。`
+      const answer = `正解是「${currentQuiz.choices[currentQuiz.right]}」`;
+      const verdict = currentQuiz.picked === null
+        ? { kind: 'skipped' as const, text: `略過了,${answer}。` }
         : currentQuiz.picked === currentQuiz.right
-          ? '答對了！'
-          : `答錯了,正解是「${currentQuiz.choices[currentQuiz.right]}」。`;
-      return { body: `${diagnostic}\n\n${currentDefinition}`, hint: baseHint };
+          ? { kind: 'right' as const, text: `✓ 答對了！${answer},往下看它為什麼是這個意思。` }
+          : {
+              kind: 'wrong' as const,
+              text: `✗ 答錯了。你猜「${currentQuiz.choices[currentQuiz.picked]}」,${answer}。`,
+            };
+      return { body: currentDefinition, hint: baseHint, verdict };
     };
 
     /** 只在還沒有題目、也還沒跳過時抓取；已揭曉或已跳過都不再洗牌或覆蓋。 */
-    const applyQuizExtraction = (raw: string, word: string) => {
+    const applyQuizExtraction = (raw: string, hover: Hover) => {
       if (currentQuiz || quizSkipped) return;
       // 答案那行還沒收完就武裝，模型若把「2」續寫成「23」，題目會鎖在錯的正解上。
       // 等後面確定還有一行（代表答案行已換行）再洗牌。
@@ -206,7 +226,11 @@ export default defineContentScript({
 
       const extracted = extractQuiz(raw);
       if (!extracted) return;
-      currentQuiz = { ...extracted, word, order: shuffleOrder(), state: 'pending', picked: null };
+      currentQuiz = {
+        ...extracted, word: hover.lemma, surface: hover.word, sentence: hover.sentence,
+        previous: hover.previous,
+        order: shuffleOrder(), state: 'pending', picked: null,
+      };
     };
 
     /** position 是畫面位置索引;換算回原始索引才是 quizLog 要存的值。 */
@@ -225,7 +249,7 @@ export default defineContentScript({
       const view = renderQuizCard(wordHint(hover.lemma));
       showCard({
         title: wordTitle(hover), rect: hover.rect,
-        body: view.body, hint: view.hint, choices: view.choices,
+        body: view.body, hint: view.hint, choices: view.choices, verdict: view.verdict,
         marked: marks.get(hover.lemma) === 'unknown',
         // 答題當下串流可能還沒結束;維持 loading 才不會提早播完成動畫,
         // 下一個 delta 進來又把卡片打回 loading,造成動畫閃兩次。
@@ -267,7 +291,7 @@ export default defineContentScript({
         if (seq === explainSeq) {
           currentDefinition = stripQuiz(body);
           if (guessFirst) {
-            applyQuizExtraction(body, hover.lemma);
+            applyQuizExtraction(body, hover);
             // 題目還沒武裝、也還沒被跳過,但累積內容一開頭就不是「選項｜」:
             // 代表這次模型沒有照格式先出題,不用等這次查詢結束就能確定沒有題目,
             // 不然 A 會在整個串流期間被誤判成跳過鍵吃掉,查不了下一個字。
@@ -281,7 +305,7 @@ export default defineContentScript({
           const view = renderQuizCard(hint);
           showCard({
             title: wordTitle(hover), body: view.body, rect: hover.rect,
-            hint: view.hint, choices: view.choices, marked, loading: true,
+            hint: view.hint, choices: view.choices, verdict: view.verdict, marked, loading: true,
             onClose: closeAiCard, onRetry: retry(hover, previous), onPick: onQuizPick,
           });
         }
@@ -290,12 +314,12 @@ export default defineContentScript({
 
       if (result?.ok) {
         currentDefinition = stripQuiz(result.text);
-        if (guessFirst) applyQuizExtraction(result.text, hover.lemma);
+        if (guessFirst) applyQuizExtraction(result.text, hover);
         lookupSettled = true;
         const view = renderQuizCard(hint);
         showCard({
           title: wordTitle(hover), body: view.body, rect: hover.rect,
-          hint: view.hint, choices: view.choices, marked,
+          hint: view.hint, choices: view.choices, verdict: view.verdict, marked,
           onClose: closeAiCard, onRetry: retry(hover, currentDefinition), onPick: onQuizPick,
         });
         return;
@@ -326,6 +350,7 @@ export default defineContentScript({
       rect: DOMRect,
       fresh = false,
       previous = '',
+      source?: YouTubeSubtitle,
     ) => {
       const { kind, sentence } = msg;
       const title = kind === 'translate' ? '快速看懂' : '拆懂這句';
@@ -333,7 +358,7 @@ export default defineContentScript({
         ? `原文｜${sentence}\n${body}`
         : body;
       const waiting = kind === 'translate' ? '老虎正在讀這句…' : '老虎正在拆這句…';
-      const retry = (from: string) => () => void runExplain(msg, rect, true, from);
+      const retry = (from: string) => () => void runExplain(msg, rect, true, from, source);
 
       showCard({
         title, body: cardBody(previous || waiting), rect, hint: sentenceHint,
@@ -359,7 +384,7 @@ export default defineContentScript({
       }
 
       const phrase = kind === 'grammar' ? extractTakeaway(result.text) : null;
-      if (phrase) currentTakeaway = { phrase, sentence, rect, body: result.text };
+      if (phrase) currentTakeaway = { phrase, sentence, rect, body: result.text, source };
       showCard({
         title, body: cardBody(result.text), rect,
         hint: phrase ? takeawayHint(phrase) : sentenceHint,
@@ -373,7 +398,7 @@ export default defineContentScript({
       pointerY = e.clientY;
     }, { passive: true, signal: controller.signal });
 
-    function hoveredWord(): Hover | null {
+    function hoveredWord(pauseVideo = false): Hover | null {
       const found = wordAtPoint(pointerX, pointerY);
       if (!found) return null;
 
@@ -385,22 +410,49 @@ export default defineContentScript({
         freq, marks, threshold, isSentenceStart: false,
       });
 
+      const youtube = captureYouTubeSubtitle(found.node, pauseVideo);
+      const nearby = sentenceContextAround(found.node, found.span.start);
       return {
         word: found.span.text,
         lemma: decision.lemma,
         rect: range.getBoundingClientRect(),
-        sentence: sentenceAround(found.node, found.span.start),
+        sentence: youtube?.sentence ?? nearby.sentence,
+        // 字幕是一閃而過的一整塊,沒有「同段落前一句」可言。
+        previous: youtube ? '' : nearby.previous,
+        source: youtube,
       };
     }
 
-    document.addEventListener('keydown', async (e) => {
+    const consumeKey = (
+      e: KeyboardEvent,
+      source: YouTubeSubtitle | null = current?.source ?? currentTakeaway?.source ?? currentSentenceSource,
+    ) => {
+      e.preventDefault();
+      if (source) {
+        e.stopImmediatePropagation();
+        consumedVideoKeys.add(e.key.toLowerCase());
+      }
+    };
+    window.addEventListener('keydown', async (e) => {
       if (isTypingTarget(e.target)) return;
+      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || (e.key === ' ' && e.shiftKey)) return;
+      if (e.repeat && consumedVideoKeys.has(e.key.toLowerCase())) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.key === ' ' && e.repeat && (current || currentTakeaway || currentSentenceSource)) {
+        consumeKey(e);
+        return;
+      }
 
       if (e.key === 'Escape') {
+        if (current?.source || currentTakeaway?.source || currentSentenceSource) consumeKey(e);
         hideCard();
         current = null;
         currentTakeaway = null;
         currentSpeech = '';
+        currentSentenceSource = null;
         currentDefinition = '';
         resetQuiz();
         dismissAi();
@@ -409,7 +461,7 @@ export default defineContentScript({
 
       if ((e.key === '1' || e.key === '2' || e.key === '3')
         && guessFirst && current && currentQuiz?.state === 'pending') {
-        e.preventDefault();
+        consumeKey(e);
         onQuizPick((Number(e.key) - 1) as 0 | 1 | 2);
         return;
       }
@@ -418,7 +470,7 @@ export default defineContentScript({
         // 整句卡念原句；單字卡念實際字形；無卡片時念游標詞。
         const text = currentSpeech || current?.word || hoveredWord()?.word;
         if (!text) return;
-        e.preventDefault();
+        consumeKey(e);
         speak(text);
         return;
       }
@@ -427,10 +479,11 @@ export default defineContentScript({
       if (e.key === 'x' || e.key === 'X') {
         const hover = current ?? hoveredWord();
         if (!hover) return;
-        e.preventDefault();
+        consumeKey(e, hover.source);
         dismissAi();
         currentTakeaway = null;
         currentSpeech = '';
+        currentSentenceSource = null;
         current = hover;
         // 題目還沒作答就被藏起來(不是揭曉),不解除武裝的話 1/2/3 之後還能對著
         // 已經換過的 current 送出張冠李戴的 recordQuiz。
@@ -456,7 +509,7 @@ export default defineContentScript({
 
       if ((e.key === 'a' || e.key === 'A') && guessFirst && current && !quizSkipped
         && (currentQuiz?.state === 'pending' || (currentQuiz === null && !lookupSettled))) {
-        e.preventDefault();
+        consumeKey(e);
         quizSkipped = true;
         // 題目已經出來才跳過:揭曉正解而不是整題消失,renderQuizCard 裡
         // 「揭曉但 picked 是 null」那條診斷文字才有機會真的畫出來。題目根本還沒解析出來
@@ -466,7 +519,7 @@ export default defineContentScript({
         const view = renderQuizCard(wordHint(hover.lemma));
         showCard({
           title: wordTitle(hover), rect: hover.rect,
-          body: view.body, hint: view.hint, choices: view.choices,
+          body: view.body, hint: view.hint, choices: view.choices, verdict: view.verdict,
           marked: marks.get(hover.lemma) === 'unknown',
           onClose: closeAiCard, onRetry: retry(hover, currentDefinition),
         });
@@ -474,19 +527,20 @@ export default defineContentScript({
       }
 
       if (e.key === 'a' || e.key === 'A') {
-        const hover = hoveredWord();
+        const hover = hoveredWord(true);
         if (!hover) return;
-        e.preventDefault();
+        consumeKey(e, hover.source);
         dismissAi();
         currentTakeaway = null;
         currentSpeech = '';
         currentDefinition = '';
+        currentSentenceSource = null;
         current = hover;
 
         // 已收藏單字再次查詢時累積語境；addContext 負責去重。
         if (marks.get(hover.lemma) === 'unknown') void browser.runtime.sendMessage({
           type: 'saveContext', word: hover.lemma, sentence: hover.sentence,
-          url: location.href, title: document.title,
+          url: hover.source?.url ?? location.href, title: hover.source?.title ?? document.title,
         });
 
         await runLookup(hover);
@@ -498,8 +552,11 @@ export default defineContentScript({
         if (!pos) return;
         e.preventDefault();
 
-        const { sentence, previous } = sentenceContextAround(pos.node, pos.offset);
+        const { sentence: nearbySentence, previous } = sentenceContextAround(pos.node, pos.offset);
+        const source = captureYouTubeSubtitle(pos.node, true);
+        const sentence = source?.sentence ?? nearbySentence;
         if (!sentence) return;
+        consumeKey(e, source);
         const focus = wordAtPoint(pointerX, pointerY)?.span.text ?? '';
 
         const range = document.createRange();
@@ -512,6 +569,7 @@ export default defineContentScript({
         currentTakeaway = null;
         currentSpeech = sentence;
         currentDefinition = '';
+        currentSentenceSource = source;
         // current 被清空後,原本掛在那個字上、還沒作答的題目一樣要解除武裝,
         // 不然接下來按 X 換一個字時,這題會被錯記到新換到的那個字上。
         resetQuiz();
@@ -519,12 +577,18 @@ export default defineContentScript({
         await runExplain(
           { type: 'explain', kind, sentence, previous, focus, title: document.title },
           rect,
+          false, '', source ?? undefined,
         );
         return;
       }
 
+      if (e.key === ' ' && currentSentenceSource && !currentTakeaway) {
+        consumeKey(e);
+        return;
+      }
+
       if (e.key === ' ' && currentTakeaway) {
-        e.preventDefault();
+        consumeKey(e, currentTakeaway.source ?? null);
         const takeaway = currentTakeaway;
         dismissAi();
         const status = await browser.runtime.sendMessage({
@@ -534,7 +598,8 @@ export default defineContentScript({
           marks.set(takeaway.phrase, status);
           await browser.runtime.sendMessage({
             type: 'saveContext', word: takeaway.phrase,
-            sentence: takeaway.sentence, url: location.href, title: document.title,
+            sentence: takeaway.sentence, url: takeaway.source?.url ?? location.href,
+            title: takeaway.source?.title ?? document.title,
           });
           // 收藏後沿用查詞流程建立片語詞典快取。
           void browser.runtime.sendMessage({
@@ -555,7 +620,7 @@ export default defineContentScript({
 
       // Space 固定操作卡片單字。
       if (e.key === ' ' && current) {
-        e.preventDefault();
+        consumeKey(e, current.source);
         const hover = current;
         // dismissAi() 在這支功能之前就會砍掉飛行中的請求,Space 收藏向來如此;
         // 差別是題目把答案擋住了,使用者看不到串流被腰斬。題目揭曉前不能播慶祝動畫
@@ -572,8 +637,8 @@ export default defineContentScript({
             type: 'saveContext',
             word: hover.lemma,
             sentence: hover.sentence,
-            url: location.href,
-            title: document.title,
+            url: hover.source?.url ?? location.href,
+            title: hover.source?.title ?? document.title,
           });
         } else {
           marks.delete(hover.lemma);
@@ -586,7 +651,7 @@ export default defineContentScript({
           body: view.body,
           rect: hover.rect,
           hint: view.hint,
-          choices: view.choices,
+          choices: view.choices, verdict: view.verdict,
           marked: status === 'unknown',
           celebrate: !quizPending && status === 'unknown',
           onClose: closeAiCard,
@@ -594,7 +659,14 @@ export default defineContentScript({
           onPick: onQuizPick,
         });
       }
-    }, { signal: controller.signal });
+    }, { signal: controller.signal, capture: true });
+    window.addEventListener('keyup', (e) => {
+      const key = e.key.toLowerCase();
+      if (consumedVideoKeys.delete(key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, { signal: controller.signal, capture: true });
   },
 });
 
@@ -603,6 +675,9 @@ interface Hover {
   lemma: string;
   rect: DOMRect;
   sentence: string;
+  /** 同段落的前一句;字幕與段落第一句沒有,是空字串。 */
+  previous: string;
+  source: YouTubeSubtitle | null;
 }
 
 interface Takeaway {
@@ -610,6 +685,23 @@ interface Takeaway {
   sentence: string;
   rect: DOMRect;
   body: string;
+  source?: YouTubeSubtitle;
+}
+
+/**
+ * 題目上方那句原句,把查的字標粗。不自己截窗:句長已由 sentenceAround 收在 300 字內,
+ * 而三個選項按鈕在 .body 之外,長句只會在 body 內捲動,推不掉按鈕。
+ * 以字元數截窗會切在字中間（API 變成 I）,反而讓人猜不出意思。
+ * 找不到字形時原樣顯示,寧可不標也不要錯標。
+ */
+export function quizExcerpt(sentence: string, surface: string): string {
+  const text = sentence.trim().replace(/\s+/g, ' ');
+  const at = surface ? text.toLowerCase().indexOf(surface.toLowerCase()) : -1;
+  if (at < 0) return text;
+
+  const end = at + surface.length;
+  // 標粗用原文裡的那一份,大小寫才不會被查詢字形蓋掉。
+  return `${text.slice(0, at)}**${text.slice(at, end)}**${text.slice(end)}`;
 }
 
 /**

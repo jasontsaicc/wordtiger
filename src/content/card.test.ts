@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseCardPlacement, renderCardHtml } from './card';
+import { chooseCardPlacement, hideCard, renderCardHtml, showCard } from './card';
 
 describe('chooseCardPlacement', () => {
   it('依序避讓到右、左、下、上方，長卡片仍不壓住觸發位置', () => {
@@ -32,6 +32,32 @@ describe('renderCardHtml', () => {
   it('marked 時標題加上 marked class', () => {
     const html = renderCardHtml({ title: 'deploy', body: '部署', marked: true });
     expect(html).toContain('marked');
+  });
+
+  it('揭曉的對錯回饋走自己的區塊,不進 Markdown', () => {
+    const html = renderCardHtml({
+      title: 'slam', body: '## 詞性與釋義',
+      verdict: { kind: 'wrong', text: '✗ 答錯了。你猜「甲」,正解是「乙」。' },
+    });
+
+    expect(html).toContain('<div class="verdict wrong">');
+    expect(html).toContain('答錯了');
+    // 回饋排在本文之上。
+    expect(html.indexOf('verdict')).toBeLessThan(html.indexOf('class="body"'));
+  });
+
+  it('回饋文字照樣跳脫,選項內容是模型產的', () => {
+    const html = renderCardHtml({
+      title: 'slam', body: '本文',
+      verdict: { kind: 'right', text: '✓ 答對了！正解是「<img src=x>」。' },
+    });
+
+    expect(html).toContain('&lt;img src=x&gt;');
+    expect(html).not.toContain('<img src=x>');
+  });
+
+  it('沒有題目時不畫回饋區塊', () => {
+    expect(renderCardHtml({ title: 'slam', body: '本文' })).not.toContain('verdict');
   });
 
   it('沒給 hint 就不畫提示行', () => {
@@ -95,5 +121,32 @@ describe('renderCardHtml', () => {
     });
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
+  });
+});
+
+describe('showCard fullscreen placement', () => {
+  it('進入與離開 fullscreen 時把卡片 host 重掛到正確容器', () => {
+    const fullscreen = document.createElement('div');
+    document.body.appendChild(fullscreen);
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      value: null,
+    });
+
+    showCard({ title: '', body: '卡片', rect: new DOMRect() });
+    const host = document.body.lastElementChild!;
+    expect(host.parentElement).toBe(document.body);
+
+    Object.defineProperty(document, 'fullscreenElement', { value: fullscreen });
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(host.parentElement).toBe(fullscreen);
+
+    Object.defineProperty(document, 'fullscreenElement', { value: null });
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(host.parentElement).toBe(document.body);
+
+    hideCard();
+    host.remove();
+    fullscreen.remove();
   });
 });

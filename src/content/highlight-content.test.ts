@@ -9,11 +9,13 @@ const card = vi.hoisted(() => ({
   onRetry: undefined as (() => void) | undefined,
   celebrate: undefined as boolean | undefined,
   loading: undefined as boolean | undefined,
+  verdict: undefined as { kind: string; text: string } | undefined,
 }));
 vi.mock('@/src/content/card', () => ({
   showCard: (opts: {
     body: string; choices?: string[]; onRetry?: () => void;
     celebrate?: boolean; loading?: boolean;
+    verdict?: { kind: string; text: string };
   }) => {
     card.body = opts.body;
     card.bodies.push(opts.body);
@@ -21,6 +23,7 @@ vi.mock('@/src/content/card', () => ({
     card.onRetry = opts.onRetry;
     card.celebrate = opts.celebrate;
     card.loading = opts.loading;
+    card.verdict = opts.verdict;
   },
   hideCard: vi.fn(),
 }));
@@ -32,7 +35,7 @@ vi.mock('@/src/content/paint', () => ({
 }));
 vi.mock('@/src/content/speak', () => ({ speak: vi.fn() }));
 
-import contentScript from '../../entrypoints/highlight.content';
+import contentScript, { quizExcerpt } from '../../entrypoints/highlight.content';
 
 describe('highlight content 快捷鍵', () => {
   let guessFirst = true;
@@ -45,6 +48,9 @@ describe('highlight content 快捷鍵', () => {
     card.onRetry = undefined;
     card.celebrate = undefined;
     card.loading = undefined;
+    card.verdict = undefined;
+    recorded = [];
+    guessFirst = false;
     guessFirst = true;
     card.bodies = [];
     recorded = [];
@@ -175,9 +181,70 @@ describe('highlight content 快捷鍵', () => {
     // 正解原始索引是 1（答案｜2）,對應畫面第 0 個位置（order[0] === 1）,按鍵是 '1'。
     document.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
 
-    await vi.waitFor(() => expect(card.body).toContain('答對了'));
+    await vi.waitFor(() => expect(card.verdict?.kind).toBe('right'));
+    expect(card.verdict?.text).toContain('答對了');
     expect(card.body).toContain('忙翻');
+    // 揭曉後 body 只有詞典本文,對錯回饋走 verdict,不再混在 Markdown 裡。
+    expect(card.body).not.toContain('答對了');
     expect(recorded.some((m) => m.type === 'recordQuiz' && m.picked === 1 && m.right === 1)).toBe(true);
+  });
+
+  it('題目要帶著原句和被查的字,不然不知道拿什麼去猜', async () => {
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        const text = '選項｜甲｜乙｜丙\n答案｜2\n忙翻';
+        listeners.forEach((listener) => listener({ type: 'delta', delta: text }));
+        listeners.forEach((listener) => listener({ type: 'done', result: { ok: true, text } }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    await vi.waitFor(() => expect(card.choices).toHaveLength(3));
+    expect(card.body).toContain('We got **slammed** with alerts.');
+    expect(card.body).toContain('猜猜看');
+    // 段落第一句沒有前一句,不能留一行空標籤佔位。
+    expect(card.body).not.toContain('前一句');
+    // 題目階段仍然不能外洩定義。
+    expect(card.body).not.toContain('忙翻');
+  });
+
+  // 目標句只有代名詞時,線索住在前一句。少了它不是題目難,是無解,只能亂猜。
+  it('原句帶代名詞時,同段落前一句要一起給', async () => {
+    document.body.innerHTML =
+      '<p>The gateway tracks each client. It was slammed with alerts.</p>';
+    const node = document.querySelector('p')!.firstChild as Text;
+    Object.defineProperty(document, 'caretPositionFromPoint', {
+      configurable: true,
+      value: () => ({ offsetNode: node, offset: node.data.indexOf('slammed') + 1 }),
+    });
+
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        const text = '選項｜甲｜乙｜丙\n答案｜2\n忙翻';
+        listeners.forEach((listener) => listener({ type: 'delta', delta: text }));
+        listeners.forEach((listener) => listener({ type: 'done', result: { ok: true, text } }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+
+    await contentScript.main(new ContentScriptContext('test'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+
+    await vi.waitFor(() => expect(card.choices).toHaveLength(3));
+    expect(card.body).toContain('前一句｜The gateway tracks each client.');
+    expect(card.body).toContain('It was **slammed** with alerts.');
+    expect(card.body).not.toContain('忙翻');
   });
 
   it('guessFirst 開啟時,選項出現後按 A 直接跳過,不寫入 quizLog', async () => {
@@ -202,7 +269,7 @@ describe('highlight content 快捷鍵', () => {
 
     // 跳過會揭曉正解(見「題目已出現時按 A 跳過」那個測試),不是整題消失,
     // 但重點是不寫入 quizLog:略過不算作答。
-    await vi.waitFor(() => expect(card.body).toContain('略過了'));
+    await vi.waitFor(() => expect(card.verdict?.kind).toBe('skipped'));
     expect(card.body).toContain('忙翻');
     expect(card.choices).toBeUndefined();
     expect(recorded.some((m) => m.type === 'recordQuiz')).toBe(false);
@@ -426,8 +493,8 @@ describe('highlight content 快捷鍵', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
 
-    await vi.waitFor(() => expect(card.body).toContain('略過了'));
-    expect(card.body).toContain('乙'); // 正解(答案｜2 → 原始索引 1)是「乙」
+    await vi.waitFor(() => expect(card.verdict?.kind).toBe('skipped'));
+    expect(card.verdict?.text).toContain('乙'); // 正解(答案｜2 → 原始索引 1)是「乙」
     expect(card.body).toContain('忙翻');
     expect(card.choices).toBeUndefined();
   });
@@ -564,5 +631,224 @@ describe('highlight content 快捷鍵', () => {
     // 串流還沒送 done,這時候答題,卡片要維持 loading。
     document.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
     expect(card.loading).toBe(true);
+  });
+});
+
+describe('quizExcerpt', () => {
+  it('把查到的字標粗,大小寫以原文為準', () => {
+    expect(quizExcerpt('We got Slammed with alerts.', 'slammed'))
+      .toBe('We got **Slammed** with alerts.');
+  });
+
+  // 舊版以字元數截前後各 40,會把 API 切成 I、consecutive 切成 cons,
+  // 猜題的人看到殘句反而猜不出來。整句照出,長度由 sentenceAround 收在 300 字內。
+  it('長句整句照出,不切在字中間', () => {
+    const long = 'When a request exceeds the configured quota, the API gateway'
+      + ' returns 429 and the client is throttled until the window resets.';
+
+    expect(quizExcerpt(long, 'throttled')).toBe(
+      'When a request exceeds the configured quota, the API gateway'
+      + ' returns 429 and the client is **throttled** until the window resets.',
+    );
+  });
+
+  it('句子裡找不到那個字形時整句照出,不硬標也不截頭', () => {
+    const text = `The gateway rejected the request ${'and retried '.repeat(20)}once more.`;
+    expect(quizExcerpt(text, 'throttle')).toBe(text);
+    expect(quizExcerpt(text, 'throttle')).not.toContain('**');
+    expect(quizExcerpt(text, 'throttle')).not.toContain('…');
+  });
+
+  it('換行與連續空白收成單一空格,卡片不會被撐開', () => {
+    expect(quizExcerpt('We got\n  slammed\twith alerts.', 'slammed'))
+      .toBe('We got **slammed** with alerts.');
+  });
+});
+
+describe('YouTube 字幕快捷鍵整合', () => {
+  let originalTitle = '';
+  let playerEvents: AbortController;
+  let youtubeRecorded: Array<Record<string, unknown>> = [];
+  beforeEach(() => {
+    fakeBrowser.reset();
+    playerEvents = new AbortController();
+    originalTitle = document.title;
+    card.body = '';
+    card.bodies = [];
+    card.choices = undefined;
+    card.onRetry = undefined;
+    card.celebrate = undefined;
+    card.loading = undefined;
+    card.verdict = undefined;
+    youtubeRecorded = [];
+    document.body.textContent = 'We got slammed with alerts.';
+    const text = document.body.firstChild!;
+    Object.defineProperty(document, 'caretPositionFromPoint', {
+      configurable: true, value: () => ({ offsetNode: text, offset: 8 }),
+    });
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+      configurable: true, value: () => new DOMRect(),
+    });
+    vi.stubGlobal('CSS', { highlights: { set: vi.fn(), delete: vi.fn() } });
+    vi.stubGlobal('Highlight', class {});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ json: async () => ({ slam: 6000, slammed: 7000 }) }));
+    fakeBrowser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      youtubeRecorded.push(msg);
+      if (msg.type === 'getMarks') sendResponse([]);
+      else if (msg.type === 'getHighlightSettings') sendResponse({
+        threshold: 5000, highlightColors: {}, highlightTextColors: {},
+        highlightUnderlineColors: {}, markConjunctions: false, guessFirst: false,
+      });
+      else if (msg.type === 'toggleMark') sendResponse(msg.status ?? 'unknown');
+      else sendResponse(true);
+      return true;
+    });
+    const streamListeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => streamListeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => {
+        streamListeners.forEach((listener) => listener({ type: 'delta', delta: '忙翻' }));
+        streamListeners.forEach((listener) => listener({ type: 'done', result: { ok: true, text: '忙翻' } }));
+      }),
+      disconnect: vi.fn(),
+    } as any);
+  });
+  afterEach(() => {
+    playerEvents.abort();
+    window.__wordTigerAbort?.abort();
+    window.__wordTigerAbort = undefined;
+    document.title = originalTitle;
+    delete (Range.prototype as any).getBoundingClientRect;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const youtubeFixture = (time = 125) => {
+    document.body.innerHTML = `
+      <div class="html5-video-player"><video></video>
+        <div class="ytp-caption-window-container"><span class="ytp-caption-segment">We got slammed with alerts.</span></div>
+      </div>`;
+    const text = document.querySelector('.ytp-caption-segment')!.firstChild!;
+    const video = document.querySelector('video')!;
+    Object.defineProperty(document, 'caretPositionFromPoint', {
+      configurable: true, value: () => ({ offsetNode: text, offset: 8 }),
+    });
+    Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: time });
+    Object.defineProperty(video, 'pause', { configurable: true, value: vi.fn() });
+    vi.stubGlobal('location', new URL('https://www.youtube.com/watch?v=abc'));
+    document.title = 'A video';
+    return video as HTMLVideoElement;
+  };
+
+  it('A 暫停並固定 125 秒來源,之後 Space 只收藏一次且沿用原標題與時間', async () => {
+    const video = youtubeFixture();
+    await contentScript.main(new ContentScriptContext('youtube'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+    await vi.waitFor(() => expect(card.body).toBe('忙翻'));
+    expect(video.pause).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: 300 });
+    document.title = 'Changed title';
+    vi.stubGlobal('location', new URL('https://www.youtube.com/watch?v=other'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    await vi.waitFor(() => expect(youtubeRecorded.some((m) => m.type === 'saveContext')).toBe(true));
+    expect(youtubeRecorded.filter((m) => m.type === 'toggleMark')).toHaveLength(1);
+    const saved = youtubeRecorded.find((m) => m.type === 'saveContext')!;
+    expect(saved.url).toBe('https://www.youtube.com/watch?v=abc&t=125s');
+    expect(saved.title).toBe('A video · 2:05');
+  });
+
+  it('Space 的 down/repeat/up 與 Escape up 隔離播放器,關卡後新的 Space 可傳播放器', async () => {
+    youtubeFixture();
+    const playerKeys: string[] = [];
+    document.addEventListener('keydown', (e) => playerKeys.push(`down:${e.key}`), { signal: playerEvents.signal });
+    document.addEventListener('keyup', (e) => playerKeys.push(`up:${e.key}`), { signal: playerEvents.signal });
+    await contentScript.main(new ContentScriptContext('youtube'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+    await vi.waitFor(() => expect(card.body).toBe('忙翻'));
+    playerKeys.length = 0;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: false }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }));
+    expect(playerKeys).toEqual([]);
+    expect(youtubeRecorded.filter((m) => m.type === 'toggleMark')).toHaveLength(1);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape' }));
+    expect(playerKeys).toEqual([]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    expect(playerKeys).toEqual(['down: ']);
+  });
+
+  it('S 暫停但沒有帶走片語時 Space 不收藏也不傳播放器', async () => {
+    const video = youtubeFixture();
+    const player = vi.fn();
+    document.addEventListener('keydown', player, { signal: playerEvents.signal });
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockImplementation(() => ({
+      onMessage: { addListener: (listener: (event: any) => void) => queueMicrotask(() => listener({ type: 'done', result: { ok: true, text: '只有句意' } })) },
+      onDisconnect: { addListener: vi.fn() }, postMessage: vi.fn(), disconnect: vi.fn(),
+    } as any));
+    await contentScript.main(new ContentScriptContext('youtube'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'S' }));
+    await vi.waitFor(() => expect(card.body).toContain('只有句意'));
+    expect(video.pause).toHaveBeenCalledTimes(1);
+    const before = youtubeRecorded.filter((m) => m.type === 'toggleMark').length;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    expect(youtubeRecorded.filter((m) => m.type === 'toggleMark')).toHaveLength(before);
+    expect(player).not.toHaveBeenCalled();
+  });
+
+  it('D 重試仍以第一次暫停的時間與標題收藏帶走片語', async () => {
+    const video = youtubeFixture();
+    const first = '意思｜若失敗就回滾\n帶走｜be rolled back｜被回滾';
+    const listeners: Array<(event: any) => void> = [];
+    vi.spyOn(fakeBrowser.runtime, 'connect').mockReturnValue({
+      onMessage: { addListener: (listener: (event: any) => void) => listeners.push(listener) },
+      onDisconnect: { addListener: vi.fn() },
+      postMessage: () => queueMicrotask(() => listeners.at(-1)?.({ type: 'done', result: { ok: true, text: first } })),
+      disconnect: vi.fn(),
+    } as any);
+    await contentScript.main(new ContentScriptContext('youtube'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'D' }));
+    await vi.waitFor(() => expect(card.body).toContain('帶走'));
+    expect(video.pause).toHaveBeenCalledTimes(1);
+    Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: 300 });
+    document.title = 'Changed title';
+    card.onRetry?.();
+    expect(card.loading).toBe(true);
+    await vi.waitFor(() => expect(card.loading).not.toBe(true));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    await vi.waitFor(() => expect(youtubeRecorded.some((m) => m.type === 'saveContext' && m.word === 'be rolled back')).toBe(true));
+    const saved = youtubeRecorded.find((m) => m.type === 'saveContext' && m.word === 'be rolled back')!;
+    expect(saved.url).toBe('https://www.youtube.com/watch?v=abc&t=125s');
+    expect(saved.title).toBe('A video · 2:05');
+  });
+
+  it('普通 p 文字不暫停,輸入框與 Ctrl key passthrough', async () => {
+    document.body.innerHTML = '<div class="html5-video-player"><video></video><p>We got slammed.</p></div>';
+    const text = document.querySelector('p')!.firstChild!;
+    const video = document.querySelector('video')!;
+    Object.defineProperty(document, 'caretPositionFromPoint', { configurable: true, value: () => ({ offsetNode: text, offset: 8 }) });
+    Object.defineProperty(video, 'pause', { configurable: true, value: vi.fn() });
+    vi.stubGlobal('location', new URL('https://www.youtube.com/watch?v=abc'));
+    const player = vi.fn();
+    document.addEventListener('keydown', player, { signal: playerEvents.signal });
+    await contentScript.main(new ContentScriptContext('youtube'));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 1, clientY: 1 }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', ctrlKey: true }));
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', bubbles: true }));
+    expect(video.pause).not.toHaveBeenCalled();
+    expect(player).toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'A' }));
+    await vi.waitFor(() => expect(card.body).toBe('忙翻'));
+    expect(video.pause).not.toHaveBeenCalled();
   });
 });

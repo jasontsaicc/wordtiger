@@ -23,13 +23,13 @@ function inline(escaped: string): string {
 }
 
 const COACH_CLASSES: Record<string, string> = {
-  原文: 'source', 意思: 'meaning', 拆法: 'breakdown',
+  原文: 'source', 前一句: 'source', 意思: 'meaning', 拆法: 'breakdown',
   關鍵: 'stumble', 卡點: 'stumble', 白話英文: 'plain',
   帶走: 'takeaway', 用法: 'usage', 例句: 'example',
 };
 
 function renderCoachLine(line: string): string | null {
-  const match = /^(原文|意思|拆法|關鍵|卡點|白話英文|帶走|用法|例句)｜(.*)$/.exec(line);
+  const match = /^(原文|前一句|意思|拆法|關鍵|卡點|白話英文|帶走|用法|例句)｜(.*)$/.exec(line);
   if (!match) return null;
 
   const label = match[1]!;

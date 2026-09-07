@@ -17,6 +17,8 @@ export interface CardOptions {
   choices?: [string, string, string];
   /** 點第 i 個按鈕時呼叫,i 是畫面位置索引,不是洗牌前的原始索引。 */
   onPick?: (position: 0 | 1 | 2) => void;
+  /** 三選一揭曉後的對錯回饋;放在 body 之上,不進 Markdown。 */
+  verdict?: { kind: 'right' | 'wrong' | 'skipped'; text: string };
 }
 
 let host: HTMLDivElement | null = null;
@@ -113,6 +115,9 @@ function ensureRoot(): ShadowRoot {
       }
       .quiz-choice:hover { background: var(--chip-hover); }
       .quiz-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .verdict { margin-bottom: 8px; font-weight: 600; color: var(--muted); }
+      .verdict.right { color: var(--accent-ink); }
+      .verdict.wrong { color: var(--danger); }
       .marked { color: var(--accent-ink); }
       .loading .body { color: var(--muted); }
       .card:not(.loading):not(.complete):not(.celebrate) .header:hover .brand { animation: hello 520ms cubic-bezier(.2,.8,.2,1); }
@@ -161,8 +166,14 @@ function ensureRoot(): ShadowRoot {
     <div class="card" role="dialog" aria-live="polite"></div>
   `;
   root.addEventListener('pointerdown', (event) => startDrag(event as PointerEvent));
-  document.body.appendChild(host);
+  mountHost();
+  document.addEventListener('fullscreenchange', mountHost);
   return root;
+}
+
+function mountHost(): void {
+  if (!host) return;
+  (document.fullscreenElement ?? document.body).appendChild(host);
 }
 
 export function chooseCardPlacement(
@@ -193,6 +204,9 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
       ? `<button class="retry" type="button" aria-label="重問一次"${opts.loading ? ' disabled' : ''}>↻</button>`
       : '';
     parts.push(`<div class="header"><img class="brand" src="${icon}" alt="" aria-hidden="true"><div class="${cls}">${escapeHtml(opts.title)}</div>${retry}<button class="close" type="button" aria-label="關閉">×</button></div>`);
+  }
+  if (opts.verdict) {
+    parts.push(`<div class="verdict ${opts.verdict.kind}">${escapeHtml(opts.verdict.text)}</div>`);
   }
   parts.push(`<div class="body">${renderMarkdown(opts.body)}</div>`);
   if (opts.choices) {

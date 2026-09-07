@@ -248,8 +248,5 @@ input[type="range"] { width: 100%; }
 .warn { color: #b4451f; font-size: 13px; }
 .chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: white; color: #475569; cursor: pointer; }
 .chip:hover { border-color: #6366f1; color: #1e293b; }
-table { width: 100%; border-collapse: collapse; }
-td { padding: .4rem; border-bottom: 1px solid #ddd; cursor: pointer; }
-blockquote { border-left: 3px solid #c8c0ff; margin: .5rem 0; padding-left: .75rem; }
 @media (max-width: 640px) { .wrap { padding: 1.25rem .75rem 3rem; } nav button { padding-inline: .35rem; } section { padding: 1rem; } }
 </style>

@@ -48,11 +48,6 @@ export function wordAtPoint(
   return span ? { node: textNode, span } : null;
 }
 
-/** 取得座標下的文字位置，允許空白與標點供 S/D 使用。 */
-export function textNodeAtPoint(x: number, y: number): Text | null {
-  return textPositionAtPoint(x, y)?.node ?? null;
-}
-
 /** 取得 S/D 定位多句段落所需的文字節點位移。 */
 export function textPositionAtPoint(
   x: number,
