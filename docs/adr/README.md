@@ -31,3 +31,9 @@
 | [0025](0025-prompt-fingerprint-owns-cache-invalidation.md) | 快取失效由 prompt 指紋負責，不保留人工清除介面 | accepted | 2026-08-29 |
 | [0026](0026-one-accent-colour-per-card.md) | 卡片只用一個重點色，區塊分成參考與帶走兩層 | accepted | 2026-08-29 |
 | [0027](0027-retry-reads-past-the-cache-instead-of-clearing-it.md) | 重試跳過快取讀取，不刪快取 | accepted | 2026-08-30 |
+| [0028](0028-stale-cache-rows-requery-when-the-quiz-cannot-be-parsed.md) | 缺 prompt 指紋的快取列，抽不出題目時重查一次 | accepted | 2026-09-01 |
+| [0029](0029-worked-example-contract-tolerant-parser.md) | 輸出契約給填好的範例，解析端容忍已知偏差 | accepted | 2026-09-01 |
+| [0030](0030-boundary-quiz-default-and-chinese-only-options.md) | 三選一補上邊界題當預設題型，選項一律中文 | accepted | 2026-09-01 |
+| [0031](0031-teaching-cards-prioritize-retrieval-and-usable-pronunciation.md) | 教學卡先教判斷、可用搭配與提取，發音不用整串 KK | 部分被取代 | 2026-09-05 |
+| [0032](0032-video-subtitle-learning-starts-with-youtube-probe.md) | 影片字幕學習先驗證 YouTube，再決定 Netflix 與沉浸式翻譯支援 | accepted | 2026-09-05 |
+| [0033](0033-pronunciation-gives-kk-plus-one-action.md) | 發音欄位同時給 KK 音標與一個發音動作 | accepted | 2026-09-07 |

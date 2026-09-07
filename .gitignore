@@ -10,5 +10,6 @@ public/freq.json
 .env.local
 .claude/
 .superpowers/
-docs/worklogs/
+docs/worklogs/*
+!docs/worklogs/2026-09-05.md
 .gstack/
