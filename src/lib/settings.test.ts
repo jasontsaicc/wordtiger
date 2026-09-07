@@ -269,7 +269,7 @@ describe('loadSettings 的 template 合併', () => {
       ...DEFAULT_TEMPLATES,
       lookup: PREVIOUS_SURFACE_LOOKUP,
     } } });
-    expect((await loadSettings()).templates.lookup).toContain('## 字族與構詞');
+    expect((await loadSettings()).templates.lookup).toBe(DEFAULT_TEMPLATES.lookup);
   });
 
   it('新版拆句教學發布前的 grammar 預設自動升級', async () => {
