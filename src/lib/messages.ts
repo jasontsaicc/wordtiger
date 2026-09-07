@@ -2,7 +2,7 @@ import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContex
 import { lookupWord, explainSentence, generateSpeech } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
-import { SYSTEM_RULES } from './prompt';
+import { SYSTEM_RULES, extractQuiz } from './prompt';
 import type { WordStatus } from './decide';
 import { wordProgress } from './review';
 
@@ -245,7 +245,11 @@ export async function handleStreamMessage(
     if (row && row.deletedAt == null
       && (row.surface === undefined || row.surface === surface)
       && (row.sentence === undefined || row.sentence === sentence)
-      && (row.variant === undefined || row.variant === variant)) {
+      && (row.variant === undefined || row.variant === variant)
+      // 缺 variant 的列(1.8.1 之前留下的、或同步下來的)無法確認是不是這版 prompt 產的。
+      // 開著 guessFirst 卻抽不出題目時要重查一次,否則整份舊詞庫永遠出不了題,功能形同沒開。
+      // 重查後寫回的列帶著 variant,所以每個字最多只多問一次 AI。
+      && !(settings.guessFirst && row.variant === undefined && !extractQuiz(row.payload))) {
       onDelta(row.payload);
       return { ok: true, text: row.payload };
     }

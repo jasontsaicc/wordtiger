@@ -52,18 +52,25 @@ describe('buildLookupPrompt', () => {
     expect(prompt).toBe('實際：slammed\n原形：slam\n句子：We got slammed with alerts.');
   });
 
-  it('預設 prompt 以實際字形、固定搭配與美式 KK 教學', () => {
+  it('預設 prompt 以實際字形教搭配、重音與具體發音技巧', () => {
     const prompt = buildLookupPrompt({
       w: 'slam', surface: 'slammed', s: 'We got slammed with alerts.',
     }, '');
     expect(prompt).toContain('實際字形：slammed');
     expect(prompt).toContain('原形：slam');
-    expect(prompt).toContain('get/be slammed');
-    expect(prompt).toContain('美式 KK 音標');
-    expect(prompt).toContain('[ ]');
+    expect(prompt).toContain('完整固定搭配');
+    expect(prompt).toContain('## 發音與重音');
+    expect(prompt).toContain('粗體標主重音');
+    expect(prompt).toContain('舌位、嘴形');
+    expect(prompt).toContain('不用中文諧音');
+    expect(prompt).toContain('技巧省略,不要猜測');
+    // 音標回到發音欄位裡面,不是回到獨立的 KK 區塊。
     expect(prompt).toContain('不可輸出 IPA');
-    expect(prompt).toContain('最多再補 1 個真正容易混淆的義項');
-    expect(prompt).toContain('不能只是重述釋義');
+    expect(prompt).toContain('[ˏʌndɚˋtekən]');
+    expect(prompt).not.toContain('## 美式 KK 音標');
+    // 變形字要說字尾的功能,不是列變化表;原形以模型判斷為準。
+    expect(prompt).toContain('字尾在本句的功能');
+    expect(prompt).toContain('以你的判斷為準');
   });
 
   it('預設 prompt 只在有幫助時教字族與構詞', () => {
@@ -71,9 +78,10 @@ describe('buildLookupPrompt', () => {
       w: 'reliability', s: 'The service offers high reliability.',
     }, '');
     expect(prompt).toContain('## 字族與構詞');
-    expect(prompt).toContain('基礎字 → 衍生字');
-    expect(prompt).toContain('不要重複 `-s`、`-ed`、`-ing`');
-    expect(prompt).toContain('不確定或只涉及冷門詞源時省略');
+    // 字族與記憶提示是互斥觸發,不是讓模型自己擇一。
+    expect(prompt).toContain('能自然衍生時放');
+    expect(prompt).toContain('不能衍生時才放');
+    expect(prompt).toContain('不猜詞源、不重複詞形變化');
   });
 
   it('輸出契約在鎖定的系統層,不在使用者可編輯的 template', () => {

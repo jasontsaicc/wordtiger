@@ -40,7 +40,7 @@ import {
   DEFAULT_HIGHLIGHT_COLORS, DEFAULT_HIGHLIGHT_TEXT_COLORS,
   DEFAULT_HIGHLIGHT_UNDERLINE_COLORS, OPENAI_BASE_URL, loadSettings, saveSettings,
 } from './settings';
-import { DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_TEMPLATES } from './prompt';
+import { DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_TEMPLATES, PREVIOUS_DEFAULT_LOOKUPS, PREVIOUS_DEFAULT_TRANSLATES, PREVIOUS_DEFAULT_GRAMMARS } from './prompt';
 import { beforeEach } from 'vitest';
 
 const OLDEST_LOOKUP_DEFAULT = [
@@ -204,6 +204,23 @@ describe('loadSettings 的 template 合併', () => {
       templates: { ...DEFAULT_TEMPLATES, lookup: custom },
     } });
     expect((await loadSettings()).templates.lookup).toBe(custom);
+  });
+
+  it('發音與教學更新會升級上一版三卡預設,但保留自訂內容', async () => {
+    const previous = {
+      lookup: PREVIOUS_DEFAULT_LOOKUPS.at(-1)!,
+      translate: PREVIOUS_DEFAULT_TRANSLATES.at(-1)!,
+      grammar: PREVIOUS_DEFAULT_GRAMMARS.at(-1)!,
+    };
+    for (const key of ['lookup', 'translate', 'grammar'] as const) {
+      expect(previous[key]).not.toBe(DEFAULT_TEMPLATES[key]);
+    }
+    await fakeBrowser.storage.local.set({ settings: { templates: previous } });
+    expect((await loadSettings()).templates).toEqual(DEFAULT_TEMPLATES);
+    const custom = Object.fromEntries(Object.entries(previous)
+      .map(([key, value]) => [key, `${value}\n請保留我的例句偏好。`]));
+    await fakeBrowser.storage.local.set({ settings: { templates: custom } });
+    expect((await loadSettings()).templates).toEqual(custom);
   });
 
   it('三個未自訂的舊預設都自動升級', async () => {

@@ -104,6 +104,8 @@ describe('handleMessage', () => {
   });
 
   it('同步下來沒有查詢條件的列仍要命中快取', async () => {
+    vi.spyOn(settings, 'loadSettings')
+      .mockResolvedValue({ ...(await settings.loadSettings()), guessFirst: false });
     const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('不該被呼叫');
     const now = Date.now();
     await db.lookupCache.put({
@@ -118,6 +120,45 @@ describe('handleMessage', () => {
 
     expect(spy).not.toHaveBeenCalled();
     expect(got).toEqual({ ok: true, text: '部署到正式環境' });
+  });
+
+  it('guessFirst 開著時,缺 variant 又抽不出題目的舊快取要重查一次', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord')
+      .mockResolvedValue('選項｜掐住喉嚨｜被限流擋下來｜排進重試佇列\n答案｜2\n\n## 詞性與釋義\n- 限流');
+    const now = Date.now();
+    await db.lookupCache.put({
+      word: 'throttle', payload: '## 詞性與釋義\n- 限流',
+      fetchedAt: now, updatedAt: now, deletedAt: null, pending: 0,
+    });
+    const msg = {
+      type: 'lookup' as const, word: 'throttle', surface: 'throttled',
+      sentence: 'The request was throttled.',
+    };
+
+    const got = await handleStreamMessage(msg, () => {}) as ExplainResult;
+    expect(spy).toHaveBeenCalledOnce();
+    expect(got.ok && got.text).toContain('選項｜');
+
+    // 重查後的列帶著 variant,第二次查同一個字要回到快取,不能每次都再問一次 AI。
+    await handleStreamMessage(msg, () => {});
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('guessFirst 開著但同步下來的列已經有題目時仍然命中快取', async () => {
+    const spy = vi.spyOn(ai, 'lookupWord').mockResolvedValue('不該被呼叫');
+    const now = Date.now();
+    await db.lookupCache.put({
+      word: 'deploy', payload: '選項｜關掉服務｜推上正式環境｜回到前一版\n答案｜2\n\n## 詞性與釋義\n- 部署',
+      fetchedAt: now, updatedAt: now, deletedAt: null, pending: 0,
+    });
+
+    const got = await handleStreamMessage({
+      type: 'lookup', word: 'deploy', surface: 'deploying',
+      sentence: 'We deploy on Friday.',
+    }, () => {}) as ExplainResult;
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(got.ok && got.text).toContain('選項｜');
   });
 
   it('已軟刪除的相符列不能命中 lookup 快取', async () => {

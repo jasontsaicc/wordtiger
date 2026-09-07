@@ -76,6 +76,17 @@ describe('extractQuiz', () => {
     expect(extractQuiz('選項｜A｜A｜B\n答案｜1')).toBeNull();
   });
 
+  it('答案寫成句子時仍取得到數字', () => {
+    // 實際遇過的回應:模型把「正確選項是第幾個(1-3)」這句說明也抄進了答案行。
+    expect(extractQuiz('選項｜A｜B｜C\n答案｜正確選項是第1個'))
+      .toEqual({ choices: ['A', 'B', 'C'], right: 0 });
+  });
+
+  it('選項行漏掉「選項｜」字首時,由下一行的答案行認出來', () => {
+    expect(extractQuiz('合理的預設值｜保守的預設值｜敏感的預設值\n答案｜1'))
+      .toEqual({ choices: ['合理的預設值', '保守的預設值', '敏感的預設值'], right: 0 });
+  });
+
   it('答案越界時回 null', () => {
     expect(extractQuiz('選項｜A｜B｜C\n答案｜0')).toBeNull();
     expect(extractQuiz('選項｜A｜B｜C\n答案｜4')).toBeNull();
@@ -112,6 +123,16 @@ describe('stripQuiz', () => {
 
   it('選項行出現在正文中間時不誤刪', () => {
     const text = '## 本句用法\n選項｜A｜B｜C\n答案｜1';
+    expect(stripQuiz(text)).toBe(text);
+  });
+
+  it('選項行漏掉字首時兩行都要剝除,不能把壞題漏到畫面上', () => {
+    expect(stripQuiz('合理的預設值｜保守的預設值｜敏感的預設值\n答案｜正確選項是第1個\n## 本句用法'))
+      .toBe('## 本句用法');
+  });
+
+  it('第一行切不出三段時,不因為下一行是答案行就誤刪正文', () => {
+    const text = '## 本句用法\n答案｜1';
     expect(stripQuiz(text)).toBe(text);
   });
 });
@@ -197,5 +218,27 @@ describe('SYSTEM_RULES.lookup 的出題規則', () => {
     expect(SYSTEM_RULES.lookup).toContain('選項｜');
     expect(SYSTEM_RULES.lookup).toContain('答案｜');
     expect(SYSTEM_RULES.lookup).toContain('throttled');
+  });
+
+  // ADR-0029:模型抄的是填好的範例,不是欄位說明。範例自己要先過得了自己的解析器。
+  it('規格裡兩個範例都解析得出來,且選項都是中文', () => {
+    const lines = SYSTEM_RULES.lookup.split('\n');
+    const examples = lines.flatMap((line, i) =>
+      line.startsWith('選項｜') && lines[i + 1]?.startsWith('答案｜')
+        ? [`${line}\n${lines[i + 1]}`] : []);
+
+    expect(examples).toHaveLength(2);
+    expect(extractQuiz(examples[0]!)).toEqual({
+      choices: ['這台機器被別人重開了', '這台機器自己重開了', '這台機器等著被重開'],
+      right: 1,
+    });
+    expect(extractQuiz(examples[1]!)).toEqual({
+      choices: ['降低影響的嚴重程度', '完全消除已發生的影響', '阻止故障本身發生'],
+      right: 0,
+    });
+    // 規則寫「選項一律用繁體中文」,範例自己不能帶頭違規。
+    for (const example of examples) {
+      expect(extractQuiz(example)!.choices.join('')).not.toMatch(/[a-z]/i);
+    }
   });
 });

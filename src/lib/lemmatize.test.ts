@@ -122,4 +122,21 @@ describe('lemmatize', () => {
   it('太短的字不處理', () => {
     expect(lemmatize('as', rankOf)).toBe('as');
   });
+
+  it('前綴不規則要還原,原形不在詞表就不動它', () => {
+    const ranks: Record<string, number> = {
+      undertaken: 22687, undertake: 17222, withheld: 17237, withhold: 17046,
+      unwritten: 21990,
+    };
+    const ranked = (w: string) => ranks[w];
+    expect(lemmatize('undertaken', ranked)).toBe('undertake');
+    expect(lemmatize('withheld', ranked)).toBe('withhold');
+    // unwrite 不是詞表裡的字,unwritten 是形容詞不該併進 write。
+    expect(lemmatize('unwritten', ranked)).toBe('unwritten');
+  });
+
+  it('後綴規則命中時不進前綴分支', () => {
+    const ranks: Record<string, number> = { undertaking: 19742, undertake: 17222 };
+    expect(lemmatize('undertaking', (w) => ranks[w])).toBe('undertake');
+  });
 });

@@ -32,6 +32,9 @@ const IRREGULAR: Record<string, string> = {
 // ponytail: 3 倍頻率比是小型規則法的誤判護欄；案例不足前不引入 POS/NLP。
 const MAX_INFLECTION_RANK_RATIO = 3;
 
+// undertaken、withheld 這類字尾規則抓不到,拆掉前綴才對得上不規則表。長前綴優先,避免 undone 先被 un 吃掉。
+const PREFIXES = ['under', 'over', 'fore', 'with', 'mis', 'out', 'up', 're', 'un'];
+
 function candidates(word: string): string[] {
   const out: string[] = [];
 
@@ -75,7 +78,7 @@ function candidates(word: string): string[] {
   return out;
 }
 
-/** 不規則表優先，再以詞典驗證後綴候選；無有效候選時保留原字。 */
+/** 不規則表優先，再以詞典驗證後綴候選，最後試前綴不規則；都不成立時保留原字。 */
 export function lemmatize(
   token: string,
   rankOf: (w: string) => number | undefined,
@@ -93,6 +96,16 @@ export function lemmatize(
     const rank = rankOf(candidate);
     if (candidate.length >= 2 && rank !== undefined
       && (wordRank === undefined || rank < wordRank * MAX_INFLECTION_RANK_RATIO)) return candidate;
+  }
+
+  // 後綴規則交白卷才試前綴,undertaking 這種既有路徑不受影響。
+  // 只信詞表驗證過的結果,unwritten → unwrite 這類偽陽性會在這裡被擋掉。
+  for (const prefix of PREFIXES) {
+    if (!word.startsWith(prefix)) continue;
+    const rest = word.slice(prefix.length);
+    if (!Object.hasOwn(IRREGULAR, rest)) continue;
+    const lemma = prefix + IRREGULAR[rest];
+    if (rankOf(lemma) !== undefined) return lemma;
   }
 
   return word;
