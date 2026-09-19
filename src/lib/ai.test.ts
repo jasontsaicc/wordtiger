@@ -73,16 +73,60 @@ describe('buildLookupPrompt', () => {
     expect(prompt).toContain('以你的判斷為準');
   });
 
-  it('預設 prompt 分開形式、句義與語感,保留輸出練習', () => {
+  it('預設 prompt 用白話講字形變化,分開句義與語感', () => {
     const prompt = buildLookupPrompt({
       w: 'reliability', s: 'The service offers high reliability.',
     }, '');
-    expect(prompt).toContain('`## 原形 / 構詞`（實際字形與基礎形式不同時才列）、`## 本句意思`、`## 本句用法`、`## 語感與使用情境`');
-    expect(prompt).toContain('各層附詞性與相關中文意思');
+    expect(prompt).toContain('`## 原形 / 這次怎麼變`（實際字形與基礎形式不同時才列）、`## 本句意思`、`## 字族與構詞`（有可靠且有學習價值時列）、`## 發音與重音`、`## 本句用法`、`## 語感與使用情境`');
+    // 三行標籤格式取代箭頭,箭頭只剩衍生鏈,方向一律由基礎往衍生。
+    expect(prompt).toContain('`原形：occur`、`這次：occurred`');
+    expect(prompt).toContain('不要把實際字形擺在箭頭左邊');
+    expect(prompt).not.toContain('occurred → occur');
+    // 術語不能單獨當解釋,原因欄要白話。
+    expect(prompt).toContain('不可只靠術語解釋');
+    // 本句意思固定有英文定義與中文行,字族獨立成欄。
+    expect(prompt).toContain('固定且只能輸出兩行');
+    expect(prompt).toContain('不得加第三行、其他義項');
+    expect(prompt).toContain('英文定義不可因為「必要時」而省略');
+    expect(prompt).toContain('## 字族與構詞');
+    expect(prompt).toContain('-ity：把形容詞變成名詞');
+    expect(prompt).toContain('已經寫在原形欄,這裡不重複');
     expect(prompt).toContain('不暗示每次變形都改變核心字義');
     expect(prompt).toContain('不暗示可無條件互換');
     expect(prompt).toContain('## 換你說');
-    expect(prompt).not.toContain('## 字族與構詞');
+  });
+
+  it('預設 prompt 白話補充文法,並限制練習量', () => {
+    const prompt = buildLookupPrompt({
+      w: 'occur', surface: 'occurred', s: 'The outage occurred yesterday.',
+    }, '');
+
+    expect(prompt.indexOf('`## 原形 / 這次怎麼變`')).toBeLessThan(
+      prompt.indexOf('`## 本句意思`'),
+    );
+    expect(prompt.indexOf('`## 本句意思`')).toBeLessThan(
+      prompt.indexOf('`## 字族與構詞`'),
+    );
+    expect(prompt.indexOf('`## 字族與構詞`')).toBeLessThan(
+      prompt.indexOf('`## 發音與重音`'),
+    );
+    expect(prompt.indexOf('`## 發音與重音`')).toBeLessThan(
+      prompt.indexOf('`## 本句用法`'),
+    );
+    expect(prompt).toContain('這個形式叫過去分詞,不單獨代表過去');
+    expect(prompt).toContain('has、have 或 had 加上過去分詞');
+    expect(prompt).toContain('has been undertaken');
+    expect(prompt).toContain('不保證已做完');
+    expect(prompt).toContain('如果是副詞,先說它修飾哪個字或哪一段');
+    expect(prompt).toContain('時態只在本句真的影響理解時補充');
+    expect(prompt).toContain('## 常見變化');
+    expect(prompt).not.toContain('主要三態');
+    expect(prompt).toContain('1–2 個可重用的搭配');
+    expect(prompt).toContain('可直接套用的英文空格句框');
+    expect(prompt).toContain('空格要填人、事情、時間或動作');
+    expect(prompt).toContain('固定且只能給 1 個英文例句');
+    expect(prompt).toContain('固定且只能給 1 個口頭任務與 1 個');
+    expect(prompt).toContain('不要新增「字族與構詞」以外的延伸欄位');
   });
 
   it('輸出契約在鎖定的系統層,不在使用者可編輯的 template', () => {

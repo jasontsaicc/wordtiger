@@ -23,6 +23,35 @@ export interface LookupItem {
   s: string;
 }
 
+/** 用同一條文字 AI 路徑測試設定，不帶入個人背景或網頁內容。 */
+export async function testAiConnection(settings: AiSettings): Promise<void> {
+  let endpoint: URL;
+  try { endpoint = new URL(settings.baseUrl); }
+  catch { throw new Error('請填入完整的 AI 服務網址。'); }
+  if (!['https:', 'http:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+    throw new Error('AI 服務網址必須是 HTTP 或 HTTPS，且不能含帳密。');
+  }
+  if (!settings.apiKey.trim() || !settings.model.trim()) throw new Error('請先填入 API Key 與 Model。');
+  let text: string;
+  try {
+    text = await chat('Reply only with OK.', 'Connection test.', settings, undefined, AbortSignal.timeout(20_000));
+  } catch (error) {
+    if ((error instanceof Error || error instanceof DOMException) && ['TimeoutError', 'AbortError'].includes(error.name)) {
+      throw new Error('連線逾時，請稍後再試或確認服務網址。');
+    }
+    // 不把服務端原始回應顯示出來，避免其中包含金鑰或其他敏感內容。
+    const status = error instanceof Error ? /^AI 請求失敗 (\d{3}):/.exec(error.message)?.[1] : undefined;
+    const hints: Record<string, string> = {
+      '401': '金鑰無效或已過期', '403': '帳號或模型沒有存取權限',
+      '404': '服務網址或模型名稱不正確', '429': '額度不足或請求過於頻繁',
+    };
+    throw new Error(status
+      ? `連線失敗（${status}）：${hints[status] ?? '服務暫時無法完成請求'}。`
+      : '無法取得有效回應，請確認網路、服務網址與 Chat Completions 相容性。');
+  }
+  if (typeof text !== 'string' || !text.trim()) throw new Error('服務回傳空白內容，請確認模型支援文字回應。');
+}
+
 /** TTS 使用獨立模型，不受查詞模型設定影響。 */
 export async function generateSpeech(
   text: string,

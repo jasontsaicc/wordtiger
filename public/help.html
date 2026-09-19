@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>開始使用｜攔詞虎 WordTiger</title>
+<style>
+body{max-width:800px;margin:40px auto;padding:0 24px;font:16px/1.8 system-ui,sans-serif;color:#293340;background:#fffdf8}h1,h2{line-height:1.4}h2{margin-top:2.5rem}a{color:#9a3412}kbd{padding:2px 5px;border:1px solid #d5d0c7;border-radius:4px;background:white}li{margin:.6rem 0}table{border-collapse:collapse;width:100%}th,td{text-align:left;border-bottom:1px solid #e7e2d9;padding:10px}details{border-bottom:1px solid #e7e2d9;padding:16px 0}summary{cursor:pointer;font-weight:600}:focus-visible{outline:3px solid #c2410c;outline-offset:4px}.note{background:#ffedd5;padding:16px;border-radius:12px}footer{margin:3rem 0}code{overflow-wrap:anywhere}
+</style>
+</head>
+<body><main>
+<p>攔詞虎 WordTiger · 操作說明</p>
+<h1>從第一個生詞開始。</h1>
+<p>在英文網頁裡查懂生詞，連同語境收藏，再用間隔複習記住。</p>
+<p class="note">高亮與收藏不需要 AI。查詞與拆句需要你自己的 API 金鑰，費用依所選服務方案計算。已有詞典材料的卡片可離線複習。</p>
+<h2>三步開始</h2>
+<ol>
+<li><strong>設定 AI。</strong>從工具列開啟攔詞虎設定，填入可信任服務的 Base URL、API Key 和可使用的 Model，按「測試 AI 連線」。預設網址為 <code>https://api.openai.com/v1</code>，也支援相容 Chat Completions 的服務。測試會送出一次可能計費的短請求。</li>
+<li><strong>打開一篇英文文章。</strong>點小虎懸浮球、工具列入口或按 <kbd>Alt+U</kbd> 開啟生詞標示。亮太多可到設定調高詞頻門檻。</li>
+<li><strong>查詞、收藏、再複習。</strong>滑鼠移到單字按 <kbd>A</kbd>。預設會先出猜題，可作答或依卡片提示跳過；按 <kbd>Space</kbd> 收藏。到「今晚打老虎」，先回想、看答案，再選「記得／忘了」。</li>
+</ol>
+<h2>常用操作</h2>
+<table><caption>在啟用標示的文章中使用；文字輸入欄位內不觸發查詞快捷鍵。</caption><thead><tr><th scope="col">按鍵</th><th scope="col">用途</th></tr></thead><tbody>
+<tr><td><kbd>Alt+U</kbd></td><td>開關目前頁面的生詞標示</td></tr>
+<tr><td><kbd>A</kbd></td><td>查詢滑鼠所在的字</td></tr>
+<tr><td><kbd>S</kbd> / <kbd>D</kbd></td><td>快速看懂句意／拆懂句型</td></tr>
+<tr><td><kbd>F</kbd></td><td>朗讀單字或卡片原句</td></tr>
+<tr><td><kbd>Space</kbd></td><td>收藏或取消收藏卡片中的單字／片語</td></tr>
+<tr><td><kbd>X</kbd></td><td>標記已認得，或恢復自動判定</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>關閉卡片</td></tr>
+</tbody></table>
+<h2>常見問題</h2>
+<details open><summary>沒有 API 金鑰，可以用嗎？</summary><p>可以高亮與收藏。新查詞、句意說明與拆句需要金鑰；複習只使用已儲存的詞典內容。新收藏如果尚未查詞，請到「我的攔路虎」按「查一次詞」。片語還需要來源語境。</p></details>
+<details><summary>AI 費用與模型怎麼選？</summary><p>請依你所選服務的方案確認費用與可用模型。攔詞虎不附贈 API 額度，模型選單也不保證帳號擁有使用權；可以手動填入模型名稱。文字模型可用不代表服務支援 AI 語音，不支援時會改用系統語音。</p></details>
+<details><summary>連線測試失敗怎麼辦？</summary><p>401：檢查金鑰。403：確認帳號或模型權限。404：確認網址與模型名稱，Base URL 不要包含 /chat/completions。429：確認額度或稍後重試。逾時：檢查網路及端點。其他錯誤請確認服務相容 Chat Completions。</p></details>
+<details><summary>為什麼某些頁面沒有標示？</summary><p>請先啟用高亮並確認網站不在排除清單。瀏覽器內建頁、擴充功能商店及部分受保護頁面不能注入；PDF、圖片文字與特殊編輯器不保證支援。快捷鍵衝突時，可使用工具列或小虎入口；瀏覽器命令可在 edge://extensions/shortcuts 調整。</p></details>
+<details><summary>我的文章和資料會傳去哪裡？</summary><p>一般高亮在本機完成。AI 操作可能送出單字、目標句、前一句、頁面標題及你填的背景至你設定的端點；選用同步則傳到自己的 Supabase 專案。詳見<a href="privacy.html">隱私政策</a>。</p></details>
+<details><summary>一定要設定 Supabase 嗎？</summary><p>不用。同步是進階選項，單一裝置使用不需要帳號或資料庫。若要同步，依專案 README 建立自己的 Supabase 專案，執行完整 schema 後，再展開設定頁的同步區登入。</p></details>
+<details><summary>怎麼備份或換電腦？</summary><p>詞庫可匯出 JSON，內容包含單字、語境與作答紀錄，不包含金鑰或詞典快取，目前沒有匯入還原功能。跨裝置可選用自己的 Supabase 同步。請勿把「匯出 JSON」當成可完整復原的備份；卸載前先確認資料保存方式。</p></details>
+<details><summary>如何排除網站或刪除資料？</summary><p>在設定加入網域後，請重新整理已開啟高亮的頁面。排除不會移除舊收藏或撤回先前請求。詞庫可刪除收藏；卸載清除本機資料，已同步資料與匯出檔需另行處理。</p></details>
+<p>AI 說明可能出錯，重要用法請再核對原文與可靠詞典。</p>
+</main><footer><a href="privacy.html">隱私政策</a> · <a href="https://github.com/jasontsaicc/wordtiger/issues">問題回報</a><p>回報請附瀏覽器版本與重現步驟，不要附 API 金鑰或私人文章。</p></footer></body></html>

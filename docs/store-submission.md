@@ -1,218 +1,193 @@
 # Edge Add-ons 送審材料
 
-Partner Center 每個欄位的稿子，照著複製貼上。規格取自 [Publish a Microsoft Edge extension](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension)。
+最後核對：2026-09-18。依 [Microsoft 官方上架說明](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension) 準備。
 
-語言分工：審查員看的欄位（Single Purpose、權限說明、certification notes）用英文，使用者看的欄位（Description）用中文。
+本文件是送審草稿，不代表帳號、網站或擴充功能已發佈。英文段落供審查員閱讀，中文段落供使用者閱讀。
 
 ## 送審前檢查
 
-| 項目 | 狀態 |
-| :--- | :--- |
-| 帳號類型選 Individual（驗證較快，且免費） | 待辦 |
-| 截圖重拍成 1.8.1 的介面 | 待辦 |
-| `pnpm zip` 產出最新封裝 | `.output/wordtiger-1.8.1-chrome.zip` |
-| 隱私政策可公開存取 | <https://github.com/jasontsaicc/wordtiger/blob/master/docs/privacy.md> |
+- [ ] 在 Partner Center 完成開發者註冊，按實際身分選帳號類型與地區。
+- [ ] 執行 `pnpm typecheck`、`pnpm test`、`pnpm build`。
+- [ ] 用乾淨的 Edge 設定檔載入 `.output/chrome-mv3`，完成本文件末尾的人工驗收。
+- [ ] 重拍目前版本截圖。現有 `docs/images/` 為較早版本展示，不直接當成最新送審截圖。
+- [ ] 依 Cloudflare Pages CI/CD 文件連接 GitHub，完成預覽驗證後合併至正式分支，確認自動部署成功。
+- [ ] 在未登入狀態確認介紹頁、`privacy.html`、`help.html` 與支援入口可存取；填入實際網址。
+- [ ] 將隱私頁與此處 Data usage 依 Partner Center 當時欄位逐項對照。
+- [ ] 在 Partner Center 的非公開審查備註提供可用的測試端點、模型與限額金鑰；不要提交到 Git。
+- [ ] 確認 `package.json` 版本與本次送審版本一致，再執行 `pnpm zip`，上傳剛產生的 ZIP；不要依舊檔名挑封裝。
 
-帳號的 **country/region** 與 **account type** 註冊後不能改，選之前先確認。
+部署流程與預定網址見 [Cloudflare Pages 部署說明](cloudflare-pages.md)；完成公開連線驗證前，不把預定網址當成已上線。
 
-## Step 4　Availability
+## Availability 與 Properties
 
-- **Visibility**：`Hidden`。只有拿到連結的人能安裝，符合先在公司電腦內部使用的目標。
-- **Markets**：維持預設全部市場。Hidden 已經擋掉搜尋與瀏覽，市場再限縮沒有意義。
+- **Visibility**：首輪建議 Hidden，提供連結給 5–10 位目標使用者。Hidden 不會出現在搜尋或商店瀏覽中，但知道連結的人仍可安裝，不是存取控制。
+- **Markets**：依實際支援範圍選擇，首輪以繁體中文使用者為主。
+- **Category**：Productivity。
+- **Website**：選填。部署介紹站後填入公開首頁網址；尚未部署時先留白，不填不存在的網址。
+- **Support contact detail**：`https://github.com/jasontsaicc/wordtiger/issues`，送出前確認未登入也能存取；若 repo 不公開，改用有效的公開支援頁或聯絡信箱。
+- **Mature content**：本專案不包含成人內容。
 
-## Step 5　Properties
-
-| 欄位 | 值 |
-| :--- | :--- |
-| Category | Productivity |
-| Website | `https://github.com/jasontsaicc/wordtiger` |
-| Support contact detail | `https://github.com/jasontsaicc/wordtiger/issues` |
-| Mature content | 不勾 |
-
-## Step 6　Privacy
+## Privacy
 
 ### Single Purpose Description
 
-```
-WordTiger is a reading assistant for English web pages. It has one purpose:
-help the reader understand and remember unfamiliar English words in the pages
-they are already reading.
-
-It marks words above a frequency threshold the user sets, looks a word up on
-demand, explains the sentence it appears in, saves the word with its source
-sentence, and schedules those saved words for spaced review.
-
-Every feature serves that one loop: notice a word, understand it in context,
-save it, review it later.
+```text
+WordTiger helps Traditional Chinese speakers understand and remember unfamiliar
+English words in the web pages they read. It highlights words by a configurable
+frequency threshold, explains words and sentences on demand, saves vocabulary
+with source context, and schedules saved material for spaced review.
+Every feature supports this reading and vocabulary-learning workflow.
 ```
 
 ### Permission justification
 
-`scripting`
+**scripting**
 
-```
-The highlight engine is injected on demand, not kept resident. When the user
-presses Alt+U, clicks the toolbar popup, or clicks the in-page launcher, the
-background service worker injects the highlight content script into that tab
-only. Without this permission the extension cannot start highlighting.
-```
-
-`storage`
-
-```
-Stores the user's own settings: the AI endpoint URL and API key they supply,
-the word frequency threshold, highlight colours, the blocked-host list, and
-which origins highlight automatically. All values stay in the browser.
+```text
+Injects the highlighting engine into a supported tab when the user invokes the
+keyboard command, toolbar popup or in-page launcher. It also restores highlighting
+on sites where the user enabled automatic highlighting. Blocked hosts are rejected
+by the activation path. The floating launcher is a separate static content script.
 ```
 
-`alarms`
+**storage**
 
-```
-Schedules the periodic incremental sync to the user's own Supabase project.
-Sync is off unless the user sets it up and signs in. MV3 service workers are
-evicted when idle, so a timer inside the worker cannot survive; alarms is the
-only way to schedule this.
-```
-
-Host permission `<all_urls>`
-
-```
-Two independent reasons.
-
-1. The floating launcher is a static content script on all URLs. Its purpose
-   is to be available while the user reads any English page, so restricting it
-   to a preset list of sites would remove the entry point. Clicking it triggers
-   the same injection path described under "scripting", which needs host access
-   to the current tab. The activeTab permission does not cover this, because
-   activeTab is granted by clicking the toolbar action or invoking a keyboard
-   command, not by clicking an element inside the page.
-
-2. The AI endpoint and the Supabase project URL are supplied by the user at
-   runtime. They are not known when the package is built, so they cannot be
-   enumerated in the manifest.
-
-The launcher itself makes no network requests. Data leaves the device only
-after the user starts highlighting and presses A, S, D, or F. Hosts on the
-user's blocked list never receive an injection at all.
+```text
+Stores extension settings locally: the user-supplied AI endpoint and API key,
+model, profile, prompts, display preferences, blocked hosts and auto-highlight
+origins. Optional Supabase configuration and session credentials are also stored
+locally. AI settings are not uploaded as settings to Supabase.
 ```
 
-### Are you using remote code?
+**alarms**
 
-選 **No, I am not using remote code**。
+```text
+Schedules periodic and change-triggered synchronization to the user's own
+Supabase project. Synchronization requires explicit setup and sign-in.
+```
 
-擴充功能會向使用者設定的 AI 端點取得文字回應，那是資料不是程式碼。回應經過 `renderMarkdown()` 跳脫後才插入畫面，`src/content/markdown.test.ts` 有對應的 XSS 測試。沒有任何遠端載入的腳本。
+**Host permission `<all_urls>`**
+
+```text
+The in-page launcher is available on supported web pages and can activate the
+highlight engine. Host access is needed for injection initiated by that page
+control, which does not grant activeTab access. User-supplied AI and Supabase
+endpoints are not known at build time.
+
+The launcher makes no network requests. AI requests follow explicit actions,
+including lookup, explanation, retry, pronunciation, connection testing, and
+creating a dictionary entry after a phrase is saved. Optional sync sends saved
+learning data to the user's Supabase project. See the privacy policy for the
+specific data sent by each operation.
+```
+
+### Remote code
+
+選 **No, I am not using remote code**。AI 回傳文字資料，透過本機 renderer 顯示；沒有下載後執行的遠端 JavaScript。
 
 ### Data usage
 
-勾選這些：
+依實際行為揭露，不因為開發者收不到資料就省略傳輸：
 
-- **Website content**：按 `A`／`S`／`D` 時，目標單字與它所在的那一句會送到使用者設定的端點。
-- **Authentication information**：使用者填的 API 金鑰會放在 `Authorization` 標頭送給那個端點。
+- **Website content**：查詞、句意與拆句可能傳送單字、句子、前一句及頁面標題；同步包含保存的語境與來源。
+- **Authentication information**：API 金鑰送到設定的 AI 端點；同步登入將帳密送到所選 Supabase 專案，後續使用工作階段憑證。
+- **Personally identifiable information**：同步登入使用 email；使用者填的背景可能含職業或個人資訊，並隨 AI 提示詞送出。
+- **Web history**：僅保存與同步學習語境的來源網址、標題，沒有一般瀏覽歷史追蹤。若表單將這類來源列入此分類，應揭露此範圍。
+- **User activity**：本機保存查詞猜題與複習作答紀錄；啟用同步時傳送至自己的 Supabase。
 
-金鑰只送到它本來就屬於的服務，跟 FTP client 送 FTP 密碼是同一件事。開發者收不到。即使如此還是照勾，因為商店把 collect 定義成包含 transmit，**少揭露是違規，多揭露只是標籤難看一點**。這個擴充功能走 Hidden，標籤難看沒有成本。
-
-隱私政策裡已經把兩者的流向寫清楚，兩邊說法一致。
+依表單當時的分類定義確認勾選；與隱私政策保持一致，不以 Hidden 為省略揭露的理由。不宣稱「所有資料永遠不離開裝置」。
 
 ### Privacy policy URL
 
-```
-https://github.com/jasontsaicc/wordtiger/blob/master/docs/privacy.md
-```
+填入部署後可公開存取的 `/privacy.html` 完整網址。內容來源是 `docs/privacy.md`，由 `pnpm build:site` 產生網站與擴充功能共用版本。送出前使用未登入瀏覽器測試。
 
-## Step 7　Store listing
+## Store listing
 
-### Description（250 至 10,000 字元）
+### Description
 
-```
-攔詞虎是英文網頁閱讀助手。它依你設定的詞彙程度標出生詞，讓你直接在文章裡查詞、看懂長句、
-收藏語境，再用間隔複習把遇過的單字記住。
+```text
+攔詞虎是給繁體中文使用者的英文網頁閱讀助手。依你的詞彙程度標出生詞，直接在文章裡查詞、
+看懂長句、收藏語境，再用間隔複習把讀過的英文慢慢記住。
 
-依程度標出生詞：用詞頻門檻控制難度，門檻以下不標示，以上依難度分成三層。網址、品牌與詞頻表
-外的領域術語不會自動標示。
+依程度標出生詞：調整詞頻門檻，控制標示範圍。可收藏想學的字，或把熟悉的字標成已認得。
 
-不用離開文章查資料：按 A 查詞、S 看懂句意、D 拆解句型、F 朗讀。查詞會帶入頁面上的實際字形與
-所在句子，AI 能解釋 get slammed with 這類完整搭配，不是孤立地解釋原形。
+留在文章裡理解：按 A 查詞、S 快速看懂句意、D 拆懂句型、F 朗讀。AI 可使用目標句、前一句、
+頁面標題及你填寫的背景協助解釋；AI 回答可能出錯，重要用法請再核對。
 
-連同語境一起收藏：按 Space 收藏單字時，一併保留所在的整句、來源網址與時間。同一頁的相同句子
-不會重複儲存。
+連同語境一起收藏：按 Space 保存單字或片語、原句與來源。之後在詞庫搜尋，或從學習足跡回顧。
 
-今晚打老虎：一輪 5 題，間隔由 FSRS 依每張卡的實際表現決定，常溜掉的字更快回來，記住的字排到
-三十天以上。答完整輪才收工，中途離開已作答的成績不會掉。
+今晚打老虎：每輪最多 5 題，先回想、看答案，再自評記得或忘了。間隔依 FSRS 排程，已作答的
+成績會保留。卡片需要先有詞典內容，片語還需來源語境。
 
-資料留在本機：離線也能高亮、收藏與複習。查詞與朗讀需要你自行填入 AI 端點與金鑰，可用 OpenAI
-或任何相容 OpenAI Chat Completions 格式的服務。要跨裝置時再自行建立 Supabase 專案啟用同步。
-開發者不經營伺服器，也收不到任何資料。
-```
+本機優先：高亮與收藏不需要 AI，已有詞典材料的複習可離線進行。新查詞、句意、拆句與 AI 語音
+需自備 API 金鑰，費用由你選擇的服務依方案計算，攔詞虎不附贈額度。支援相容 Chat Completions
+的文字服務；AI 語音不可用時會改用系統語音。
 
-### 素材
+跨裝置同步是進階選項，需自行建立 Supabase 專案。也可匯出單字、語境及作答紀錄的 JSON，
+目前不提供匯入還原，匯出不含 AI 詞典快取。
 
-| 欄位 | 檔案 | 規格 |
-| :--- | :--- | :--- |
-| Extension logo | `store-assets/wordtiger-logo-300.png` | 1:1，300×300，已符合 |
-| Screenshots | 待重拍 | **必須剛好** 1280×800 或 640×480，最多 6 張 |
-| 促銷圖 | 不提供 | 440×280 與 1400×560，選填 |
-
-截圖重拍後跑這行轉成規格尺寸：
-
-```
-convert docs/images/X.png -resize 1280x800^ -gravity center -extent 1280x800 -strip store-assets/screenshots/X-1280x800.png
+適用於一般英文文字網頁；瀏覽器內建頁與部分受保護頁面無法使用，PDF 與圖片文字不保證支援。
 ```
 
-### Search terms
+### 素材與搜尋
 
-上限 7 個詞、總共 21 字以內、每個詞 30 字元以內。
+- Logo：`store-assets/wordtiger-logo-300.png`。
+- 截圖：建議三張最新實機畫面，分別展示閱讀查詞、拆句、複習。官方列為選填，最多六張；提交時須為 1280×800 或 640×480。
+- 促銷圖：首輪可略過。
+- Search terms：最多七組、合計最多 21 個 words，每組最多 30 字元；以 Partner Center 計數為準。建議：`英文閱讀, 生詞高亮, 查單字, 間隔複習, 英文學習, AI 查詞, 詞彙`。
+- Short description：取自 manifest 的 description，需要修改時重新封裝。
 
-```
-英文閱讀, 生詞高亮, 查單字, 間隔複習, 英文學習, AI 查詞, 詞彙
-```
+## Notes for certification
 
-### Short description
+以下內容貼到 Partner Center，再補入測試憑證。切勿把真實金鑰寫回本文件或其他公開頁面。
 
-這個欄位在 Partner Center 是唯讀，來源是 manifest 的 `description`。要改就先改 `wxt.config.ts` 再重新 `pnpm zip`。目前值：
-
-```
-把英文裡的攔路虎，一隻隻抓起來：標出生詞、AI 查詞與拆句
-```
-
-## Step 8　Notes for certification
-
-審查員手上沒有 API 金鑰，沒有這段就會卡在「AI 功能測不到」而被退件。
-
-```
+```text
 Testing notes
+WordTiger has a Traditional Chinese interface. AI features require a user-supplied
+API key. The default base URL is https://api.openai.com/v1; no key is bundled.
 
-The AI features need an API key that the user supplies. The extension ships
-with no key and no default provider, so please use the test credentials below.
+Test credentials (provide here in the private certification notes)
+Base URL: [review endpoint]
+API Key: [limited-budget review key]
+Model: [model confirmed available with this key]
 
-Test credentials
-  Base URL: <填入>
-  API Key:  <填入一把限額金鑰，審核通過後撤銷>
-  Model:    gpt-4o-mini
+Setup and test
+1. Open extension settings. Enter the supplied endpoint, key and model under
+   AI 閱讀教練, then click 測試 AI 連線. It sends a short paid-provider request.
+2. Open an English text article and press Alt+U to enable highlighting.
+3. Hover a word and press A. The default lookup may show a multiple-choice
+   question first; answer it or use the card's skip action to reveal the result.
+4. Press S for sentence meaning, D for structure, and F for pronunciation.
+5. Press Space to save a word with its context. Open 今晚打老虎, click 看答案,
+   then 記得 or 忘了 to record a review. Each round has up to five eligible cards.
+6. In 我的攔路虎, check the saved word and JSON export. Export is not a complete
+   restorable backup; import is not currently provided.
 
-Setup
-  1. Open the extension options page.
-  2. Go to the 設定 tab and paste the three values above.
+Without AI
+Highlighting, saving, word browsing and the activity view work locally. Offline
+review requires an existing dictionary entry; phrases also need source context.
+Speech falls back to browser/device speech if the configured AI endpoint does
+not support the audio API. The connection test only checks text generation.
 
-How to test the AI features
-  1. Open any English article.
-  2. Press Alt+U to turn highlighting on. Unfamiliar words become marked.
-  3. Hover a marked word and press A for a dictionary card, S for a plain
-     explanation of the sentence, or D for a sentence breakdown.
-  4. Press Space on the card to save the word with its sentence.
-  5. Open the options page and choose 今晚打老虎 to run a review round.
+Optional sync
+Expand 進階：跨裝置同步（選用） to configure the user's own Supabase project.
+Sync is disabled until configured and signed in. It is not needed for the tests
+above. If sync requires separate certification testing, supply a dedicated test
+project/account privately, using the full repository schema.
 
-What works without any API key
-  Highlighting, saving words with their context, the word list, the calendar,
-  and the review scheduling all run locally and need no network access.
-
-Sync
-  Cross-device sync is optional and off by default. It requires the user to
-  create their own Supabase project. No sync account is needed to test the
-  features above.
-
-Language
-  The interface is Traditional Chinese. The extension is aimed at Chinese
-  speakers reading English technical documents.
+Help and privacy pages are bundled with the extension and linked from settings.
 ```
 
-送出後認證最長 7 個工作天。被退一次就重跑一次這段等待，所以送出前把上面每一格都填滿。
+## Edge 人工驗收（送審前執行）
+
+- [ ] 全新安裝自動開設定，可看到三步開始；未設定同步也能操作。
+- [ ] 空金鑰、錯誤金鑰、錯誤模型、無網路：有可理解的錯誤，測試按鈕恢復可用。
+- [ ] 有效設定：連線測試成功，A／S／D 可用，重試不造成卡片卡住。
+- [ ] 查詞、收藏、關掉重開、複習一題後中途離開：資料與成績保留。
+- [ ] 斷網後可用已存詞典複習；沒有詞典的新收藏顯示需查詞。
+- [ ] 一般文章、長篇技術文件、動態載入頁面：沒有明顯卡頓或快捷鍵干擾輸入。
+- [ ] 排除網域後重新整理，無法再啟用高亮；開關與工具列入口一致。
+- [ ] 所有說明與隱私連結正常，回報入口可公開存取。
+- [ ] 如提供同步：測試登入、兩裝置同步、刪除同步與登出。
+
+認證時間依實際審查而定；不要承諾固定上架日期。

@@ -65,7 +65,7 @@ function wordLabel(item: ReviewItem): string {
       <div>
         <p class="eyebrow">WORDTIGER REVIEW</p>
         <h2>今晚打老虎</h2>
-        <p>把今天遇到的攔路虎，一隻隻抓回來。</p>
+        <p>先回想，再看答案，最後選擇記得或忘了。</p>
       </div>
       <img src="/icons/128.png" alt="" />
     </header>
@@ -108,7 +108,7 @@ function wordLabel(item: ReviewItem): string {
       </template>
       <template v-else>
         <p class="question">
-          {{ item.context ? '這隻在這裡是什麼意思？' : '你記得這個字的核心意思嗎？' }}
+          {{ item.context ? '先讀原句，想想這個字在這裡是什麼意思。' : '先想想：這個字是什麼意思？' }}
         </p>
         <h3 class="word">{{ wordLabel(item) }}</h3>
         <blockquote v-if="item.context">{{ item.context.sentence }}</blockquote>
@@ -120,11 +120,10 @@ function wordLabel(item: ReviewItem): string {
       </button>
       <p class="voice-note">AI 產生語音；若端點不支援，會改用裝置發音。</p>
       <button v-if="!revealed" class="reveal" @click="revealed = true">
-        {{ item.isPhrase ? '看老師回饋' : '讓牠現形' }}
+        看答案
       </button>
 
       <div v-else class="answer" aria-live="polite">
-        <p v-if="item.isPhrase" class="answer-label">老師回饋</p>
         <p v-if="item.definitionSentence" class="definition-note">
           詞典解釋的是這句：{{ item.definitionSentence }}
         </p>
@@ -140,10 +139,10 @@ function wordLabel(item: ReviewItem): string {
         </p>
         <div class="grade-actions">
           <button :disabled="busy" @click="grade(false)">
-            {{ item.isPattern ? '還造不出來' : item.isPhrase ? '意思還沒抓到' : '又讓牠溜了' }}
+            忘了
           </button>
           <button class="caught" :disabled="busy" @click="grade(true)">
-            {{ item.isPattern ? '能自然造句' : item.isPhrase ? '意思和用法都對' : '抓到了' }}
+            記得
           </button>
           <button v-if="item.canMaster" class="mastered" :disabled="busy" @click="master">
             已經馴服
@@ -182,7 +181,6 @@ button:active { transform: scale(.98); }
 .answer :deep(.h) { margin-top: .8rem; color: #b45309; font-weight: 800; }
 .answer :deep(p), .answer :deep(ul) { margin: .35rem 0; }
 .answer a { display: inline-block; margin-top: .7rem; color: #0e7490; }
-.answer-label { margin: 0; color: #64748b; font-size: 12px; font-weight: 800; text-transform: uppercase; }
 .definition-note { margin: 0 0 .6rem; padding: .6rem .8rem; border-left: 3px solid #94a3b8; border-radius: 0 8px 8px 0; color: #475569; background: #f1f5f9; font-size: 13px; }
 .self-check { margin: 1.2rem 0 .55rem; color: #334155; font-weight: 700; }
 .grade-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .7rem; }

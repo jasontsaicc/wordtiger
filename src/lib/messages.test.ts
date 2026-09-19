@@ -27,6 +27,39 @@ beforeEach(async () => {
 });
 
 describe('handleMessage', () => {
+  it('連線測試驗證模型、金鑰與網址，不送個人背景、不寫詞典，錯誤不洩漏回應內容', async () => {
+    const config = { ...(await settings.loadSettings()), profile: 'private profile' };
+    vi.mocked(settings.loadSettings).mockResolvedValue(config);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({ choices: [{ message: { content: 'OK' } }] }),
+    ));
+    expect(await handleMessage({ type: 'testAiConnection' })).toEqual({ ok: true, text: '連線成功，可以開始查詞。' });
+    const [url, request] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('https://api.example.com/v1/chat/completions');
+    expect(request?.headers).toMatchObject({ Authorization: 'Bearer k' });
+    expect(JSON.parse(request!.body as string).model).toBe('m');
+    expect(request?.body).not.toContain('private profile');
+    expect(request?.signal).toBeInstanceOf(AbortSignal);
+    expect(await db.lookupCache.count()).toBe(0);
+    for (const status of [401, 403, 404, 429, 500]) {
+      fetchMock.mockResolvedValue(new Response('secret-provider-response', { status }));
+      const result = await handleMessage({ type: 'testAiConnection' }) as ExplainResult;
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.error).toContain(String(status));
+      expect(JSON.stringify(result)).not.toContain('secret-provider-response');
+    }
+    fetchMock.mockRejectedValue(new DOMException('timeout', 'TimeoutError'));
+    expect(await handleMessage({ type: 'testAiConnection' })).toMatchObject({ ok: false, error: expect.stringContaining('逾時') });
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ choices: [] })));
+    expect(await handleMessage({ type: 'testAiConnection' })).toMatchObject({ ok: false, error: expect.stringContaining('空白') });
+    for (const patch of [{ apiKey: '' }, { model: '' }, { baseUrl: 'file:///tmp/key' }]) {
+      fetchMock.mockClear();
+      vi.mocked(settings.loadSettings).mockResolvedValue({ ...config, ...patch });
+      expect(await handleMessage({ type: 'testAiConnection' })).toMatchObject({ ok: false });
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  });
+
   it('speak 把 AI 音訊轉成可跨 runtime message 傳送的 MP3 data URL', async () => {
     const spy = vi.spyOn(ai, 'generateSpeech')
       .mockResolvedValue(Uint8Array.from([1, 2, 3]).buffer);

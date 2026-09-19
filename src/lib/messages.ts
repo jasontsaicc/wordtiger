@@ -1,5 +1,5 @@
 import { db, loadMarks, markWord, unmarkWord, deleteWord, addContext, listContexts, listReviewItems, listReviewLog, listQuizLog, masterWord, recordReview, recordQuiz, putCached, deleteCached, getSentence, putSentence, type WordRow, type ContextRow, type ReviewLogRow, type QuizLogRow } from './db';
-import { lookupWord, explainSentence, generateSpeech } from './ai';
+import { lookupWord, explainSentence, generateSpeech, testAiConnection } from './ai';
 import { loadSettings } from './settings';
 import { getSyncState, signIn, signOut, syncNow } from './sync';
 import { SYSTEM_RULES, extractQuiz } from './prompt';
@@ -27,6 +27,7 @@ const NOT_CONFIGURED = '尚未設定 AI，請到設定頁填入 Base URL 與 API
 let speechController: AbortController | undefined;
 
 export type Msg =
+  | { type: 'testAiConnection' }
   | { type: 'getMarks' }
   | { type: 'getHighlightSettings' }
   | { type: 'toggleMark'; word: string; status?: WordStatus }
@@ -60,6 +61,14 @@ export type Msg =
 /** Chrome runtime message 不保留 Map，因此回傳 entries。 */
 export async function handleMessage(msg: Msg): Promise<unknown> {
   switch (msg.type) {
+    case 'testAiConnection':
+      try {
+        await testAiConnection(await loadSettings());
+        return { ok: true, text: '連線成功，可以開始查詞。' } satisfies ExplainResult;
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : '測試失敗，請稍後再試。' } satisfies ExplainResult;
+      }
+
     case 'getMarks':
       return [...(await loadMarks())];
 

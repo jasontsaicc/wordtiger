@@ -11,9 +11,14 @@ import ReviewSession from './ReviewSession.vue';
 import LearningDashboard from './LearningDashboard.vue';
 import { localDay, type ReviewEvent } from '@/src/lib/activity';
 import type { ReviewItem } from '@/src/lib/db';
+import type { ExplainResult } from '@/src/lib/messages';
 
 const settings = ref<Settings | null>(null);
 const loadError = ref('');
+const testingAi = ref(false);
+const connectionMessage = ref('');
+const helpUrl = browser.runtime.getURL('/help.html');
+const privacyUrl = browser.runtime.getURL('/privacy.html');
 const version = browser.runtime.getManifest().version;
 type Tab = 'review' | 'activity' | 'contexts' | 'settings';
 const tab = ref<Tab>(location.hash === '#review' || location.hash === '#activity'
@@ -72,7 +77,23 @@ function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
 }
 
 async function persist() {
+  connectionMessage.value = '';
   if (settings.value) await saveSettings(settings.value);
+}
+
+async function testConnection() {
+  if (testingAi.value) return;
+  testingAi.value = true;
+  connectionMessage.value = '';
+  try {
+    await persist();
+    const result = await browser.runtime.sendMessage({ type: 'testAiConnection' }) as ExplainResult | undefined;
+    connectionMessage.value = result?.ok ? result.text : result?.error ?? '背景程式沒有回應，請重試。';
+  } catch {
+    connectionMessage.value = '無法儲存設定或連線，請重新開啟設定頁再試。';
+  } finally {
+    testingAi.value = false;
+  }
 }
 
 function pickerColor(value: string) {
@@ -123,10 +144,21 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
     <LearningDashboard v-else-if="tab === 'activity'" />
 
     <template v-else-if="tab === 'settings'">
-    <SyncPanel />
+    <section class="getting-started">
+      <h2>三步開始，把第一隻攔路虎抓起來</h2>
+      <ol>
+        <li>在下方填入自己的 AI 金鑰與模型，按「測試 AI 連線」。</li>
+        <li>開啟英文文章，點小虎或按 <kbd>Alt+U</kbd>，讓生詞亮起來。</li>
+        <li>滑鼠移到單字按 <kbd>A</kbd> 查詞，再按 <kbd>Space</kbd> 收藏；之後到「今晚打老虎」複習。</li>
+      </ol>
+      <p class="note">不設 AI 也能高亮與收藏；複習需要先有查詞結果。跨裝置同步是選用功能。</p>
+      <p class="help-links"><a :href="helpUrl" target="_blank" rel="noopener">操作說明與常見問題</a> · <a :href="privacyUrl" target="_blank" rel="noopener">隱私政策</a> · <a href="https://github.com/jasontsaicc/wordtiger/issues" target="_blank" rel="noopener">問題回報</a></p>
+    </section>
     <section>
       <h2>AI 閱讀教練</h2>
       <p class="note">查詞、快速看懂和拆句共用這組設定。</p>
+      <p class="note">AI 請求由你選擇的服務依其方案計費，攔詞虎不附贈 API 額度。請只填入你信任的服務網址，金鑰會送到該端點。</p>
+      <fieldset :disabled="testingAi">
       <label>服務
         <input v-model.trim="settings.baseUrl" type="url"
           :placeholder="OPENAI_BASE_URL" @change="persist" />
@@ -157,6 +189,10 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       <p v-if="!originPattern(settings.baseUrl)" class="warn">
         先填一個完整網址，例如 https://api.openai.com/v1。
       </p>
+      </fieldset>
+      <button type="button" :disabled="testingAi" @click="testConnection">{{ testingAi ? '測試中…' : '測試 AI 連線' }}</button>
+      <p class="note">會送出一次短文字請求，可能產生 API 費用；不傳送網頁內容或你的背景。此測試不檢查語音服務。</p>
+      <p role="status" aria-live="polite">{{ connectionMessage }}</p>
     </section>
 
     <section>
@@ -207,6 +243,11 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
       <p class="note">一行一個。加入公司內網後，網頁內容不會傳送至 AI。</p>
     </section>
 
+    <details class="advanced-sync">
+      <summary>進階：跨裝置同步（選用）</summary>
+      <p class="note">需自行建立 Supabase 專案。只在這台裝置使用時，不需要設定。</p>
+      <SyncPanel />
+    </details>
     <PromptEditor v-model="settings.templates" @update:modelValue="persist" />
     </template>
 
@@ -246,6 +287,13 @@ input[type="range"] { width: 100%; }
 .switch { display: flex; gap: .5rem; align-items: center; }
 .note { color: #64748b; font-size: 13px; }
 .warn { color: #b4451f; font-size: 13px; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.getting-started { border-color: #fed7aa; background: #fffaf5; }
+.getting-started li + li { margin-top: .5rem; }
+.help-links a { color: #9a3412; text-underline-offset: 3px; }
+kbd { padding: .1rem .3rem; border: 1px solid #cbd5e1; border-radius: 4px; background: white; }
+.advanced-sync { margin-bottom: 1rem; }
+.advanced-sync summary { padding: 1rem; cursor: pointer; font-weight: 600; }
 .chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: white; color: #475569; cursor: pointer; }
 .chip:hover { border-color: #6366f1; color: #1e293b; }
 @media (max-width: 640px) { .wrap { padding: 1.25rem .75rem 3rem; } nav button { padding-inline: .35rem; } section { padding: 1rem; } }

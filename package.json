@@ -1,19 +1,21 @@
 {
   "name": "wordtiger",
-  "version": "1.8.7",
+  "version": "1.8.9",
   "description": "攔詞虎：標出生詞、AI 查詞與拆句的英文閱讀助手",
   "main": "index.js",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
-    "build:safari": "tsx scripts/build-freq.ts && wxt build -b safari --mv3",
+    "build:site": "node scripts/build-site.mjs",
+    "check:site": "node --test scripts/check-site.mjs",
+    "build:safari": "tsx scripts/build-freq.ts && node scripts/build-site.mjs && wxt build -b safari --mv3",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare",
-    "prebuild": "tsx scripts/build-freq.ts",
-    "predev": "tsx scripts/build-freq.ts",
+    "prebuild": "tsx scripts/build-freq.ts && node scripts/build-site.mjs",
+    "predev": "tsx scripts/build-freq.ts && node scripts/build-site.mjs",
     "typecheck": "tsc --noEmit",
-    "zip": "wxt zip"
+    "zip": "tsx scripts/build-freq.ts && node scripts/build-site.mjs && wxt zip"
   },
   "keywords": [],
   "author": "JasonDevOps",

@@ -4,6 +4,7 @@ node_modules/
 .wxt/
 dist/
 public/freq.json
+public/privacy.html
 
 # Local configuration and notes
 .env
