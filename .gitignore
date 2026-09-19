@@ -13,4 +13,5 @@ public/privacy.html
 .superpowers/
 docs/worklogs/*
 !docs/worklogs/2026-09-05.md
+!docs/worklogs/2026-09-19.md
 .gstack/

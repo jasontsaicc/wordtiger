@@ -2,7 +2,7 @@
 
 介紹站使用 Cloudflare Pages 的 GitHub 整合。分支更新產生預覽站；合併到 `master` 後，Cloudflare 執行檢查、建置並更新正式站。不需要額外的 GitHub Actions 部署工作或 Cloudflare API Token。
 
-預定正式網址：`https://wordtiger.jasondevops.space`。程式與本機驗證已完成；Git 推送不代表已連接 Cloudflare、部署網站或修改 DNS。首次上線仍需完成下列帳號設定。
+預定正式網址：`https://wordtiger.jasondevops.space`。程式已推送至 master；使用者於 2026-09-19 回報 Cloudflare 建立成功。正式網域、公開 HTTPS 與實際建置設定尚未由本次工作獨立確認；進度見 [工作紀錄](worklogs/2026-09-19.md)。下列保留首次設定與日後重建流程。
 
 ## 一次性連接
 

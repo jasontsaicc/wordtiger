@@ -150,6 +150,7 @@ pnpm build:safari
 
 - [架構決策](docs/adr/README.md)
 - [版本變更紀錄](CHANGELOG.md)
+- [2026-09-19 上架準備與部署進度](docs/worklogs/2026-09-19.md)
 - [功能設計](docs/superpowers/specs/2026-08-23-wordtiger-design.md)
 - [P1 核心閉環計畫](docs/superpowers/plans/2026-08-23-p1-core-loop.md)
 - [P3 加值功能計畫](docs/superpowers/plans/2026-08-24-p3-features.md)

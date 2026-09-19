@@ -37,3 +37,5 @@
 | [0031](0031-teaching-cards-prioritize-retrieval-and-usable-pronunciation.md) | 教學卡先教判斷、可用搭配與提取，發音不用整串 KK | 部分被取代 | 2026-09-05 |
 | [0032](0032-video-subtitle-learning-starts-with-youtube-probe.md) | 影片字幕學習先驗證 YouTube，再決定 Netflix 與沉浸式翻譯支援 | accepted | 2026-09-05 |
 | [0033](0033-pronunciation-gives-kk-plus-one-action.md) | 發音欄位同時給 KK 音標與一個發音動作 | accepted | 2026-09-07 |
+| [0034](0034-static-site-native-pages-build.md) | 靜態介紹站使用 Cloudflare Pages 原生 Git 建置與共用隱私來源 | accepted | 2026-09-19 |
+| [0035](0035-onboarding-and-ai-connection-check.md) | 首次使用先完成查詞，連線測試沿用文字 AI 路徑 | accepted | 2026-09-19 |
