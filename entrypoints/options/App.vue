@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import {
   loadSettings, saveSettings, originPattern, OPENAI_BASE_URL, OPENAI_MODELS,
   type HighlightColors, type Settings,
 } from '@/src/lib/settings';
+import AppearanceControls from '@/src/ui/AppearanceControls.vue';
 import WordLibrary from './WordLibrary.vue';
 import PromptEditor from './PromptEditor.vue';
 import SyncPanel from './SyncPanel.vue';
@@ -21,9 +22,14 @@ const helpUrl = browser.runtime.getURL('/help.html');
 const privacyUrl = browser.runtime.getURL('/privacy.html');
 const version = browser.runtime.getManifest().version;
 type Tab = 'review' | 'activity' | 'contexts' | 'settings';
-const tab = ref<Tab>(location.hash === '#review' || location.hash === '#activity'
-  ? location.hash.slice(1) as Tab
-  : 'settings');
+const tabs: Tab[] = ['review', 'activity', 'contexts', 'settings'];
+const initialTab = location.hash.slice(1) as Tab;
+const tab = ref<Tab>(tabs.includes(initialTab) ? initialTab : 'settings');
+const titles = { review: '每日複習', activity: '學習紀錄', contexts: '我的詞庫', settings: '設定' };
+const overview = ref<Array<{ word: string; status: string; progress: string }>>([]);
+const learning = computed(() => overview.value.filter(w => w.status === 'unknown' && w.progress !== 'excluded').length);
+const known = computed(() => overview.value.filter(w => w.progress === 'mastered').length);
+async function loadOverview() { overview.value = (await browser.runtime.sendMessage({ type: 'listWords' })) ?? []; }
 const reviewItems = ref<ReviewItem[]>([]);
 const reviewTotal = ref(0);
 const reviewDone = ref(0);
@@ -38,11 +44,18 @@ const highlightTiers = [
 ] as const;
 type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
+function syncHash() {
+  const next = location.hash.slice(1) as Tab;
+  if (tabs.includes(next)) tab.value = next;
+}
+onUnmounted(() => window.removeEventListener('hashchange', syncHash));
 onMounted(async () => {
+  window.addEventListener('hashchange', syncHash);
   // 顯示載入錯誤，避免 settings 為 null 時呈現空白頁。
   try {
     settings.value = await loadSettings();
-    await Promise.all([loadReviewItems(), loadTodayCount()]);
+    await Promise.all([loadReviewItems(), loadTodayCount(), loadOverview()]);
+    if (!tabs.includes(initialTab) && (overview.value.length || settings.value.apiKey)) tab.value = 'review';
   } catch (err) {
     loadError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     console.error('[wordtiger] options 載入失敗', err);
@@ -64,9 +77,8 @@ async function loadTodayCount() {
 
 function selectTab(next: Tab) {
   tab.value = next;
-  history.replaceState(null, '', next === 'review' || next === 'activity'
-    ? `#${next}`
-    : location.pathname);
+  history.replaceState(null, '', `#${next}`);
+  if (next === 'review') void loadOverview().catch(() => {});
 }
 
 function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
@@ -74,6 +86,7 @@ function reviewed({ word, remembered }: { word: string; remembered: boolean }) {
   reviewDone.value++;
   reviewToday.value++;
   if (remembered) reviewCaught.value++;
+  void loadOverview().catch(() => {});
 }
 
 async function persist() {
@@ -120,28 +133,44 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
     <p class="note">開 DevTools console 看完整堆疊。也檢查 edge://extensions 的 service worker 有沒有紅字。</p>
   </main>
 
-  <main v-else-if="settings" class="wrap" :class="{ wide: tab === 'contexts' || tab === 'activity' }">
-    <header class="page-head">
-      <img class="logo" src="/icons/48.png" alt="" />
-      <div><h1>攔詞虎</h1><p>WordTiger v{{ version }} by JasonDevOps</p></div>
-    </header>
-
-    <nav>
-      <button :class="{ active: tab === 'review' }" @click="selectTab('review')">
-        今晚打老虎 <span v-if="reviewItems.length" class="nav-count">{{ reviewItems.length }}</span>
-      </button>
-      <button :class="{ active: tab === 'activity' }" @click="selectTab('activity')">老虎足跡</button>
-      <button :class="{ active: tab === 'contexts' }" @click="selectTab('contexts')">我的攔路虎</button>
-      <button :class="{ active: tab === 'settings' }" @click="selectTab('settings')">設定</button>
-    </nav>
-
-    <ReviewSession v-if="tab === 'review'"
-      :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
-      :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
-      :caught="reviewCaught" :today-done="reviewToday"
-      @reviewed="reviewed" @next-round="loadReviewItems" />
-
-    <LearningDashboard v-else-if="tab === 'activity'" />
+  <div v-else-if="settings" class="app-shell">
+    <aside class="sidebar">
+      <header class="page-head">
+        <img class="logo" src="/icons/128.png" alt="攔詞虎 Logo" />
+        <div><h1>攔詞虎</h1><p>WORDTIGER</p></div>
+      </header>
+      <p class="nav-label">YOUR LEARNING SPACE</p>
+      <nav aria-label="主要導覽">
+        <button :class="{ active: tab === 'review' }" :aria-current="tab === 'review' ? 'page' : undefined" @click="selectTab('review')"><span aria-hidden="true">ϟ</span>今晚打老虎 <b v-if="reviewItems.length" class="nav-count">{{ reviewItems.length }}</b></button>
+        <button :class="{ active: tab === 'contexts' }" :aria-current="tab === 'contexts' ? 'page' : undefined" @click="selectTab('contexts')"><span aria-hidden="true">▤</span>我的攔路虎</button>
+        <button :class="{ active: tab === 'activity' }" :aria-current="tab === 'activity' ? 'page' : undefined" @click="selectTab('activity')"><span aria-hidden="true">✧</span>老虎足跡</button>
+        <button :class="{ active: tab === 'settings' }" :aria-current="tab === 'settings' ? 'page' : undefined" @click="selectTab('settings')"><span aria-hidden="true">⚙</span>設定</button>
+      </nav>
+      <div class="side-note"><strong>每天一點，就很可以。</strong><p>把文章裡遇見的生詞，慢慢變成熟悉的朋友。</p></div>
+      <p class="version">v{{ version }} · JasonDevOps</p>
+    </aside>
+    <main class="workspace">
+      <div class="workspace-top"><p>學習空間 / <strong>{{ titles[tab] }}</strong></p><AppearanceControls /></div>
+      <template v-if="tab === 'review'">
+        <div class="intro"><h2>今天，也前進一點。</h2><p>從真實閱讀出發，讓每個生詞留下來。</p></div>
+        <div class="brand-hero">
+          <div><p class="eyebrow">A LITTLE EVERY DAY</p><h2><span>把攔路虎，</span><span>變成你的底氣。</span></h2><p>一輪最多 5 題，從你讀過的句子開始。<br>不用一次記住所有，今天多認識一點就好。</p></div>
+          <div class="hero-art"><i aria-hidden="true"></i><img src="/icons/128.png" alt="" /><span aria-hidden="true">✧</span></div>
+        </div>
+        <div class="overview-stats">
+          <article><p>今天已練</p><strong :key="reviewToday">{{ reviewToday }} <small>題</small></strong><span aria-hidden="true">↗</span></article>
+          <article><p>正在學習</p><strong>{{ learning }} <small>個詞</small></strong><span aria-hidden="true">▤</span></article>
+          <article><p>已經馴服</p><strong>{{ known }} <small>個詞</small></strong><span aria-hidden="true">✧</span></article>
+        </div>
+        <div class="review-layout">
+          <ReviewSession :key="reviewItems[0]?.word ?? `done-${reviewDone}`"
+            :item="reviewItems[0] ?? null" :done="reviewDone" :total="reviewTotal"
+            :caught="reviewCaught" :today-done="reviewToday"
+            @reviewed="reviewed" @next-round="loadReviewItems" />
+          <section class="companion"><h2>每一次回來，都算數。</h2><p class="note">不趕時間，照自己的節奏就好。</p><div class="companion-divider"></div><h3>我的攔路虎</h3><p v-if="!overview.length" class="note">到英文文章查詞，連同原句收藏第一個生詞吧。</p><ul v-else><li v-for="word in overview.slice(0, 4)" :key="word.word">{{ word.word }}<span>{{ word.progress === 'mastered' ? '已馴服' : '語境收藏' }}</span></li></ul><button @click="selectTab('contexts')">打開我的詞庫 →</button><button @click="selectTab('activity')">看看老虎足跡 ↗</button></section>
+        </div>
+      </template>
+      <LearningDashboard v-else-if="tab === 'activity'" />
 
     <template v-else-if="tab === 'settings'">
     <section class="getting-started">
@@ -253,48 +282,70 @@ function setHighlightColor(group: ColorSetting, tier: keyof HighlightColors, eve
 
     <WordLibrary v-else-if="tab === 'contexts'" />
 
-  </main>
+    </main>
+  </div>
+  <main v-else class="wrap" role="status">小虎準備中…</main>
 </template>
 
 <style scoped>
-:global(*) { box-sizing: border-box; }
-:global(body) { margin: 0; color: #1e293b; background: #f6f7fb; }
-.wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; font: 15px/1.65 ui-sans-serif, system-ui, sans-serif; }
-.wrap.wide { max-width: 1100px; }
-.page-head { display: flex; align-items: center; gap: .9rem; margin-bottom: 1.5rem; }
+.wrap { max-width: 760px; margin: auto; padding: 2rem; }
+.app-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); max-width: 1600px; margin: auto; min-height: 100vh; }
+.sidebar { position: sticky; top: 0; height: 100vh; padding: 32px 22px; border-right: 1px solid var(--wt-line); display: flex; flex-direction: column; }
+.page-head { display: flex; gap: 12px; align-items: center; margin-bottom: 42px; }
 .page-head h1, .page-head p { margin: 0; }
-.page-head h1 { color: #0f172a; font-size: 25px; line-height: 1.2; letter-spacing: -.03em; }
-.page-head p { color: #64748b; font-size: 13px; }
-.logo { width: 42px; height: 42px; border-radius: 10px; }
-section { margin-bottom: 1rem; padding: 1.25rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
-section h2 { margin-top: 0; color: #0f172a; font-size: 17px; }
-nav { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1.25rem; padding: .3rem; border: 1px solid #e2e8f0; border-radius: 11px; background: #eef0f6; }
-nav button { flex: 1; min-width: 120px; padding: .6rem 1rem; border: 0; border-radius: 8px; color: #64748b; background: transparent; cursor: pointer; }
-nav button.active { color: #3730a3; background: white; box-shadow: 0 1px 4px #0f172a18; font-weight: 700; }
-.nav-count { display: inline-grid; min-width: 19px; height: 19px; place-items: center; margin-left: .25rem; padding: 0 .25rem; border-radius: 999px; color: white; background: #ea580c; font-size: 11px; }
+.page-head h1 { font-size: 21px; letter-spacing: -.03em; }
+.page-head p { color: var(--wt-muted); font-size: 10px; letter-spacing: 2px; }
+.logo { width: 44px; height: 44px; filter: drop-shadow(0 4px 8px #13173918); }
+.nav-label { color: var(--wt-muted); font-size: 10px; letter-spacing: 1.8px; }
+nav { display: grid; gap: 8px; }
+nav button { display: flex; align-items: center; gap: 10px; text-align: left; padding: 14px 11px; border: 0; background: transparent; font-size: 13px; color: var(--wt-muted); }
+nav button.active { background: var(--wt-wash); color: var(--wt-accent); font-weight: 750; }
+nav button > span:first-child { font-size: 20px; width: 20px; text-align: center; }
+.nav-count { margin-left: auto; background: var(--wt-accent); color: var(--wt-on-accent); padding: 0 6px; border-radius: 6px; font-size: 11px; }
+.side-note { margin-top: auto; border: 1px solid var(--wt-line); border-radius: 16px; padding: 16px; font-size: 12px; color: var(--wt-muted); }
+.side-note strong { color: var(--wt-ink); }.side-note p { margin-bottom: 0; }
+.version { margin: 24px 0 0; color: var(--wt-muted); font-size: 11px; }
+.workspace { min-width: 0; padding: 28px 40px 50px; }
+.workspace-top { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 30px; }
+.workspace-top > p { margin: 0; font-size: 12px; color: var(--wt-muted); }.workspace-top strong { color: var(--wt-ink); }
+.intro { margin-bottom: 24px; }.intro h2 { font-size: 30px; margin: 0; letter-spacing: -.04em; }.intro p { color: var(--wt-muted); margin: 6px 0 0; font-size: 13px; }
+.brand-hero { display: flex; align-items: center; justify-content: space-between; gap: 18px; position: relative; overflow: hidden; padding: 28px 32px; border: 1px solid var(--wt-hero-line); border-radius: 26px; background: var(--wt-hero); color: var(--wt-hero-ink); margin-bottom: 24px; box-shadow: var(--wt-shadow); }
+.brand-hero h2 span { display: inline-block; }
+.brand-hero h2 { font-size: clamp(23px, 2.2vw, 30px); margin: 12px 0; letter-spacing: -.04em; color: inherit; }.brand-hero p { color: var(--wt-hero-muted); margin: 0; font-size: 13px; }.brand-hero .eyebrow { font-size: 10px; letter-spacing: 2px; font-weight: 750; }
+.hero-art { position: relative; display: grid; place-items: center; width: 165px; height: 150px; flex-shrink: 0; }.hero-art img { width: 112px; height: 112px; filter: drop-shadow(0 14px 16px #53362330); animation: wt-arrive 650ms ease-out; transition: transform 350ms; transform: rotate(-7deg); }.hero-art:hover img { transform: translateY(-6px) rotate(4deg); }.hero-art i { position: absolute; inset: 0; border: 1px dashed var(--wt-hero-muted); opacity: .25; border-radius: 50%; animation: wt-orbit 22s linear 2; }.hero-art span { position: absolute; right: 4px; top: 4px; color: var(--wt-hero-muted); font-size: 26px; }
+.overview-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }.overview-stats article { position: relative; background: var(--wt-surface); border: 1px solid var(--wt-line); border-radius: 18px; padding: 18px 22px; transition: transform 220ms; }.overview-stats article:hover { transform: translateY(-3px); }.overview-stats p { font-size: 12px; color: var(--wt-muted); margin: 0 0 7px; }.overview-stats strong { display: inline-block; color: var(--wt-ink); font-size: 28px; animation: wt-pop 300ms ease-out; }.overview-stats small { font-size: 12px; font-weight: 400; color: var(--wt-muted); }.overview-stats article > span { position: absolute; right: 18px; top: 28px; background: var(--wt-wash); color: var(--wt-accent); padding: 5px 12px; border-radius: 12px; }
+.review-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(240px, 1fr); gap: 22px; align-items: start; }
+section { margin-bottom: 1.25rem; padding: 1.5rem; border: 1px solid var(--wt-line); border-radius: 22px; background: var(--wt-surface); box-shadow: var(--wt-shadow); }
+section h2 { margin-top: 0; font-size: 18px; }.companion h2 { font-size: 16px; }.companion h3 { font-size: 12px; }.companion-divider { height: 1px; background: var(--wt-line); margin: 24px 0; }.companion ul { list-style: none; padding: 0; }.companion li { margin: 16px 0; color: var(--wt-ink); overflow-wrap: anywhere; }.companion li span { display: block; color: var(--wt-muted); font-size: 11px; }.companion button { display: block; width: 100%; margin-top: 12px; font-size: 12px; }
 label { display: block; margin-bottom: .75rem; }
-input[type="text"], input[type="password"], input[type="url"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
-input:focus, textarea:focus, select:focus, button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 1px; border-color: #6366f1; }
-button { padding: .5rem .75rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; cursor: pointer; }
+input[type="text"], input[type="password"], input[type="url"], input:not([type]), textarea, select { width: 100%; padding: .58rem .7rem; border: 1px solid var(--wt-line); border-radius: 8px; color: var(--wt-ink); background: var(--wt-surface); font: inherit; }
+input:focus, textarea:focus, select:focus, button:focus-visible { outline: 3px solid var(--wt-accent); outline-offset: 1px; border-color: var(--wt-accent); }
+button { padding: .5rem .75rem; border: 1px solid var(--wt-line); border-radius: 8px; color: var(--wt-body); background: var(--wt-surface); cursor: pointer; }
 button:disabled { opacity: .55; cursor: wait; }
 input[type="range"] { width: 100%; }
-.colors { margin: 1rem 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.colors { margin: 1rem 0; border: 1px solid var(--wt-line); border-radius: 8px; overflow: hidden; }
 .color-head, .color-row { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, 72px); align-items: center; gap: .75rem; padding: .55rem .75rem; }
-.color-head { color: #64748b; background: #f8fafc; font-size: 12px; text-align: center; }
+.color-head { color: var(--wt-muted); background: var(--wt-raised); font-size: 12px; text-align: center; }
 .color-head b:first-child { text-align: left; }
-.color-row + .color-row { border-top: 1px solid #e2e8f0; }
+.color-row + .color-row { border-top: 1px solid var(--wt-line); }
 .color-row input[type="color"] { width: 100%; height: 32px; padding: 0; border: 0; background: none; cursor: pointer; }
 .switch { display: flex; gap: .5rem; align-items: center; }
-.note { color: #64748b; font-size: 13px; }
-.warn { color: #b4451f; font-size: 13px; }
+.note { color: var(--wt-muted); font-size: 13px; }
+.warn { color: var(--wt-danger); font-size: 13px; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.getting-started { border-color: #fed7aa; background: #fffaf5; }
+.getting-started { border-color: var(--wt-line); background: var(--wt-wash); }
 .getting-started li + li { margin-top: .5rem; }
-.help-links a { color: #9a3412; text-underline-offset: 3px; }
-kbd { padding: .1rem .3rem; border: 1px solid #cbd5e1; border-radius: 4px; background: white; }
+.help-links a { color: var(--wt-accent); text-underline-offset: 3px; }
+kbd { padding: .1rem .3rem; border: 1px solid var(--wt-line); border-radius: 4px; background: var(--wt-surface); }
 .advanced-sync { margin-bottom: 1rem; }
 .advanced-sync summary { padding: 1rem; cursor: pointer; font-weight: 600; }
-.chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: white; color: #475569; cursor: pointer; }
-.chip:hover { border-color: #6366f1; color: #1e293b; }
-@media (max-width: 640px) { .wrap { padding: 1.25rem .75rem 3rem; } nav button { padding-inline: .35rem; } section { padding: 1rem; } }
+.chip { width: auto; margin: .2rem .3rem 0 0; padding: .2rem .5rem; font-size: 12px; border: 1px solid var(--wt-line); border-radius: 999px; background: var(--wt-surface); color: var(--wt-body); cursor: pointer; }
+.chip:hover { border-color: var(--wt-accent); color: var(--wt-ink); }
+@media (max-width: 1150px) { .review-layout { grid-template-columns: 1fr; } .workspace { padding-inline: 28px; } }
+@media (max-width: 800px) {
+  .app-shell { display: block; }.sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--wt-line); padding: 18px; }.page-head { margin-bottom: 18px; }.nav-label, .side-note, .version { display: none; } nav { display: flex; gap: 4px; } nav button { flex: 1; min-width: 0; justify-content: center; padding: 11px 5px; font-size: 12px; } nav button > span:first-child, .nav-count { display: none; }
+  .workspace { padding: 22px 16px 40px; }.workspace-top { flex-wrap: wrap; gap: 12px; }.brand-hero { padding: 22px 20px; gap: 8px; }.hero-art { width: 85px; height: 100px; }.hero-art img { width: 76px; height: 76px; }.hero-art i { inset: 7px 0; }.brand-hero h2 span { display: inline-block; }
+.brand-hero h2 { font-size: 23px; }.brand-hero p { font-size: 12px; }.overview-stats { gap: 8px; }.overview-stats article { padding: 14px 10px; }.overview-stats article > span { display: none; }.overview-stats strong { font-size: 24px; }.overview-stats small { font-size: 10px; } section { padding: 1rem; }
+  .color-head, .color-row { grid-template-columns: minmax(90px, 1fr) repeat(3, 36px); gap: .35rem; padding-inline: .4rem; font-size: 12px; }
+}
 </style>

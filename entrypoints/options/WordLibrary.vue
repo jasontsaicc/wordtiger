@@ -227,7 +227,7 @@ async function exportJson() {
         <button :class="{ active: sortBy === 'recent' }" @click="sortBy = 'recent'">最近加入</button>
         <button :class="{ active: sortBy === 'word' }" @click="sortBy = 'word'">字母排序</button>
       </div>
-      <input v-model="keyword" placeholder="搜尋單字或片語" />
+      <input v-model="keyword" aria-label="搜尋單字或片語" placeholder="搜尋單字或片語" />
       <select v-model="kind" class="kind" aria-label="單字或片語">
         <option value="all">全部</option>
         <option value="word">單字</option>
@@ -238,7 +238,7 @@ async function exportJson() {
     <p v-if="filtered.length === 0" class="empty">這個分類還沒有字。</p>
 
     <div v-else class="word-list">
-      <article v-for="w in filtered" :key="w.word" class="word-card">
+      <article v-for="w in filtered" :key="w.word" class="word-card" :class="{ expanded: selected === w.word }">
         <header class="word-header">
           <button class="row" :aria-expanded="selected === w.word" @click="toggle(w)">
             <h3>{{ w.word }}</h3><span v-if="isPhrase(w.word)" class="kindtag">片語</span>
@@ -305,47 +305,47 @@ async function exportJson() {
 .page-title { justify-content: space-between; margin-bottom: 1rem; }
 .page-title h2, .page-title p, h3 { margin: 0; }
 .toolbar { gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.toolbar input { flex: 1; min-width: 180px; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; }
-.kind { padding: .5rem .6rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; font: inherit; cursor: pointer; }
+.toolbar input { flex: 1; min-width: 180px; padding: .55rem .7rem; border: 1px solid var(--wt-line); border-radius: 8px; }
+.kind { padding: .5rem .6rem; border: 1px solid var(--wt-line); border-radius: 8px; color: var(--wt-body); background: var(--wt-surface); font: inherit; cursor: pointer; }
 .sort { display: flex; }
 .sort button { border-radius: 0; }
 .sort button:first-child { border-radius: 5px 0 0 5px; }
 .sort button:last-child { border-radius: 0 5px 5px 0; }
-.sort .active { color: white; background: #6557c5; border-color: #6557c5; }
+.sort .active { color: var(--wt-on-accent); background: var(--wt-accent); border-color: var(--wt-accent); }
 .word-list { display: grid; gap: .75rem; }
-.word-card { padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.word-card { padding: 1rem; border: 1px solid var(--wt-line); border-radius: 12px; background: var(--wt-raised); }
 .word-header { align-items: flex-start; gap: 1rem; }
 .filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
-.filters button { color: #475569; }
-.filters .active { color: white; background: #6557c5; border-color: #6557c5; }
-.tally { margin-left: .3rem; color: #94a3b8; font-size: 12px; }
-.filters .active .tally { color: #ded9ff; }
+.filters button { color: var(--wt-body); }
+.filters .active { color: var(--wt-on-accent); background: var(--wt-accent); border-color: var(--wt-accent); }
+.tally { margin-left: .3rem; color: var(--wt-muted); font-size: 12px; }
+.filters .active .tally { color: var(--wt-on-accent); }
 .row { flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; }
 /* h3 改 inline，徽章才跟得上同一行而不被擠到下一行。 */
-.row h3 { display: inline; vertical-align: middle; font-size: 22px; }
-.kindtag { display: inline-block; vertical-align: middle; margin-left: .5rem; padding: .1rem .45rem; border: 1px solid #dbe4f0; border-radius: 999px; color: #64748b; background: white; font-size: 11px; font-weight: 600; }
-.summary { display: block; margin-top: .2rem; color: #64748b; font-size: 13px; }
-.warn { color: #b4451f; font-size: 13px; }
+.row h3 { display: inline; vertical-align: middle; font-size: 22px; overflow-wrap: anywhere; }
+.kindtag { display: inline-block; vertical-align: middle; margin-left: .5rem; padding: .1rem .45rem; border: 1px solid var(--wt-line); border-radius: 999px; color: var(--wt-muted); background: var(--wt-surface); font-size: 11px; font-weight: 600; }
+.summary { display: block; margin-top: .2rem; color: var(--wt-muted); font-size: 13px; }
+.warn { color: var(--wt-danger); font-size: 13px; }
 .actions { gap: .4rem; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
-.danger { color: #b4451f; }
+.danger { color: var(--wt-danger); }
 .filter-note { margin: 0 0 .9rem; }
-.dictionary { margin: 1rem 0; border: 1px solid #dbe4f0; border-radius: 10px; padding: 1rem; background: white; }
+.dictionary { margin: 1rem 0; border: 1px solid var(--wt-line); border-radius: 10px; padding: 1rem; background: var(--wt-surface); }
 .dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.dictionary :deep(.h) { margin-top: 1rem; color: #b45309; font-weight: 700; }
+.dictionary :deep(.h) { margin-top: 1rem; color: var(--wt-accent); font-weight: 700; }
 .dictionary :deep(p), .dictionary :deep(ul) { margin: .4rem 0; }
 .contexts { margin: 1rem 0 0; padding: 0; list-style: none; }
-.contexts li { display: flex; gap: .7rem; padding: .8rem 0; border-top: 1px solid #eee; }
-.index { flex: 0 0 24px; height: 24px; border-radius: 50%; color: white; background: #29282d; text-align: center; font: 12px/24px system-ui, sans-serif; }
+.contexts li { display: flex; gap: .7rem; padding: .8rem 0; border-top: 1px solid var(--wt-line); }
+.index { flex: 0 0 24px; height: 24px; border-radius: 50%; color: var(--wt-on-accent); background: var(--wt-accent); text-align: center; font: 12px/24px system-ui, sans-serif; }
 .context-body { min-width: 0; flex: 1; }
 .sentence { margin: 0; font-size: 16px; }
-.translation { margin: .4rem 0 0; color: #4d4690; }
-footer { gap: .65rem; margin-top: .45rem; color: #777; font-size: 12px; }
+.translation { margin: .4rem 0 0; color: var(--wt-accent); }
+footer { gap: .65rem; margin-top: .45rem; color: var(--wt-muted); font-size: 12px; }
 footer a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 footer button { margin-left: auto; }
-.no-context, .empty { padding: 1rem; color: #777; background: #f7f7f8; }
-.note, small { color: #777; font-size: 13px; }
-button { padding: .45rem .65rem; border: 1px solid #cbd5e1; border-radius: 7px; color: #334155; background: white; cursor: pointer; }
-button:focus-visible, input:focus, select:focus { outline: 3px solid #c7d2fe; outline-offset: 1px; }
+.no-context, .empty { padding: 1rem; color: var(--wt-muted); background: var(--wt-raised); }
+.note, small { color: var(--wt-muted); font-size: 13px; }
+button { padding: .45rem .65rem; border: 1px solid var(--wt-line); border-radius: 7px; color: var(--wt-body); background: var(--wt-surface); cursor: pointer; }
+button:focus-visible, input:focus, select:focus { outline: 3px solid var(--wt-accent); outline-offset: 1px; }
 
 @media (max-width: 700px) {
   .word-header { display: block; }
@@ -353,4 +353,9 @@ button:focus-visible, input:focus, select:focus { outline: 3px solid #c7d2fe; ou
   footer { align-items: flex-start; flex-wrap: wrap; }
   footer a { width: 100%; order: 3; }
 }
+.word-card { transition: border-color 180ms, box-shadow 180ms; }
+.word-card.expanded { border-color: var(--wt-accent); box-shadow: inset 3px 0 var(--wt-accent); }
+.dictionary { animation: wt-arrive 200ms ease-out; }
+.toolbar input { background: var(--wt-surface); color: var(--wt-ink); }
+.page-title { gap: 12px; flex-wrap: wrap; }
 </style>

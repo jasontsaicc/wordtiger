@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import AppearanceControls from '@/src/ui/AppearanceControls.vue';
 import {
   loadSettings, pageOrigin, saveSettings, type HighlightColors, type Settings,
 } from '@/src/lib/settings';
@@ -8,6 +9,7 @@ const settings = ref<Settings | null>(null);
 const tab = ref<Browser.tabs.Tab | null>(null);
 const running = ref(false);
 const status = ref('');
+const loadError = ref('');
 const version = browser.runtime.getManifest().version;
 
 const pagePattern = computed(() => {
@@ -40,9 +42,11 @@ const highlightTiers = [
 type ColorSetting = 'highlightColors' | 'highlightTextColors' | 'highlightUnderlineColors';
 
 onMounted(async () => {
-  settings.value = await loadSettings();
-  [tab.value] = await browser.tabs.query({ active: true, currentWindow: true });
-  running.value = await isRunning();
+  try {
+    settings.value = await loadSettings();
+    [tab.value] = await browser.tabs.query({ active: true, currentWindow: true });
+    running.value = await isRunning();
+  } catch { loadError.value = '小虎暫時無法讀取設定，請重新開啟。'; }
 });
 
 async function isRunning(): Promise<boolean> {
@@ -121,7 +125,7 @@ async function saveConjunctions() {
 }
 
 async function openOptions() {
-  await browser.runtime.openOptionsPage();
+  await browser.tabs.create({ url: browser.runtime.getURL('/options.html#settings') });
   window.close();
 }
 
@@ -132,10 +136,13 @@ async function openReview() {
 </script>
 
 <template>
-  <main v-if="settings">
-    <header><img src="/icons/32.png" alt="" /><b>攔詞虎</b><span>WordTiger v{{ version }}</span></header>
+  <main v-if="loadError" role="alert">{{ loadError }}</main>
+  <main v-else-if="settings">
+    <header><img src="/icons/128.png" alt="" /><b>攔詞虎</b><span>WordTiger v{{ version }}</span></header>
+    <AppearanceControls />
+    <p class="site-name">{{ tab?.url && pagePattern ? new URL(tab.url).hostname : '目前頁面不支援標示' }}</p>
     <div class="actions">
-      <button class="primary" :disabled="!pagePattern || blocked" @click="toggleHighlight">
+      <button class="primary" :aria-pressed="running" :disabled="!pagePattern || blocked" @click="toggleHighlight">
         {{ running ? '關閉本頁標示' : '開啟本頁標示' }}
       </button>
       <button class="review" @click="openReview">今晚打老虎</button>
@@ -150,8 +157,8 @@ async function openReview() {
     </label>
     <p class="note">關閉時只在手動開啟標示後存取；開啟後會記住目前網站。</p>
 
-    <section>
-      <h2>高亮樣式</h2>
+    <details class="highlight-details">
+      <summary>高亮樣式與程度</summary>
       <!-- min 對齊 step，否則預設的 10,000 會落在格線外，一拉就跳掉。 -->
       <input class="threshold" type="range" min="2000" max="30000" step="2000"
         v-model.number="settings.threshold" aria-label="高亮詞頻排名門檻"
@@ -172,7 +179,7 @@ async function openReview() {
         連詞標記（點線／雙線）
       </label>
       <p class="note">程度外 {{ (settings.threshold + 1).toLocaleString() }}–{{ level1.toLocaleString() }}；更高階至 {{ level2.toLocaleString() }}。</p>
-    </section>
+    </details>
 
     <section>
       <h2>快捷鍵</h2>
@@ -180,44 +187,39 @@ async function openReview() {
       <div class="keys"><kbd>D</kbd> 拆懂這句　<kbd>F</kbd> AI 發音　<kbd>Space</kbd> 收藏　<kbd>X</kbd> 已認得　<kbd>Esc</kbd> 關閉</div>
     </section>
 
-    <p v-if="status" class="status">{{ status }}</p>
+    <p v-if="status" class="status" role="status">{{ status }}</p>
   </main>
+  <main v-else role="status">小虎準備中…</main>
 </template>
 
-<style>
-:root { font: 14px/1.45 system-ui, sans-serif; color: #202124; }
-body { margin: 0; }
-main { width: 340px; padding: 12px; box-sizing: border-box; }
-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-header img { width: 32px; height: 32px; border-radius: 7px; }
-header b { font-size: 16px; }
-header span { margin-left: auto; color: #6b7280; font-size: 12px; }
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-button { border: 1px solid #ccd0d5; border-radius: 7px; padding: 9px; background: white; cursor: pointer; }
-button.primary { grid-column: 1 / -1; color: white; border-color: #2563eb; background: #2563eb; }
-button.review { color: #9a3412; border-color: #fed7aa; background: #fff7ed; font-weight: 700; }
-button:disabled { opacity: .45; cursor: not-allowed; }
+<style scoped>
+/* Popup auto-sizing needs an intrinsic root width; vw depends on the popup's initial tiny viewport. */
+:global(html) { width: 380px; min-width: 380px; overflow: hidden; }
+:global(body) { max-height: 600px; overflow-y: auto; overscroll-behavior: contain; }
+main { width: 100%; padding: 18px; font-size: 13px; }
+header { display: flex; align-items: center; gap: 9px; margin-bottom: 18px; }
+header img { width: 40px; height: 40px; filter: drop-shadow(0 4px 8px #13173918); animation: wt-arrive 400ms ease-out; }
+header b { font-size: 18px; color: var(--wt-ink); }
+header span { margin-left: auto; color: var(--wt-muted); font-size: 11px; }
+.site-name { color: var(--wt-muted); font-size: 12px; overflow-wrap: anywhere; margin: 20px 0 10px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+button.primary { grid-column: 1 / -1; color: var(--wt-on-accent); border-color: var(--wt-accent); background: var(--wt-accent); min-height: 46px; font-weight: 750; }
+button.review { color: var(--wt-accent); background: var(--wt-wash); font-weight: 700; }
 .switch { display: flex; gap: 8px; align-items: center; margin: 13px 0; font-weight: 600; }
-section { border-top: 1px solid #e5e7eb; padding-top: 9px; margin-top: 9px; }
+section, details { border-top: 1px solid var(--wt-line); padding-top: 12px; margin-top: 16px; }
+summary { cursor: pointer; color: var(--wt-ink); font-weight: 650; padding: 4px 0; }
+details[open] summary { margin-bottom: 15px; }
 h2 { margin: 0 0 7px; font-size: 13px; }
-section label { display: flex; align-items: center; gap: 7px; margin: 6px 0; }
-input[type="color"] { width: 30px; height: 24px; padding: 0; border: 0; background: none; }
-.threshold { display: block; width: 100%; margin: 0 0 2px; accent-color: #f59e0b; }
+input[type="color"] { width: 30px; height: 28px; padding: 0; border: 0; background: none; }
+.threshold { display: block; width: 100%; margin: 0 0 2px; }
 .color-head, .color-row { display: grid; grid-template-columns: 1fr repeat(3, 42px); align-items: center; gap: 6px; }
-.color-head { margin-bottom: 4px; color: #64748b; font-size: 11px; text-align: center; }
+.color-head { margin: 12px 0 4px; color: var(--wt-muted); font-size: 11px; text-align: center; }
 .color-head span:first-child { text-align: left; }
-.color-row { min-height: 30px; }
+.color-row { min-height: 34px; }
 .color-row input[type="color"] { width: 36px; }
 .conjunction { margin-top: 10px; font-weight: 500; }
-.keys { color: #4b5563; margin: 5px 0; font-size: 12px; }
-.note { color: #64748b; margin: 4px 0; font-size: 12px; }
-kbd { padding: 1px 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; }
-.warn { color: #b4451f; }
-.status { margin: 9px 0 0; color: #2563eb; font-size: 12px; }
-@media (prefers-color-scheme: dark) {
-  :root { color: #e5e7eb; background: #202124; }
-  button { color: #e5e7eb; background: #303134; border-color: #5f6368; }
-  .keys { color: #cbd5e1; }
-  kbd { background: #303134; border-color: #5f6368; }
-}
+.keys { color: var(--wt-muted); margin: 7px 0; font-size: 11px; line-height: 1.9; }
+.note { color: var(--wt-muted); margin: 5px 0; font-size: 12px; }
+kbd { padding: 2px 4px; border: 1px solid var(--wt-line); border-radius: 5px; background: var(--wt-surface); }
+.status { margin: 12px 0 0; color: var(--wt-accent); font-size: 12px; }
 </style>

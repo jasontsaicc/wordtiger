@@ -112,27 +112,27 @@ async function logout() {
 </template>
 
 <style scoped>
-.sync-card { border-color: #c7d2fe; background: linear-gradient(135deg, #eef2ff, #fff 55%); }
+.sync-card { border-color: var(--wt-accent); background: linear-gradient(135deg, var(--wt-wash), var(--wt-surface) 55%); }
 .heading, .actions, .account { display: flex; align-items: center; }
 .heading { justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 h2, .heading p { margin: 0; }
-.heading p { color: #64748b; font-size: 13px; }
+.heading p { color: var(--wt-muted); font-size: 13px; }
 .dot { padding: .2rem .65rem; border-radius: 999px; font-size: 12px; font-weight: 700; }
-.online { color: #166534; background: #dcfce7; }
-.offline { color: #64748b; background: #e2e8f0; }
+.online { color: var(--wt-success); background: var(--wt-success-bg); }
+.offline { color: var(--wt-muted); background: var(--wt-line); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
 .grid label { margin: 0; }
-.grid input { box-sizing: border-box; width: 100%; margin-top: .25rem; padding: .58rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #1e293b; background: white; font: inherit; }
-.grid input:focus, button:focus-visible { outline: 3px solid #c7d2fe; outline-offset: 1px; border-color: #6366f1; }
+.grid input { box-sizing: border-box; width: 100%; margin-top: .25rem; padding: .58rem .7rem; border: 1px solid var(--wt-line); border-radius: 8px; color: var(--wt-ink); background: var(--wt-surface); font: inherit; }
+.grid input:focus, button:focus-visible { outline: 3px solid var(--wt-accent); outline-offset: 1px; border-color: var(--wt-accent); }
 .actions { gap: .6rem; }
 .account { align-items: flex-start; flex-direction: column; margin: 0 0 1rem; }
-.account span { color: #64748b; font-size: 13px; }
-button { padding: .52rem .8rem; border: 1px solid #cbd5e1; border-radius: 8px; color: #334155; background: white; cursor: pointer; }
+.account span { color: var(--wt-muted); font-size: 13px; }
+button { padding: .52rem .8rem; border: 1px solid var(--wt-line); border-radius: 8px; color: var(--wt-body); background: var(--wt-surface); cursor: pointer; }
 button:disabled { opacity: .55; cursor: wait; }
-.primary { color: white; border-color: #4f46e5; background: #4f46e5; }
+.primary { color: var(--wt-on-accent); border-color: var(--wt-accent); background: var(--wt-accent); }
 .note, .message, .error { margin: .75rem 0 0; font-size: 13px; }
-.note { color: #64748b; }
-.message { color: #4338ca; }
-.error { color: #b91c1c; }
+.note { color: var(--wt-muted); }
+.message { color: var(--wt-accent); }
+.error { color: var(--wt-danger); }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 </style>

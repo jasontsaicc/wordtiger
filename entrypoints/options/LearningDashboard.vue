@@ -90,7 +90,7 @@ function changeMonth() {
       <template v-for="(cell, index) in cells" :key="cell?.date ?? `blank-${index}`">
         <span v-if="!cell" class="blank" />
         <button v-else :class="{ selected: selectedDate === cell.date, active: activity(cell.date) }"
-          :aria-label="cell.date" @click="selectedDate = cell.date">
+          :aria-label="`${cell.date} ${summary(cell.date) || '沒有活動'}`" :aria-pressed="selectedDate === cell.date" @click="selectedDate = cell.date">
           <b>{{ cell.day }}</b>
           <small>{{ summary(cell.date) }}</small>
         </button>
@@ -131,35 +131,39 @@ function changeMonth() {
 .dashboard { padding: 1.4rem; }
 .heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .heading h2, .heading p { margin: 0; }
-.heading > div > p:last-child { color: #64748b; font-size: 13px; }
+.heading > div > p:last-child { color: var(--wt-muted); font-size: 13px; }
 .heading input { width: auto; }
-.eyebrow { color: #0e7490; font-size: 11px; font-weight: 800; letter-spacing: .13em; }
+.eyebrow { color: var(--wt-accent); font-size: 11px; font-weight: 800; letter-spacing: .13em; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: .7rem; margin: 1.2rem 0; }
-.stats article { padding: .9rem; border-radius: 12px; background: #f8fafc; text-align: center; }
+.stats article { padding: .9rem; border-radius: 12px; background: var(--wt-raised); text-align: center; }
 .stats b, .stats span { display: block; }
-.stats b { color: #0f172a; font-size: 24px; }
-.stats span { color: #64748b; font-size: 12px; }
-.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: .35rem; }
-.weekday { padding: .25rem; color: #64748b; font-size: 12px; font-weight: 700; text-align: center; }
+.stats b { color: var(--wt-ink); font-size: 24px; }
+.stats span { color: var(--wt-muted); font-size: 12px; }
+.calendar { min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .35rem; }
+.weekday { padding: .25rem; color: var(--wt-muted); font-size: 12px; font-weight: 700; text-align: center; }
 .calendar button, .blank { min-height: 72px; }
-.calendar button { display: flex; flex-direction: column; align-items: flex-start; padding: .5rem; border: 1px solid #e2e8f0; background: white; }
-.calendar button.active { border-color: #67e8f9; background: #ecfeff; }
-.calendar button.selected { outline: 3px solid #f59e0b; outline-offset: 1px; }
-.calendar button small { margin-top: auto; color: #0e7490; font-size: 11px; }
-.detail { margin-top: 1rem; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.calendar button { min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; align-items: flex-start; padding: .5rem; border: 1px solid var(--wt-line); background: var(--wt-surface); }
+.calendar button.active { border-color: var(--wt-accent); background: var(--wt-wash); }
+.calendar button.selected { outline: 3px solid var(--wt-accent); outline-offset: 1px; }
+.calendar button small { margin-top: auto; color: var(--wt-accent); font-size: 11px; }
+.detail { margin-top: 1rem; padding: 1rem; border: 1px solid var(--wt-line); border-radius: 12px; background: var(--wt-raised); }
 .detail h3, .detail h4 { margin: 0; }
-.detail h4 { margin-top: .8rem; color: #475569; font-size: 13px; }
+.detail h4 { margin-top: .8rem; color: var(--wt-body); font-size: 13px; }
 .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
-.chips span { padding: .2rem .55rem; border-radius: 999px; color: #3730a3; background: #e0e7ff; }
-.chips span.drill { color: #9a3412; background: #ffedd5; }
+.chips span { padding: .2rem .55rem; border-radius: 999px; color: var(--wt-accent); background: var(--wt-wash); }
+.chips span.drill { color: var(--wt-accent); background: var(--wt-wash); }
 .detail ul { margin: .4rem 0 0; padding-left: 1.2rem; }
 .detail li + li { margin-top: .5rem; }
-.detail li small { display: block; color: #64748b; }
-.detail a { color: #0e7490; }
-.empty { color: #64748b; }
-.error { color: #b91c1c; }
+.detail li small { display: block; color: var(--wt-muted); }
+.detail a { color: var(--wt-accent); }
+.empty { color: var(--wt-muted); }
+.error { color: var(--wt-danger); }
 @media (max-width: 700px) {
   .calendar button, .blank { min-height: 58px; }
   .calendar button small { font-size: 9px; }
 }
+.stats article { border: 1px solid var(--wt-line); transition: transform 180ms; }
+.stats article:hover { transform: translateY(-3px); }
+.detail { animation: wt-arrive 220ms ease-out; }
+@media (max-width: 540px) { .heading { flex-wrap: wrap; } .calendar { gap: 3px; } .calendar button { padding: 5px 3px; } }
 </style>

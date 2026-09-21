@@ -52,10 +52,10 @@ function reset(key: keyof Templates) {
 </template>
 
 <style scoped>
-details { margin-bottom: 1rem; border: 1px solid #e2e8f0; border-radius: 14px; background: white; box-shadow: 0 1px 2px #0f172a08; }
+details { margin-bottom: 1rem; border: 1px solid var(--wt-line); border-radius: 14px; background: var(--wt-surface); box-shadow: 0 1px 2px transparent; }
 summary { padding: 1rem 1.25rem; cursor: pointer; }
 summary span { display: inline-flex; flex-direction: column; margin-left: .35rem; }
-summary small { color: #64748b; font-size: 12px; font-weight: 400; }
+summary small { color: var(--wt-muted); font-size: 12px; font-weight: 400; }
 .content { padding: 0 1.25rem 1.25rem; }
 .field { margin-bottom: 1.25rem; }
 label { display: block; margin-bottom: .25rem; }

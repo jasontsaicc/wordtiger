@@ -1,0 +1,32 @@
+@import './palette.css';
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--wt-body); background: var(--wt-bg); font: 15px/1.65 system-ui, sans-serif; transition: background 240ms, color 180ms; }
+h1, h2, h3, h4 { color: var(--wt-ink); }
+a { color: var(--wt-accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
+button, input, textarea, select { font: inherit; }
+button, select { cursor: pointer; }
+button { color: var(--wt-body); background: var(--wt-surface); border: 1px solid var(--wt-line); padding: .55rem .85rem; border-radius: 11px; transition: transform 150ms, background 150ms, box-shadow 150ms; }
+button:hover:not(:disabled) { background: var(--wt-wash); }
+button:active:not(:disabled) { transform: translateY(2px); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+input:not([type="checkbox"]):not([type="range"]):not([type="color"]), textarea, select { color: var(--wt-ink); background: var(--wt-surface); border: 1px solid var(--wt-line); border-radius: 10px; padding: .6rem .75rem; max-width: 100%; }
+input[type="checkbox"], input[type="range"] { accent-color: var(--wt-accent); }
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid var(--wt-accent); outline-offset: 3px; }
+.primary, .reveal, .caught, .next-round { position: relative; overflow: hidden; box-shadow: 0 4px 0 color-mix(in srgb, var(--wt-accent) 65%, #000); }
+.primary:hover:not(:disabled), .reveal:hover:not(:disabled), .caught:hover:not(:disabled), .next-round:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 0 color-mix(in srgb, var(--wt-accent) 65%, #000); }
+.primary::after, .reveal::after, .caught::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, #ffffff24 48%, transparent 65%); transform: translateX(-120%); pointer-events: none; }
+.primary:hover::after, .reveal:hover::after, .caught:hover::after { transform: translateX(120%); transition: transform 650ms; }
+.note, .quiet { color: var(--wt-muted); }
+.error, .warn { color: var(--wt-danger); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@keyframes wt-arrive { from { opacity: 0; transform: translateY(9px); } }
+@keyframes wt-pop { 40% { transform: translateY(-5px) rotate(-5deg) scale(1.06); } }
+@keyframes wt-orbit { to { transform: rotate(360deg); } }
+@keyframes wt-confetti { from { opacity: 1; transform: translate(0, 0) rotate(0); } to { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--spin)); } }
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+:root[data-motion="reduce"] .confetti { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .confetti { display: none; }
+}
+@media (prefers-contrast: more) { button, section, input, select, textarea { border-color: currentColor; } }

@@ -1,3 +1,4 @@
+import '@/src/ui/app.css';
 import { createApp } from 'vue';
 import App from './App.vue';
 

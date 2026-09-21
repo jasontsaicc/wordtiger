@@ -57,3 +57,20 @@ it('先回想原句，揭曉才自評，換題後隱藏答案並支援無原句�
   expect(sendMessage).toHaveBeenLastCalledWith({ type: 'reviewWord', word: 'reliable', remembered: false });
   await vi.waitFor(() => expect(reviewed).toHaveBeenCalledWith({ word: 'reliable', remembered: false }));
 });
+
+it('完成畫面使用本輪實際成績；沒有題目時不顯示慶祝', async () => {
+  const root = document.createElement('div');
+  const total = ref(5);
+  const app = createApp({ render: () => h(ReviewSession, {
+    item: null, done: 5, total: total.value, caught: 3, todayDone: 8,
+  }) });
+  app.mount(root);
+  cleanup = () => app.unmount();
+  expect(root.querySelector('.finish h3')?.textContent).toBe('這一輪，又前進了。');
+  expect(root.querySelector('.finish')?.textContent).toContain('3／5');
+  expect(root.querySelector('.confetti')).not.toBeNull();
+  total.value = 0;
+  await nextTick();
+  expect(root.querySelector('.finish')).toBeNull();
+  expect(root.querySelector('.confetti')).toBeNull();
+});

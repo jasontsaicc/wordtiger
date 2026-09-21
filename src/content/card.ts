@@ -1,3 +1,5 @@
+import palette from '@/src/ui/palette.css?inline';
+import { observeAppearance } from '@/src/ui/appearance';
 import { renderMarkdown, escapeHtml } from './markdown';
 
 export interface CardOptions {
@@ -28,6 +30,7 @@ let anchor: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'> | null = null;
 let dragged = false;
 let wasLoading = false;
 let dragAbort: AbortController | null = null;
+let stopAppearance: (() => void) | null = null;
 
 const GAP = 10;
 const MARGIN = 12;
@@ -40,29 +43,30 @@ function ensureRoot(): ShadowRoot {
   root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `
     <style>
+      ${palette}
       /**
        * 一張卡只有一個重點色。區塊分兩層：參考資料給安靜的灰線，
        * 要你帶走的（卡點、帶走、用法、例句）才點亮琥珀。
        */
       .card {
-        --ink: #0f172a; --body: #334155; --muted: #64748b;
-        --surface: rgba(255,255,255,.96); --border: rgba(148,163,184,.35);
-        --chip: #f1f5f9; --chip-border: #e2e8f0; --chip-hover: #e2e8f0;
-        --rail: #e2e8f0; --sep: #94a3b8;
-        --accent: #f59e0b; --accent-ink: #b45309; --wash: #fffbeb;
-        --danger: #b91c1c;
+        --ink: var(--wt-ink); --body: var(--wt-body); --muted: var(--wt-muted);
+        --surface: var(--wt-surface); --border: var(--wt-line);
+        --chip: var(--wt-raised); --chip-border: var(--wt-line); --chip-hover: var(--wt-wash);
+        --rail: var(--wt-line); --sep: var(--wt-muted);
+        --accent: var(--wt-accent); --accent-ink: var(--wt-accent); --wash: var(--wt-wash);
+        --danger: var(--wt-danger);
 
         box-sizing: border-box; width: min(420px, calc(100vw - 24px));
         position: relative; overflow: hidden; padding: 14px 16px 12px; pointer-events: auto;
         font: 14px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif;
         color: var(--body); background: var(--surface);
-        border: 1px solid var(--border); border-radius: 14px;
+        border: 1px solid var(--border); border-radius: 20px;
         box-shadow: 0 18px 50px rgba(15,23,42,.22), 0 2px 8px rgba(15,23,42,.08);
         backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
         animation: enter 120ms ease-out;
       }
       /* 單色琥珀，但保留 200% 寬度讓 stripe 動畫在載入時還跑得動。 */
-      .card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, #f59e0b 0%, #fcd34d 25%, #f59e0b 50%, #fcd34d 75%, #f59e0b 100%); background-size: 200% 100%; }
+      .card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--accent), #ffa44f, var(--accent), #ffa44f, var(--accent)); background-size: 200% 100%; }
       .header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; cursor: grab; touch-action: none; user-select: none; }
       .dragging { transform: scale(1.01); box-shadow: 0 24px 64px rgba(15,23,42,.28), 0 4px 12px rgba(15,23,42,.12); }
       .dragging .header { cursor: grabbing; }
@@ -145,23 +149,14 @@ function ensureRoot(): ShadowRoot {
       @keyframes card-pop { 35% { transform: translateY(-2px) scale(1.012); } 65% { transform: translateY(1px) scale(.997); } }
       @keyframes stripe { to { background-position: -200% 0; } }
       @media (prefers-reduced-motion: reduce) { .card, .brand, .card::before { animation: none !important; } }
-      @media (prefers-reduced-transparency: reduce) { .card { --surface: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+      @media (prefers-reduced-transparency: reduce) { .card { --surface: var(--wt-surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
       @media (prefers-contrast: more) {
         .coach-source, .coach-breakdown, .coach-plain, .coach-usage, .coach-example,
         .coach-stumble, .coach-takeaway { border: 1px solid currentColor; }
       }
-      /* 只換 token，規則本身共用；深色少一套選擇器就少一個漏改的地方。 */
-      @media (prefers-color-scheme: dark) {
-        .card {
-          --ink: #f8fafc; --body: #cbd5e1; --muted: #94a3b8;
-          --surface: rgba(15,23,42,.96); --border: rgba(148,163,184,.25);
-          --chip: #1e293b; --chip-border: #334155; --chip-hover: #334155;
-          --rail: #334155; --sep: #64748b;
-          --accent: #f59e0b; --accent-ink: #fbbf24; --wash: #211d16;
-          --danger: #fca5a5;
-        }
-        @media (prefers-reduced-transparency: reduce) { .card { --surface: #0f172a; } }
-      }
+      :host([data-motion="reduce"]) *, :host([data-motion="reduce"]) *::before { animation: none !important; transition: none !important; }
+      .close:focus-visible, .retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .close, .retry { min-width: 30px; min-height: 30px; }
     </style>
     <div class="card" role="dialog" aria-live="polite"></div>
   `;
@@ -223,6 +218,7 @@ export function renderCardHtml(opts: Omit<CardOptions, 'rect'>): string {
 
 export function showCard(opts: CardOptions): void {
   const shadow = ensureRoot();
+  stopAppearance ??= observeAppearance(host!);
   const card = shadow.querySelector<HTMLElement>('.card')!;
   const loading = Boolean(opts.loading);
   const sameAnchor = anchor
@@ -259,6 +255,8 @@ export function showCard(opts: CardOptions): void {
 }
 
 export function hideCard(): void {
+  stopAppearance?.();
+  stopAppearance = null;
   dragAbort?.abort();
   dragAbort = null;
   root?.querySelector('.card')?.classList.remove('dragging');
@@ -352,7 +350,7 @@ function startDrag(event: PointerEvent): void {
     const left = Number.parseFloat(host!.style.left);
     const right = window.innerWidth - box.width - MARGIN;
     const snap = left - MARGIN < 36 ? MARGIN : right - left < 36 ? right : left;
-    host!.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches
+    host!.style.transition = host!.dataset.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 'none'
       : 'left 180ms cubic-bezier(.2,.8,.2,1)';
     host!.style.left = `${snap}px`;
